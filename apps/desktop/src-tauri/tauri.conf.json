@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "dev.osmait.ziglive",
   "build": {
-    "frontendDist": "../../web/dist",
+    "frontendDist": "../shell",
     "devUrl": "http://127.0.0.1:5173"
   },
   "app": {
@@ -13,7 +13,7 @@
         "title": "ZigLive",
         "width": 1400,
         "height": 900,
-        "decorations": false,
+        "decorations": true,
         "resizable": true,
         "fullscreen": false
       }
@@ -34,6 +34,12 @@
     ],
     "android": {
       "debugApplicationIdSuffix": ".debug"
+    },
+    "externalBin": [
+      "binaries/ziglive-server"
+    ],
+    "resources": {
+      "resources/": "resources/"
     }
   }
 }

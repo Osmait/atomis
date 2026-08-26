@@ -107,14 +107,9 @@ app.post("/api/sessions", async (request, reply) => {
 	return await sessions.create(parsed.data.language);
 });
 
-const webDist = resolve(
-	dirname(fileURLToPath(import.meta.url)),
-	"../../web/dist",
-);
-if (process.env.NODE_ENV === "production" && existsSync(webDist)) {
-	await app.register(fastifyStatic, { root: webDist, wildcard: false });
-	app.get("/*", async (_request, reply) => await reply.sendFile("index.html"));
-}
+const webDist =
+	process.env.ZIGLIVE_WEB_DIST ??
+	resolve(dirname(fileURLToPath(import.meta.url)), "../../web/dist");
 
 function authenticate(url: URL): Session | undefined {
 	const id = url.searchParams.get("sessionId") ?? "";
@@ -358,12 +353,33 @@ async function shutdown(signal: string): Promise<void> {
 	await app.close();
 }
 
-await sessions.initialize();
-const address = await app.listen({ host, port: requestedPort });
-app.log.info(
-	{ address, warning: "El código se ejecuta localmente con tus permisos" },
-	"ZigLive ready",
-);
+// No top-level await: the desktop sidecar bundles this file as CommonJS
+// (Node SEA), where TLA is unavailable.
+async function start(): Promise<void> {
+	if (process.env.NODE_ENV === "production" && existsSync(webDist)) {
+		await app.register(fastifyStatic, { root: webDist, wildcard: false });
+		app.get(
+			"/*",
+			async (_request, reply) => await reply.sendFile("index.html"),
+		);
+	}
+	await sessions.initialize();
+	const address = await app.listen({ host, port: requestedPort });
+	// The desktop shell parses this line to learn the dynamic port.
+	const bound = app.server.address();
+	const boundPort =
+		typeof bound === "object" && bound ? bound.port : requestedPort;
+	console.log(`ZIGLIVE_LISTENING=${boundPort}`);
+	app.log.info(
+		{ address, warning: "El código se ejecuta localmente con tus permisos" },
+		"ZigLive ready",
+	);
+}
+
+void start().catch((error) => {
+	console.error(error);
+	process.exit(1);
+});
 for (const signal of ["SIGINT", "SIGTERM"] as const)
 	process.once(signal, () => {
 		void shutdown(signal).finally(() => process.exit(0));

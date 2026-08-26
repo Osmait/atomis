@@ -28,8 +28,11 @@ import { TsCompilerRunner } from "../compiler/TsCompilerRunner.js";
 import { RustCompilerRunner } from "../compiler/RustCompilerRunner.js";
 import type { ProcessSupervisor } from "../processes/ProcessSupervisor.js";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
-export const PROJECT_ROOT = resolve(HERE, "../../../..");
+// The desktop sidecar is a CJS single-executable where import.meta does not
+// exist: it always sets ZIGLIVE_ROOT, so the fallback never evaluates there.
+export const PROJECT_ROOT = process.env.ZIGLIVE_ROOT
+	? resolve(process.env.ZIGLIVE_ROOT)
+	: resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 
 export interface ToolCheck {
 	command: string;

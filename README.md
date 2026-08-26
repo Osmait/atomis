@@ -65,6 +65,19 @@ pnpm --filter @ziglive/web test
 pnpm typecheck
 ```
 
+## Desktop app (Tauri)
+
+`apps/desktop` wraps ZigLive in a Tauri v2 window with the Node server embedded as a **sidecar**: a Node SEA single-executable (`binaries/ziglive-server-<triple>`) that picks a free port, announces it on stdout, and serves the API, the WebSockets and the built web UI; the window navigates to it once ready. Instrumenters, session templates and runtimes ship as bundle resources (`ZIGLIVE_ROOT` points the server at them). Language toolchains (zig, cargo, go, node, python3, clang) are still taken from the host machine — the doctor/degraded flow applies as in the browser.
+
+```sh
+pnpm desktop:build                           # toolchains + web build + SEA sidecar + resources
+pnpm --filter @ziglive/desktop bundle:linux  # AppImage/deb/rpm (use NO_STRIP=true if linuxdeploy fails)
+pnpm --filter @ziglive/desktop bundle:mac    # .app / .dmg (runs codesign automatically for the sidecar)
+pnpm --filter @ziglive/desktop dev           # dev window against the Vite dev server (pnpm dev first)
+```
+
+Bundles land in `apps/desktop/src-tauri/target/release/bundle/`. The backend rewrite in Rust (axum, same WS protocol) will replace the sidecar later.
+
 ## Usage
 
 The UI is a Catppuccin workspace of joined panels (native-window style): a file-tree sidebar, the editor (tabs, auto, settings gear and an icon Run button in its chrome row) and a dockable terminal, with a status bar (mode chip, run state, path, timings, cursor). The settings modal (gear or **⌘,**) holds the behaviour toggles, the inline-value format, the theme (Mocha / Macchiato / Crust) and typography (JetBrains Mono / IBM Plex Mono / SF Mono, sizes 12–15) — all persisted.

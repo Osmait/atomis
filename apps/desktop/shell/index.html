@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>ZigLive</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #11111b; color: #6c7086;
+    font-family: "JetBrains Mono", ui-monospace, monospace; }
+  main { height: 100%; display: flex; flex-direction: column; gap: 14px;
+    align-items: center; justify-content: center; font-size: 13px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: #cba6f7;
+    animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .3; transform: scale(.8); } }
+</style>
+</head>
+<body>
+<main>
+  <span class="dot"></span>
+  <span>iniciando ziglive…</span>
+</main>
+</body>
+</html>

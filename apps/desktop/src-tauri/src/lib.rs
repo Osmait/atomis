@@ -1,6 +1,23 @@
+use std::sync::Mutex;
+
+use tauri::{Manager, RunEvent};
+use tauri_plugin_shell::process::{CommandChild, CommandEvent};
+use tauri_plugin_shell::ShellExt;
+
+struct Sidecar(Mutex<Option<CommandChild>>);
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-  tauri::Builder::default()
+  // WebKitGTK crashea con el driver NVIDIA propietario en Wayland (Error 71,
+  // explicit sync); la variable debe existir antes de crear la webview.
+  #[cfg(target_os = "linux")]
+  if std::env::var_os("__NV_DISABLE_EXPLICIT_SYNC").is_none() {
+    std::env::set_var("__NV_DISABLE_EXPLICIT_SYNC", "1");
+  }
+
+  let app = tauri::Builder::default()
+    .plugin(tauri_plugin_shell::init())
+    .manage(Sidecar(Mutex::new(None)))
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(
@@ -9,8 +26,63 @@ pub fn run() {
             .build(),
         )?;
       }
+
+      // Sidecar: the bundled Node server. It picks a free port and announces
+      // it on stdout; the window navigates there once it is ready.
+      let resources = app
+        .path()
+        .resolve("resources", tauri::path::BaseDirectory::Resource)?;
+      let web_dist = resources.join("web-dist");
+      let sidecar = app
+        .shell()
+        .sidecar("ziglive-server")?
+        .env("ZIGLIVE_ROOT", resources.as_os_str())
+        .env("ZIGLIVE_WEB_DIST", web_dist.as_os_str())
+        .env("ZIGLIVE_PORT", "0")
+        .env("NODE_ENV", "production");
+      let (mut events, child) = sidecar.spawn()?;
+      *app.state::<Sidecar>().0.lock().unwrap() = Some(child);
+
+      let handle = app.handle().clone();
+      tauri::async_runtime::spawn(async move {
+        while let Some(event) = events.recv().await {
+          match event {
+            CommandEvent::Stdout(line) => {
+              let line = String::from_utf8_lossy(&line);
+              if let Some(port) = line.trim().strip_prefix("ZIGLIVE_LISTENING=") {
+                let url = format!("http://127.0.0.1:{port}");
+                if let Some(window) = handle.get_webview_window("main") {
+                  if let Ok(parsed) = url.parse() {
+                    let _ = window.navigate(parsed);
+                  }
+                }
+              } else {
+                log::info!(target: "sidecar", "{}", line.trim_end());
+              }
+            }
+            CommandEvent::Stderr(line) => {
+              log::warn!(target: "sidecar", "{}", String::from_utf8_lossy(&line).trim_end());
+            }
+            CommandEvent::Error(message) => {
+              log::error!(target: "sidecar", "sidecar error: {message}");
+            }
+            CommandEvent::Terminated(status) => {
+              log::error!(target: "sidecar", "sidecar exited: {status:?}");
+            }
+            _ => {}
+          }
+        }
+      });
       Ok(())
     })
-    .run(tauri::generate_context!())
-    .expect("error while running tauri application");
+    .build(tauri::generate_context!())
+    .expect("error while building tauri application");
+
+  app.run(|handle, event| {
+    if let RunEvent::Exit = event {
+      if let Some(child) = handle.state::<Sidecar>().0.lock().unwrap().take() {
+        let _ = child.kill();
+      }
+    }
+  });
 }

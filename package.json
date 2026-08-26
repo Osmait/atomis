@@ -15,13 +15,18 @@
     "test:e2e": "playwright test",
     "build": "pnpm zig:build && pnpm rust:build && pnpm go:build && pnpm -r build",
     "start": "pnpm --filter @ziglive/server start",
+    "desktop": "pnpm --filter @ziglive/desktop dev",
+    "desktop:linux": "pnpm build && pnpm --filter @ziglive/desktop bundle:linux",
+    "desktop:mac": "pnpm build && pnpm --filter @ziglive/desktop bundle:mac",
     "rust:build": "node scripts/rust-build.mjs",
     "rust:test": "node scripts/rust-test.mjs",
     "go:build": "node scripts/go-build.mjs",
     "go:test": "node scripts/go-test.mjs",
     "ts:test": "node --test ts/instrumenter/instrument.test.mjs",
     "py:test": "python3 -m unittest discover -s python/instrumenter -p 'instrument_test.py'",
-    "cfamily:test": "node --test cfamily/instrumenter/instrument.test.mjs"
+    "cfamily:test": "node --test cfamily/instrumenter/instrument.test.mjs",
+    "desktop:build": "pnpm build && node scripts/desktop-build.mjs",
+    "desktop:bundle": "pnpm desktop:build && pnpm --filter @ziglive/desktop bundle:linux"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",
