@@ -546,3 +546,43 @@ test("one workspace runs both languages by extension", async ({ page }) => {
 	});
 	await expect(page.locator(".panel-content")).toContainText("zig build run");
 });
+
+test("folders group files and collapse in the tree", async ({ page }) => {
+	await openClean(page);
+	await expect(page.locator(".state-succeeded")).toBeVisible();
+	await page.keyboard.press("ControlOrMeta+K");
+	await page
+		.getByRole("textbox", { name: "Buscar archivo" })
+		.fill("utils/helper.zig");
+	await page.keyboard.press("Enter");
+	await expect(page.locator(".editor-header")).toContainText(
+		"src/utils/helper.zig",
+	);
+	const folder = page.locator(".tree-folder").filter({ hasText: "utils" });
+	await expect(folder).toBeVisible();
+	await expect(
+		page.getByRole("button", { name: "utils/helper.zig" }),
+	).toBeVisible();
+	await folder.click();
+	await expect(
+		page.getByRole("button", { name: "utils/helper.zig" }),
+	).toHaveCount(0);
+	await folder.click();
+	await expect(
+		page.getByRole("button", { name: "utils/helper.zig" }),
+	).toBeVisible();
+
+	page.once("dialog", (dialog) => dialog.accept("aoc"));
+	await page.getByTitle("Crear carpeta").click();
+	const aocRow = page
+		.locator(".tree-folder-row")
+		.filter({ hasText: "aoc" })
+		.first();
+	await expect(aocRow).toBeVisible();
+	page.once("dialog", (dialog) => dialog.accept("aoc/day1.zig"));
+	await aocRow.hover();
+	await aocRow.locator(".folder-add").click();
+	await expect(
+		page.getByRole("button", { name: "aoc/day1.zig" }),
+	).toBeVisible();
+});

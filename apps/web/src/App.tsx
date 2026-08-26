@@ -30,6 +30,7 @@ import {
 	updateInlineValue,
 	type InlineValue,
 } from "./state/runtimeState.js";
+import { buildTreeRows } from "./state/fileTree.js";
 import { groupOutput, type TerminalEntry } from "./state/terminalFolds.js";
 
 interface LogSourceLocation {
@@ -270,6 +271,10 @@ export function App(): React.JSX.Element {
 	const [testSummary, setTestSummary] = useState<TestSummaryEvent>();
 	const [openFolds, setOpenFolds] = useState<Set<string>>(new Set());
 	const [history, setHistory] = useState<RunHistoryEntry[]>([]);
+	const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(
+		new Set(),
+	);
+	const [pendingFolders, setPendingFolders] = useState<string[]>([]);
 	const [narrow, setNarrow] = useState(false);
 	const [tight, setTight] = useState(false);
 	const [vimModeLabel, setVimModeLabel] = useState("NORMAL");
@@ -1255,12 +1260,45 @@ export function App(): React.JSX.Element {
 		setOpenTabs((previous) => [...previous, path]);
 	}, [sendRuntime, session]);
 
-	const createFile = useCallback((): void => {
-		const path = window
-			.prompt("Ruta del nuevo archivo (relativa a src/):")
+	const createFile = useCallback(
+		(prefix = ""): void => {
+			const path = window
+				.prompt("Ruta del nuevo archivo (relativa a src/):", prefix)
+				?.trim();
+			if (path) createFileNamed(path);
+		},
+		[createFileNamed],
+	);
+
+	const createFolder = useCallback((): void => {
+		const raw = window
+			.prompt("Nombre de la carpeta (p. ej. utils o aoc/day1):")
 			?.trim();
-		if (path) createFileNamed(path);
-	}, [createFileNamed]);
+		if (!raw) return;
+		const folder = raw.replace(/\/+$/, "");
+		if (
+			folder.startsWith("/") ||
+			folder.includes("\\") ||
+			folder
+				.split("/")
+				.some((part) => !part || part === "." || part === "..")
+		) {
+			setStatus("Nombre de carpeta inválido");
+			return;
+		}
+		setPendingFolders((previous) =>
+			previous.includes(folder) ? previous : [...previous, folder],
+		);
+	}, []);
+
+	const toggleFolder = useCallback((path: string): void => {
+		setCollapsedFolders((previous) => {
+			const next = new Set(previous);
+			if (next.has(path)) next.delete(path);
+			else next.add(path);
+			return next;
+		});
+	}, []);
 
 	const closeTab = useCallback(
 		(path: string): void => {
@@ -1450,6 +1488,17 @@ export function App(): React.JSX.Element {
 		(total, count) => total + count,
 		0,
 	);
+	const treeRows = buildTreeRows({
+		files: files.map((file) => file.path),
+		collapsed: collapsedFolders,
+		pendingFolders,
+		failsByFile: new Map(
+			[...failsByFile.entries()].map(([path, count]) => [
+				path.replace(/^src\//, ""),
+				count,
+			]),
+		),
+	});
 	const activeTests = tests.filter(
 		(test) => test.path === `src/${activePath}`,
 	);
@@ -1675,8 +1724,11 @@ export function App(): React.JSX.Element {
 						<header className="tree-header">
 							<span className="tree-title">Árbol</span>
 							<span className="tree-tools">
-								<button onClick={createFile} title="Crear archivo">
+								<button onClick={() => createFile()} title="Crear archivo">
 									＋
+								</button>
+								<button onClick={createFolder} title="Crear carpeta">
+									＋/
 								</button>
 								<button
 									disabled={activePath === entryRef.current}
@@ -1706,19 +1758,54 @@ export function App(): React.JSX.Element {
 								<span className="chev">▾</span>
 								<FolderIcon open /> src
 							</div>
-							{files.map((file) => {
-								const fails = failsByFile.get(`src/${file.path}`) ?? 0;
+							{treeRows.map((row) => {
+								if (row.kind === "folder")
+									return (
+										<div
+											className="tree-folder-row"
+											key={`folder:${row.path}`}
+											style={{ paddingLeft: `${10 + row.depth * 14}px` }}
+										>
+											<button
+												className="tree-folder"
+												onClick={() => toggleFolder(row.path)}
+												title={row.path}
+											>
+												<span className="chev">
+													{row.collapsed ? "▸" : "▾"}
+												</span>
+												<FolderIcon open={!row.collapsed} />
+												<span className="folder-name">{row.name}</span>
+												{row.fails > 0 && (
+													<span className="tree-badge fails">
+														{row.fails}
+													</span>
+												)}
+											</button>
+											<button
+												className="folder-add"
+												onClick={() => createFile(`${row.path}/`)}
+												title={`Crear archivo en ${row.path}/`}
+											>
+												＋
+											</button>
+										</div>
+									);
+								const fails = failsByFile.get(`src/${row.path}`) ?? 0;
 								return (
 									<button
-										className={`tree-file${file.path === activePath ? " active" : ""}`}
-										key={file.path}
-										onClick={() => selectFile(file.path)}
+										aria-label={row.path}
+										className={`tree-file${row.path === activePath ? " active" : ""}`}
+										key={row.path}
+										onClick={() => selectFile(row.path)}
+										style={{ paddingLeft: `${22 + row.depth * 14}px` }}
+										title={row.path}
 									>
-										<FileIcon path={file.path} /> {file.path}
+										<FileIcon path={row.path} /> {row.name}
 										<span className={`tree-badge${fails ? " fails" : ""}`}>
 											{fails
 												? String(fails)
-												: file.path === activePath
+												: row.path === activePath
 													? "✓"
 													: ""}
 										</span>

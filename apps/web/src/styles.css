@@ -395,6 +395,61 @@ input:focus-visible,
 	display: block;
 }
 
+.tree-folder-row {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+}
+
+.tree-folder {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 5px 10px 5px 0;
+	border-radius: 8px;
+	color: var(--subtext);
+	white-space: nowrap;
+}
+
+.tree-folder:hover {
+	background: var(--surface0-dim);
+}
+
+.tree-folder .chev {
+	color: var(--mauve);
+	width: 10px;
+	flex-shrink: 0;
+}
+
+.folder-name {
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.tree-folder .tree-badge {
+	margin-left: auto;
+}
+
+.folder-add {
+	color: var(--dim);
+	padding: 2px 8px;
+	border-radius: 6px;
+	visibility: hidden;
+	flex-shrink: 0;
+}
+
+.tree-folder-row:hover .folder-add {
+	visibility: visible;
+	color: var(--subtext);
+}
+
+.folder-add:hover {
+	color: var(--text);
+	background: var(--surface0-dim);
+}
+
 .tree-file {
 	display: flex;
 	align-items: center;
