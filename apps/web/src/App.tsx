@@ -480,9 +480,7 @@ export function App(): React.JSX.Element {
 					getDomNode: () => messageNode,
 					getPosition: () => ({
 						position: { lineNumber: line, column: endColumn },
-						preference: [
-							monaco.editor.ContentWidgetPositionPreference.EXACT,
-						],
+						preference: [monaco.editor.ContentWidgetPositionPreference.EXACT],
 					}),
 				};
 				nextWidgets.push(widget);
