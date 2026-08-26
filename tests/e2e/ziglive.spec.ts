@@ -1,13 +1,49 @@
 import { expect, test } from "@playwright/test";
 
+async function vimToggleOn(
+	page: import("@playwright/test").Page,
+): Promise<boolean> {
+	return await page
+		.locator(".settings-toggle", { hasText: "Vim Mode" })
+		.locator(".switch")
+		.evaluate((element) => element.classList.contains("on"));
+}
+
+/** Opens the settings modal (gear), flips a behaviour toggle if needed. */
+async function setToggle(
+	page: import("@playwright/test").Page,
+	label: string,
+	on: boolean,
+): Promise<void> {
+	await page.locator(".chrome-icon").click();
+	const toggle = page.locator(".settings-toggle", { hasText: label });
+	await expect(toggle).toBeVisible();
+	const isOn = await toggle
+		.locator(".switch")
+		.evaluate((element) => element.classList.contains("on"));
+	if (isOn !== on) await toggle.click();
+	await page.keyboard.press("Escape");
+	await expect(page.locator(".settings-modal")).toHaveCount(0);
+}
+
+/** Switches the terminal panel view through its ⋮ menu. */
+async function openTermView(
+	page: import("@playwright/test").Page,
+	name: RegExp | string,
+): Promise<void> {
+	await page.locator(".term-menu-btn").click();
+	await page
+		.getByRole("menuitem", { name, exact: typeof name === "string" })
+		.click();
+}
+
 async function openClean(page: import("@playwright/test").Page): Promise<void> {
 	await page.goto("/");
 	await page.evaluate(() => localStorage.clear());
 	await page.reload();
-	await expect(page.locator(".brand-chip")).toBeVisible();
+	await expect(page.locator(".file-tree")).toBeVisible();
 	await expect(page.locator(".monaco-editor")).toBeVisible();
-	const vimMode = page.getByLabel("Vim Mode");
-	if (await vimMode.isChecked()) await vimMode.uncheck();
+	await setToggle(page, "Vim Mode", false);
 }
 
 async function replaceEditor(
@@ -36,15 +72,15 @@ test("real Zig probes and ZLS capabilities work, then update by version", async 
 }) => {
 	await openClean(page);
 	await expect(page.locator(".state-succeeded")).toBeVisible();
-	await expect(page.locator(".cases-card")).toContainText("2 tests");
-	await expect(page.locator(".cases-card")).toContainText("todos ok");
+	await expect(page.locator(".test-score")).toHaveText("2/2");
+	await expect(page.locator(".test-score")).toHaveClass(/ok/);
 	await expect(page.getByText("40 : i32", { exact: true })).toBeVisible();
 	await expect(page.getByText("43 : i32", { exact: true })).toBeVisible();
 	await expect(
 		page.locator(".inline-value").filter({ hasText: "{ 40, 3, 43 }" }),
 	).toBeVisible();
 
-	await page.getByRole("button", { name: "Runtime" }).click();
+	await openTermView(page, "Runtime");
 	await expect(page.getByText(/completionProvider/)).toBeVisible();
 
 	await replaceEditor(
@@ -108,7 +144,7 @@ pub fn main(init: std.process.Init) !void {
 		/Generado por src\/solver\.zig:/,
 	);
 	await moduleLog.click();
-	await expect(page.locator(".editor-header")).toContainText("src/solver.zig");
+	await expect(page.locator(".global-status")).toContainText("src/solver.zig");
 	await expect(page.locator(".log-source-line")).toBeVisible();
 
 	page.once("dialog", (dialog) => dialog.accept("notes.tmp"));
@@ -133,7 +169,7 @@ test("Vim mode keeps native clipboard shortcuts", async ({ page, context }) => {
 	});
 	page.on("pageerror", (error) => pageErrors.push(error.message));
 	await openClean(page);
-	await page.getByLabel("Vim Mode").check();
+	await setToggle(page, "Vim Mode", true);
 	const editorInput = page.getByRole("textbox", { name: "Editor content" });
 	await page.locator(".view-lines").click({ button: "right" });
 	await expect(
@@ -202,7 +238,7 @@ test("compile errors do not become current and repair reruns", async ({
 	);
 	await expect(page.locator(".state-compile_error")).toBeVisible();
 	await expect(page.locator(".error-lens-message-error").first()).toBeVisible();
-	await page.getByRole("button", { name: /Problems/ }).click();
+	await openTermView(page, /Problems/);
 	await expect(page.getByText(/too few arguments/i).first()).toBeVisible();
 	await expect(page.getByText("compiler · Ln 3, Col 20")).toBeVisible();
 
@@ -279,7 +315,7 @@ test("Auto Inspect can be replaced by a gutter manual probe", async ({
 }) => {
 	await openClean(page);
 	await expect(page.locator(".state-succeeded")).toBeVisible();
-	await page.getByLabel("Auto Inspect").uncheck();
+	await setToggle(page, "Auto Inspect", false);
 	await expect(page.locator(".inline-value")).toHaveCount(0);
 	await page.locator(".manual-probe").first().click();
 	await expect(page.getByText("40 : i32", { exact: true })).toBeVisible();
@@ -298,7 +334,7 @@ pub fn main() void {
 `,
 	);
 	await expect(page.locator(".state-runtime_error")).toBeVisible();
-	await page.getByRole("button", { name: "Output" }).click();
+	await openTermView(page, "Salida");
 	const terminal = page.locator(".panel-content");
 	await expect(
 		terminal.locator("pre.program").filter({ hasText: "before panic" }),
@@ -312,7 +348,7 @@ pub fn main() void {
 			.filter({ hasText: /expected panic/ })
 			.first(),
 	).toBeVisible();
-	await page.getByRole("button", { name: /Problems/ }).click();
+	await openTermView(page, /Problems/);
 	await expect(
 		page.getByText(/Program panicked|abnormally/).first(),
 	).toBeVisible();
@@ -326,11 +362,10 @@ test("infinite loop times out and Auto Run can be paused", async ({ page }) => {
 		timeout: 25_000,
 	});
 
-	const autoRun = page.getByLabel("Auto Run");
-	await autoRun.uncheck();
+	await setToggle(page, "Auto Run", false);
 	await replaceEditor(page, "pub fn main() void { const answer = 9; }\n");
 	await expect(page.locator(".state-idle")).toBeVisible();
-	await page.getByRole("button", { name: "▶ Run" }).click();
+	await page.locator(".run-button").click();
 	await expect(page.locator(".state-succeeded")).toBeVisible();
 	await expect(
 		page.locator(".inline-value").filter({ hasText: "9" }),
@@ -356,14 +391,17 @@ test("zig test runner reports cases, error lens and tree badges", async ({
 	await expect(page.locator(".state-succeeded")).toBeVisible({
 		timeout: 30_000,
 	});
-	const cases = page.locator(".cases-card");
-	await expect(cases).toContainText("3 tests");
-	await expect(cases).toContainText("1 fallando");
+	// the failing run auto-opens the tests drawer
+	const cases = page.locator(".tests-drawer");
+	await expect(cases).toBeVisible();
+	await expect(cases.locator(".drawer-score")).toHaveText("2/3");
+	await expect(cases.locator(".drawer-sub")).toContainText("1 fallando");
 	await expect(
 		cases.locator(".case-row").filter({ hasText: "suma basica" }),
-	).toContainText(/✓/);
-	const failing = cases.locator(".case-row").filter({ hasText: "falla esperada" });
-	await expect(failing).toContainText(/✗/);
+	).toBeVisible();
+	await expect(
+		cases.locator(".case-item.failed").filter({ hasText: "falla esperada" }),
+	).toBeVisible();
 	await expect(cases.locator(".case-message")).toContainText(
 		/expected 366|TestExpectedEqual/,
 	);
@@ -371,8 +409,16 @@ test("zig test runner reports cases, error lens and tree badges", async ({
 	await expect(
 		page.locator(".tree-badge.fails").filter({ hasText: "1" }),
 	).toBeVisible();
+
+	// run history lives in the drawer's Historial tab
+	await cases.locator(".drawer-tabs button", { hasText: "Historial" }).click();
 	await expect(page.locator(".history-row").first()).toBeVisible();
-	await failing.click();
+	await cases.locator(".drawer-tabs button", { hasText: "Tests" }).click();
+
+	await cases
+		.locator(".case-item.failed .case-row")
+		.filter({ hasText: "falla esperada" })
+		.click();
 	await expect(page.locator(".cursor-status")).toHaveText("4:1");
 });
 
@@ -390,7 +436,7 @@ test("command palette opens files and zen mode hides the chrome", async ({
 	await palette.getByLabel("Buscar archivo").fill("main.zig");
 	await page.keyboard.press("Enter");
 	await expect(palette).toHaveCount(0);
-	await expect(page.locator(".editor-header")).toContainText("src/main.zig");
+	await expect(page.locator(".global-status")).toContainText("src/main.zig");
 
 	await page.keyboard.press("ControlOrMeta+.");
 	await expect(page.locator(".editor-chrome")).toHaveCount(0);
@@ -427,10 +473,9 @@ async function openRust(page: import("@playwright/test").Page): Promise<boolean>
 		localStorage.setItem("ziglive.language.v1", "rust");
 	});
 	await page.reload();
-	await expect(page.locator(".brand-chip")).toBeVisible();
+	await expect(page.locator(".file-tree")).toBeVisible();
 	await expect(page.locator(".monaco-editor")).toBeVisible();
-	const vimMode = page.getByLabel("Vim Mode");
-	if (await vimMode.isChecked()) await vimMode.uncheck();
+	await setToggle(page, "Vim Mode", false);
 	return true;
 }
 
@@ -439,13 +484,13 @@ test("rust sessions run with inline values and tests", async ({ page }) => {
 	await expect(page.locator(".state-succeeded")).toBeVisible({
 		timeout: 40_000,
 	});
-	await expect(page.locator(".editor-header")).toContainText("src/main.rs");
+	await expect(page.locator(".global-status")).toContainText("src/main.rs");
 	await expect(page.getByText("40 : i32", { exact: true })).toBeVisible();
 	await expect(
 		page.locator(".inline-value").filter({ hasText: "[40, 3, 43] : [i32; 3]" }),
 	).toBeVisible();
-	await expect(page.locator(".cases-card")).toContainText("2 tests");
-	await expect(page.locator(".cases-card")).toContainText("todos ok");
+	await expect(page.locator(".test-score")).toHaveText("2/2");
+	await expect(page.locator(".test-score")).toHaveClass(/ok/);
 	await expect(page.locator(".panel-content")).toContainText("cargo run");
 
 	// size_of_val layout reaches the peek panel
@@ -471,11 +516,11 @@ test("rust compile errors, panics and failing tests map to visible lines", async
 		timeout: 40_000,
 	});
 	await expect(page.locator(".error-lens-message-error").first()).toBeVisible();
-	await page.getByRole("button", { name: /Problems/ }).click();
+	await openTermView(page, /Problems/);
 	await expect(page.getByText(/mismatched types/).first()).toBeVisible();
 	await expect(page.getByText(/src\/main\.rs · compiler · Ln 2/)).toBeVisible();
 
-	await page.getByRole("button", { name: "Output" }).click();
+	await openTermView(page, "Salida");
 	await replaceEditor(
 		page,
 		'fn main() {\n    for i in 0..3 {\n        println!("iter {i}");\n    }\n    panic!("boom");\n}\n\n#[test]\nfn falla() {\n    assert_eq!(1, 2);\n}\n',
@@ -483,6 +528,17 @@ test("rust compile errors, panics and failing tests map to visible lines", async
 	await expect(page.locator(".state-runtime_error")).toBeVisible({
 		timeout: 40_000,
 	});
+	// the failing test auto-opens the drawer: verify, then close it to
+	// reach the output underneath
+	await expect(page.locator(".drawer-sub")).toContainText("1 fallando", {
+		timeout: 40_000,
+	});
+	await expect(page.locator(".case-message")).toContainText(
+		/assertion `left == right` failed/,
+	);
+	await expect(page.locator(".test-lens-message.failed")).toBeVisible();
+	await page.locator(".drawer-close").click();
+
 	const terminal = page.locator(".panel-content");
 	await expect(
 		terminal.locator("pre.error").filter({ hasText: /panicked at/ }).first(),
@@ -498,11 +554,6 @@ test("rust compile errors, panics and failing tests map to visible lines", async
 	await expect(sourced.locator(".log-origin-tooltip")).toContainText(
 		"bucle 2:5 · i=1",
 	);
-	await expect(page.locator(".cases-card")).toContainText("1 fallando");
-	await expect(page.locator(".case-message")).toContainText(
-		/assertion `left == right` failed/,
-	);
-	await expect(page.locator(".test-lens-message.failed")).toBeVisible();
 });
 
 test("Ctrl+S formats the document and returns vim to normal mode", async ({
@@ -511,9 +562,11 @@ test("Ctrl+S formats the document and returns vim to normal mode", async ({
 	await page.goto("/");
 	await page.evaluate(() => localStorage.clear());
 	await page.reload();
-	await expect(page.locator(".brand-chip")).toBeVisible();
+	await expect(page.locator(".file-tree")).toBeVisible();
 	await expect(page.locator(".state-succeeded")).toBeVisible();
-	await expect(page.getByLabel("Vim Mode")).toBeChecked();
+	await page.locator(".chrome-icon").click();
+	expect(await vimToggleOn(page)).toBe(true);
+	await page.keyboard.press("Escape");
 	await replaceEditor(
 		page,
 		"pub fn main() void {\nconst  answer:i32=9;\n_=answer;\n}\n",
@@ -536,10 +589,12 @@ test("low-level peek: bits, bitops, struct layout and value formats", async ({
 		timeout: 60_000,
 	});
 
-	// Global value format switcher re-renders integer hints.
+	// Global value format switcher (settings modal + ⌘1-5) re-renders hints.
+	await page.locator(".chrome-icon").click();
 	await page.locator(".fmt-switch button", { hasText: "hex" }).click();
+	await page.keyboard.press("Escape");
 	await expect(page.getByText("0x00000028 : i32", { exact: true })).toBeVisible();
-	await page.locator(".fmt-switch button", { hasText: "bin" }).click();
+	await page.keyboard.press("ControlOrMeta+3");
 	await expect(
 		page
 			.getByText("0b0000_0000_0000_0000_0000_0000_0010_1000 : i32", {
@@ -547,7 +602,7 @@ test("low-level peek: bits, bitops, struct layout and value formats", async ({
 			})
 			.first(),
 	).toBeVisible();
-	await page.locator(".fmt-switch button", { hasText: "dec" }).click();
+	await page.keyboard.press("ControlOrMeta+1");
 	await expect(page.getByText("40 : i32", { exact: true })).toBeVisible();
 
 	await replaceEditor(
@@ -602,20 +657,17 @@ test("one workspace runs both languages by extension", async ({ page }) => {
 	// Entering the file is enough: the inspect re-runs for the new language
 	// without typing or a manual run.
 	await page.getByRole("button", { name: "main.rs" }).click();
-	await expect(page.locator(".editor-header")).toContainText("src/main.rs");
+	await expect(page.locator(".global-status")).toContainText("src/main.rs");
 	await expect(page.locator(".panel-content")).toContainText("cargo run", {
 		timeout: 40_000,
 	});
 	await expect(
 		page.locator(".inline-value").filter({ hasText: "[40, 3, 43] : [i32; 3]" }),
 	).toBeVisible({ timeout: 40_000 });
-	await expect(page.locator(".cases-card")).toContainText("2 tests");
-	await expect(page.locator(".editor-header")).toContainText(
-		"2 tests en el archivo",
-	);
+	await expect(page.locator(".test-score")).toHaveText("2/2");
 
 	await page.getByRole("button", { name: "main.zig" }).click();
-	await expect(page.locator(".editor-header")).toContainText("src/main.zig");
+	await expect(page.locator(".global-status")).toContainText("src/main.zig");
 	await expect(page.locator(".panel-content")).toContainText("zig build run", {
 		timeout: 40_000,
 	});
@@ -632,7 +684,7 @@ test("folders group files and collapse in the tree", async ({ page }) => {
 		.getByRole("textbox", { name: "Buscar archivo" })
 		.fill("utils/helper.zig");
 	await page.keyboard.press("Enter");
-	await expect(page.locator(".editor-header")).toContainText(
+	await expect(page.locator(".global-status")).toContainText(
 		"src/utils/helper.zig",
 	);
 	const folder = page.locator(".tree-folder").filter({ hasText: "utils" });
@@ -681,9 +733,8 @@ async function openGo(page: import("@playwright/test").Page): Promise<boolean> {
 		localStorage.setItem("ziglive.language.v1", "go");
 	});
 	await page.reload();
-	await expect(page.locator(".brand-chip")).toBeVisible();
-	const vimMode = page.getByLabel("Vim Mode");
-	if (await vimMode.isChecked()) await vimMode.uncheck();
+	await expect(page.locator(".file-tree")).toBeVisible();
+	await setToggle(page, "Vim Mode", false);
 	return true;
 }
 
@@ -694,7 +745,7 @@ test("go sessions run with inline values, tests and mapped diagnostics", async (
 	await expect(page.locator(".state-succeeded")).toBeVisible({
 		timeout: 60_000,
 	});
-	await expect(page.locator(".editor-header")).toContainText("src/main.go");
+	await expect(page.locator(".global-status")).toContainText("src/main.go");
 	await expect(page.getByText("40 : int", { exact: true })).toBeVisible();
 	await expect(
 		page.locator(".inline-value").filter({ hasText: "[]int{40, 3, 43} : []int" }),
@@ -707,13 +758,13 @@ test("go sessions run with inline values, tests and mapped diagnostics", async (
 	);
 	await expect(page.locator(".peek-bit")).toHaveCount(64);
 	await page.locator(".peek-actions button", { hasText: "esc" }).click();
-	await expect(page.locator(".cases-card")).toContainText("2 tests");
-	await expect(page.locator(".cases-card")).toContainText("todos ok");
+	await expect(page.locator(".test-score")).toHaveText("2/2");
+	await expect(page.locator(".test-score")).toHaveClass(/ok/);
 	await expect(page.locator(".panel-content")).toContainText("go run");
 
 	// regression: opening a Go file must never route its content to ZLS
 	await page.getByRole("button", { name: "main_test.go", exact: true }).click();
-	await expect(page.locator(".editor-header")).toContainText(
+	await expect(page.locator(".global-status")).toContainText(
 		"src/main_test.go",
 	);
 	await page.waitForTimeout(1500);
@@ -727,13 +778,13 @@ test("go sessions run with inline values, tests and mapped diagnostics", async (
 	await expect(page.locator(".state-compile_error")).toBeVisible({
 		timeout: 60_000,
 	});
-	await page.getByRole("button", { name: /Problems/ }).click();
+	await openTermView(page, /Problems/);
 	await expect(page.getByText(/cannot use "no"/).first()).toBeVisible();
 	await expect(
 		page.getByText(/src\/main\.go · compiler · Ln 6/).first(),
 	).toBeVisible();
 
-	await page.getByRole("button", { name: "Output" }).click();
+	await openTermView(page, "Salida");
 	await replaceEditor(
 		page,
 		'package main\n\nimport "fmt"\n\nfunc main() {\n\tfmt.Println("antes")\n\tpanic("boom")\n}\n',
@@ -759,19 +810,18 @@ test("ts sessions run with inline values, tests and non-blocking type errors", a
 		localStorage.setItem("ziglive.language.v1", "ts");
 	});
 	await page.reload();
-	await expect(page.locator(".brand-chip")).toBeVisible();
-	const vimMode = page.getByLabel("Vim Mode");
-	if (await vimMode.isChecked()) await vimMode.uncheck();
+	await expect(page.locator(".file-tree")).toBeVisible();
+	await setToggle(page, "Vim Mode", false);
 	await expect(page.locator(".state-succeeded")).toBeVisible({
 		timeout: 60_000,
 	});
-	await expect(page.locator(".editor-header")).toContainText("src/main.ts");
+	await expect(page.locator(".global-status")).toContainText("src/main.ts");
 	await expect(page.getByText("40 : number", { exact: true })).toBeVisible();
 	await expect(
 		page.locator(".inline-value").filter({ hasText: "[ 40, 3, 43 ] : Array" }),
 	).toBeVisible();
-	await expect(page.locator(".cases-card")).toContainText("2 tests");
-	await expect(page.locator(".cases-card")).toContainText("todos ok");
+	await expect(page.locator(".test-score")).toHaveText("2/2");
+	await expect(page.locator(".test-score")).toHaveClass(/ok/);
 	await expect(page.locator(".panel-content")).toContainText("node main.ts");
 
 	// A type error surfaces as a diagnostic but the program still runs.
@@ -785,13 +835,13 @@ test("ts sessions run with inline values, tests and non-blocking type errors", a
 	await expect(page.locator(".panel-content")).toContainText(
 		"sigue corriendo: no",
 	);
-	await page.getByRole("button", { name: /Problems/ }).click();
+	await openTermView(page, /Problems/);
 	await expect(
 		page.getByText(/Type 'string' is not assignable/).first(),
 	).toBeVisible();
 
 	// An uncaught throw is a runtime error with a mapped location.
-	await page.getByRole("button", { name: "Output" }).click();
+	await openTermView(page, "Salida");
 	await replaceEditor(
 		page,
 		'console.log("antes");\nthrow new Error("boom esperado");\n',
@@ -829,19 +879,18 @@ test("python sessions run with inline values, tests and tracebacks", async ({
 		localStorage.setItem("ziglive.language.v1", "py");
 	});
 	await page.reload();
-	await expect(page.locator(".brand-chip")).toBeVisible();
-	const vimMode = page.getByLabel("Vim Mode");
-	if (await vimMode.isChecked()) await vimMode.uncheck();
+	await expect(page.locator(".file-tree")).toBeVisible();
+	await setToggle(page, "Vim Mode", false);
 	await expect(page.locator(".state-succeeded")).toBeVisible({
 		timeout: 60_000,
 	});
-	await expect(page.locator(".editor-header")).toContainText("src/main.py");
+	await expect(page.locator(".global-status")).toContainText("src/main.py");
 	await expect(page.getByText("40 : int", { exact: true })).toBeVisible();
 	await expect(
 		page.locator(".inline-value").filter({ hasText: "[40, 3, 43] : list" }),
 	).toBeVisible();
-	await expect(page.locator(".cases-card")).toContainText("2 tests");
-	await expect(page.locator(".cases-card")).toContainText("todos ok");
+	await expect(page.locator(".test-score")).toHaveText("2/2");
+	await expect(page.locator(".test-score")).toHaveClass(/ok/);
 	await expect(page.locator(".panel-content")).toContainText("python3 main.py");
 
 	// Syntax errors come from the instrumenter's ast.parse with positions.
@@ -866,7 +915,7 @@ test("python sessions run with inline values, tests and tracebacks", async ({
 	await expect(
 		terminal.locator("pre.error").filter({ hasText: /Traceback/ }).first(),
 	).toBeVisible();
-	await page.getByRole("button", { name: /Problems/ }).click();
+	await openTermView(page, /Problems/);
 	await expect(
 		page.getByText(/src\/main\.py · runtime · Ln 2/).first(),
 	).toBeVisible();
@@ -893,9 +942,8 @@ async function openCFamily(
 		localStorage.setItem("ziglive.language.v1", lang);
 	}, language);
 	await page.reload();
-	await expect(page.locator(".brand-chip")).toBeVisible();
-	const vimMode = page.getByLabel("Vim Mode");
-	if (await vimMode.isChecked()) await vimMode.uncheck();
+	await expect(page.locator(".file-tree")).toBeVisible();
+	await setToggle(page, "Vim Mode", false);
 	return true;
 }
 
@@ -906,10 +954,10 @@ test("c sessions run with typed probes, tests and mapped diagnostics", async ({
 	await expect(page.locator(".state-succeeded")).toBeVisible({
 		timeout: 60_000,
 	});
-	await expect(page.locator(".editor-header")).toContainText("src/main.c");
+	await expect(page.locator(".global-status")).toContainText("src/main.c");
 	await expect(page.getByText("40 : int", { exact: true })).toBeVisible();
-	await expect(page.locator(".cases-card")).toContainText("2 tests");
-	await expect(page.locator(".cases-card")).toContainText("todos ok");
+	await expect(page.locator(".test-score")).toHaveText("2/2");
+	await expect(page.locator(".test-score")).toHaveClass(/ok/);
 
 	await replaceEditor(
 		page,
@@ -918,7 +966,7 @@ test("c sessions run with typed probes, tests and mapped diagnostics", async ({
 	await expect(page.locator(".state-compile_error")).toBeVisible({
 		timeout: 60_000,
 	});
-	await page.getByRole("button", { name: /Problems/ }).click();
+	await openTermView(page, /Problems/);
 	await expect(
 		page.getByText(/expected ';' at end of declaration/).first(),
 	).toBeVisible();
@@ -934,11 +982,11 @@ test("cpp sessions run with stream previews and failing asserts", async ({
 	await expect(page.locator(".state-succeeded")).toBeVisible({
 		timeout: 60_000,
 	});
-	await expect(page.locator(".editor-header")).toContainText("src/main.cpp");
+	await expect(page.locator(".global-status")).toContainText("src/main.cpp");
 	await expect(
 		page.locator(".inline-value").filter({ hasText: "total : std::basic_string" }),
 	).toBeVisible();
-	await expect(page.locator(".cases-card")).toContainText("todos ok");
+	await expect(page.locator(".test-score")).toHaveText("2/2");
 
 	// regression: LSP features must work on a freshly opened file WITHOUT
 	// typing — didOpen used to be dropped while the socket was connecting
@@ -954,7 +1002,7 @@ test("cpp sessions run with stream previews and failing asserts", async ({
 		page,
 		"#include <cassert>\n\nint apply_tax(int price, int tax);\n\nvoid test_falla() {\n\tassert(apply_tax(40, 0) == 41);\n}\n",
 	);
-	await expect(page.locator(".cases-card")).toContainText("1 fallando", {
+	await expect(page.locator(".drawer-sub")).toContainText("1 fallando", {
 		timeout: 60_000,
 	});
 	await expect(page.locator(".case-message")).toContainText(/Assertion|assert/);

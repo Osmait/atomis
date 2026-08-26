@@ -21,7 +21,7 @@ import {
 	type VimAdapterInstance,
 } from "monaco-vim";
 import { CommandPalette } from "./components/CommandPalette.js";
-import { FileIcon, FolderIcon, ZigMark } from "./components/FileIcon.js";
+import { FileIcon, FolderIcon } from "./components/FileIcon.js";
 import {
 	displayPreview,
 	parseIntegerPreview,
@@ -29,6 +29,14 @@ import {
 	type ValueFmt,
 } from "./lowlevel.js";
 import { PeekPanel } from "./components/PeekPanel.js";
+import { Lucide } from "./components/Lucide.js";
+import {
+	APP_FONTS,
+	APP_SIZES,
+	APP_THEMES,
+	type AppTheme,
+	SettingsModal,
+} from "./components/SettingsModal.js";
 import {
 	ENTRY_FILES,
 	languageForPath,
@@ -178,6 +186,40 @@ const DEFAULT_SETTINGS: Settings = {
 };
 const SETTINGS_KEY = "ziglive.settings.v1";
 const VALUE_FMT_KEY = "ziglive.value-fmt.v1";
+const APPEARANCE_KEY = "ziglive.appearance.v1";
+
+interface Appearance {
+	theme: AppTheme;
+	fontIndex: number;
+	sizeIndex: number;
+}
+
+function loadAppearance(): Appearance {
+	try {
+		const stored = JSON.parse(
+			localStorage.getItem(APPEARANCE_KEY) ?? "{}",
+		) as Partial<Appearance>;
+		return {
+			theme: APP_THEMES.some((entry) => entry.id === stored.theme)
+				? (stored.theme as AppTheme)
+				: "mocha",
+			fontIndex:
+				typeof stored.fontIndex === "number" &&
+				stored.fontIndex >= 0 &&
+				stored.fontIndex < APP_FONTS.length
+					? stored.fontIndex
+					: 0,
+			sizeIndex:
+				typeof stored.sizeIndex === "number" &&
+				stored.sizeIndex >= 0 &&
+				stored.sizeIndex < APP_SIZES.length
+					? stored.sizeIndex
+					: 1,
+		};
+	} catch {
+		return { theme: "mocha", fontIndex: 0, sizeIndex: 1 };
+	}
+}
 const SOURCE_KEY = "ziglive.source.v1";
 const VIM_MODE_KEY = "ziglive.vim-mode.v1";
 const LANGUAGE_KEY = "ziglive.language.v1";
@@ -248,6 +290,11 @@ export function App(): React.JSX.Element {
 		undefined,
 	);
 	const [peekNode, setPeekNode] = useState<HTMLDivElement | null>(null);
+	const [drawer, setDrawer] = useState(false);
+	const [drawerTab, setDrawerTab] = useState<"tests" | "hist">("tests");
+	const [termMenuOpen, setTermMenuOpen] = useState(false);
+	const [settingsOpen, setSettingsOpen] = useState(false);
+	const [appearance, setAppearance] = useState<Appearance>(loadAppearance);
 	const [runState, setRunState] = useState<RunState>("idle");
 	const [status, setStatus] = useState("Starting…");
 	const [catalog, setCatalog] = useState<ProbeDescriptor[]>([]);
@@ -422,6 +469,14 @@ export function App(): React.JSX.Element {
 		},
 		[sendRuntime, session],
 	);
+
+	const updateAppearance = useCallback((next: Partial<Appearance>): void => {
+		setAppearance((previous) => {
+			const merged = { ...previous, ...next };
+			localStorage.setItem(APPEARANCE_KEY, JSON.stringify(merged));
+			return merged;
+		});
+	}, []);
 
 	const run = useCallback((): void => {
 		if (!session) return;
@@ -687,6 +742,8 @@ export function App(): React.JSX.Element {
 					ms: `${event.result.executionMs.toFixed(1)}ms`,
 				};
 				setHistory((previous) => [entry, ...previous].slice(0, 4));
+				if (summary && (summary.failed > 0 || summary.leaked > 0))
+					setDrawer(true);
 			}
 		} else if (event.type === "server.error") setStatus(event.message);
 	}, []);
@@ -1288,11 +1345,42 @@ export function App(): React.JSX.Element {
 				event.preventDefault();
 				event.stopPropagation();
 				formatAndNormal();
+			} else if (key === "t") {
+				event.preventDefault();
+				event.stopPropagation();
+				setDrawer((previous) => !previous);
+				updateLayout({ termOpen: true, zen: false });
+			} else if (event.key === ",") {
+				event.preventDefault();
+				event.stopPropagation();
+				setSettingsOpen((previous) => !previous);
+			} else if ("12345".includes(event.key)) {
+				event.preventDefault();
+				event.stopPropagation();
+				const fmt = VALUE_FMTS[Number(event.key) - 1];
+				if (fmt) {
+					setValueFmt(fmt);
+					localStorage.setItem(VALUE_FMT_KEY, fmt);
+				}
 			}
 		};
 		window.addEventListener("keydown", onKey, true);
 		return () => window.removeEventListener("keydown", onKey, true);
 	}, [formatAndNormal, run, toggleZen, updateLayout]);
+
+	useEffect(() => {
+		if (!termMenuOpen) return;
+		const close = (event: PointerEvent): void => {
+			if (
+				event.target instanceof Element &&
+				event.target.closest(".term-menu-wrap")
+			)
+				return;
+			setTermMenuOpen(false);
+		};
+		window.addEventListener("pointerdown", close);
+		return () => window.removeEventListener("pointerdown", close);
+	}, [termMenuOpen]);
 
 	useEffect(() => {
 		const narrowQuery = window.matchMedia("(max-width: 1040px)");
@@ -1640,15 +1728,6 @@ export function App(): React.JSX.Element {
 		(problem) => problem.severity === "error",
 	).length;
 	const outputRows = groupOutput(output as TerminalEntry[]);
-	const casesState = busy
-		? runState === "testing"
-			? "corriendo…"
-			: "—"
-		: testSummary
-			? failingCount
-				? `${failingCount} fallando`
-				: "todos ok"
-			: "—";
 	const diagLabel = active
 		? `${RUN_STATE_LABELS[runState]}…`
 		: [
@@ -1681,6 +1760,65 @@ export function App(): React.JSX.Element {
 				: result.exitCode === 0
 					? `✓ ok · ${result.executionMs.toFixed(1)}ms`
 					: "✗ error";
+	const testsDone = !busy && testSummary !== undefined;
+	const testsTone =
+		!testsDone || !tests.length ? "" : failingCount ? "err" : "ok";
+	const termTone = active
+		? "busy"
+		: result === undefined
+			? ""
+			: result.exitCode === 0 && !failingCount
+				? "ok"
+				: "err";
+	// Design semantics: non-failing over total (skips count toward the left).
+	const drawerScore = tests.length
+		? `${testsDone ? tests.length - failingCount : "—"}/${tests.length}`
+		: "0";
+	const drawerSub = !tests.length
+		? "esta ejecución no tiene tests"
+		: !testsDone
+			? busy
+				? "corriendo…"
+				: "sin ejecutar"
+			: failingCount
+				? `${failingCount} fallando${result ? ` · ${result.executionMs.toFixed(1)}ms` : ""}`
+				: `todos pasando${result ? ` · ${result.executionMs.toFixed(1)}ms` : ""}`;
+	const TEST_HINTS: Record<Language, [string, string]> = {
+		zig: [
+			'salen de los bloques test "…" del archivo',
+			'escribe test "nombre" { … } y aparecerá aquí',
+		],
+		rust: [
+			"salen de las fn con #[test] del archivo",
+			"escribe #[test] fn nombre() { … } y aparecerá aquí",
+		],
+		go: [
+			"salen de las func TestXxx de *_test.go",
+			"escribe func TestNombre(t *testing.T) { … } en un *_test.go",
+		],
+		ts: [
+			"salen de los test()/it() de *.test.ts",
+			"escribe test('nombre', () => { … }) en un *.test.ts",
+		],
+		py: [
+			"salen de las def test_* de test_*.py",
+			"escribe def test_nombre(): … en un test_*.py",
+		],
+		c: [
+			"salen de las void test_*(void) de *_test.c",
+			"escribe void test_nombre(void) { … } en un *_test.c",
+		],
+		cpp: [
+			"salen de las void test_*() de *_test.cpp",
+			"escribe void test_nombre() { … } en un *_test.cpp",
+		],
+	};
+	const caseBarTone = (testId: string): string => {
+		if (!testsDone) return "";
+		const testResult = testResults.get(testId);
+		if (!testResult) return "";
+		return failingStatuses.has(testResult.status) ? "err" : "ok";
+	};
 	const zenTone = active
 		? "busy"
 		: result === undefined
@@ -1691,6 +1829,7 @@ export function App(): React.JSX.Element {
 	const activeLanguage =
 		languageForPath(activePath) ?? activeLanguageRef.current;
 	const runDisabled = Boolean(session.degraded[activeLanguage]);
+	const [casesHintSource, casesHintEmpty] = TEST_HINTS[activeLanguage];
 	const runCommand = WEB_LANGUAGE_PACKS[activeLanguage].runCommand;
 	const testCommand = WEB_LANGUAGE_PACKS[activeLanguage].testCommand;
 	const toggleAutoRun = (): void =>
@@ -1772,35 +1911,17 @@ export function App(): React.JSX.Element {
 	return (
 		<main
 			className={`app-shell${zen ? " zen" : ""} dock-${dockEffective}${layout.termMax ? " term-max" : ""}`}
+			data-theme={appearance.theme}
+			style={{ fontFamily: APP_FONTS[appearance.fontIndex]?.css }}
 		>
 			<div className="workspace">
 				{treeVisible && (
 					<aside className="tree-card">
-						<header className="tree-header brand-chip">
-							<i className="brand-glyph" title={`zig ${session.zigVersion}`}>
-								<ZigMark />
-							</i>
-							<span className="brand-name">ziglive</span>
-							<span className="brand-dim">scratch</span>
-							<span className="tree-tools">
-								<button
-									onClick={() => setPaletteOpen(true)}
-									title="Buscar archivo (⌘K)"
-								>
-									⌕
-								</button>
-								<button
-									className="tree-hide"
-									onClick={() => updateLayout({ treeOpen: false })}
-									title="Ocultar árbol (⌘B)"
-								>
-									✕
-								</button>
-							</span>
-						</header>
 						<div className="file-tree">
 							<div className="tree-root">
-								<span className="chev">▾</span>
+								<span className="chev">
+									<Lucide icon="chevron-down" size={13} />
+								</span>
 								<FolderIcon open /> src
 								<span className="tree-tools root-tools">
 									<button onClick={() => createFile()} title="Crear archivo">
@@ -1822,6 +1943,13 @@ export function App(): React.JSX.Element {
 										title="Eliminar archivo"
 									>
 										×
+									</button>
+									<button
+										className="tree-hide"
+										onClick={() => updateLayout({ treeOpen: false })}
+										title="Ocultar árbol (⌘B)"
+									>
+										<Lucide icon="x" size={12} />
 									</button>
 								</span>
 							</div>
@@ -1880,57 +2008,6 @@ export function App(): React.JSX.Element {
 								);
 							})}
 						</div>
-						<div className="tree-settings">
-							<label className="setting-row">
-								<input
-									type="checkbox"
-									checked={settings.autoRun}
-									disabled={runDisabled}
-									onChange={(event) =>
-										sendSettings({
-											...settings,
-											autoRun: event.target.checked,
-										})
-									}
-								/>
-								<span>Auto Run</span>
-								<b className={settings.autoRun ? "val on" : "val"}>
-									{settings.autoRun ? "on" : "off"}
-								</b>
-							</label>
-							<label className="setting-row">
-								<input
-									type="checkbox"
-									checked={settings.autoInspect}
-									onChange={(event) => {
-										sendSettings({
-											...settings,
-											autoInspect: event.target.checked,
-										});
-										setTimeout(run, 0);
-									}}
-								/>
-								<span>Auto Inspect</span>
-								<b className={settings.autoInspect ? "val on" : "val"}>
-									{settings.autoInspect ? "on" : "off"}
-								</b>
-							</label>
-							<label className="setting-row">
-								<input
-									type="checkbox"
-									checked={vimEnabled}
-									onChange={(event) => changeVimMode(event.target.checked)}
-								/>
-								<span>Vim Mode</span>
-								<b className={vimEnabled ? "val on" : "val"}>
-									{vimEnabled ? "on" : "off"}
-								</b>
-							</label>
-							<button className="setting-row" onClick={toggleZen}>
-								<span>Zen Mode</span>
-								<b className="val">⌘.</b>
-							</button>
-						</div>
 					</aside>
 				)}
 
@@ -1944,7 +2021,7 @@ export function App(): React.JSX.Element {
 										onClick={() => updateLayout({ treeOpen: true })}
 										title="Mostrar árbol (⌘B)"
 									>
-										▤
+										<Lucide icon="panel-left" size={14} />
 									</button>
 								)}
 								<div className="tab-pill" role="tablist">
@@ -1991,44 +2068,40 @@ export function App(): React.JSX.Element {
 								</div>
 								<div className="chrome-right">
 									<button
-										className={`auto-chip${settings.autoRun ? " on" : ""}`}
+										className={`auto-text${settings.autoRun ? " on" : ""}`}
 										disabled={runDisabled}
 										onClick={toggleAutoRun}
+										title={
+											settings.autoRun
+												? "Auto Run activo — clic para pausar"
+												: "Auto Run pausado — clic para activar"
+										}
 									>
-										auto {settings.autoRun ? "✓" : "✕"}
+										auto
 									</button>
 									<button
-										className="run-button"
+										className="chrome-icon"
+										onClick={() => setSettingsOpen(true)}
+										title="Ajustes (⌘,)"
+									>
+										<Lucide icon="settings" size={14} />
+									</button>
+									<button
+										aria-label={active ? "Detener" : "Run"}
+										className={`run-button${active ? " running" : ""}`}
 										disabled={runDisabled}
 										onClick={active ? stop : run}
+										title={active ? "Detener" : "Run (⌘↵)"}
 									>
 										{active ? (
-											<>
-												<span className="spin">⟳</span> Corriendo
-											</>
+											<span className="spin">⟳</span>
 										) : (
-											<>▶ Run</>
+											<Lucide icon="play" size={13} />
 										)}
-										<span className="kbd-chip">⌘↵</span>
 									</button>
 								</div>
 							</div>
 						)}
-						<header className="pane-header editor-header">
-							<span className="file-badge">
-								<FileIcon path={activePath} />
-								<b>src/{activePath}</b>
-							</span>
-							<span className="file-meta">
-								·{" "}
-								{activeTests.length
-									? `${activeTests.length} tests en el archivo`
-									: `${visibleSource.split("\n").length}L`}
-							</span>
-							<span className="header-cursor">
-								{cursorPosition.line}:{cursorPosition.column}
-							</span>
-						</header>
 						<div className="editor-wrap">
 							<Editor
 								height="100%"
@@ -2042,12 +2115,13 @@ export function App(): React.JSX.Element {
 								options={{
 									automaticLayout: true,
 									fontFamily:
+										APP_FONTS[appearance.fontIndex]?.css ??
 										'"JetBrains Mono", "SFMono-Regular", Consolas, monospace',
 									fontLigatures: true,
-									fontSize: 13.5,
+									fontSize: APP_SIZES[appearance.sizeIndex] ?? 13,
 									glyphMargin: true,
 									inlineSuggest: { enabled: true },
-									lineHeight: 24,
+									lineHeight: (APP_SIZES[appearance.sizeIndex] ?? 13) + 11,
 									minimap: { enabled: false },
 									overviewRulerBorder: false,
 									padding: { top: 14 },
@@ -2056,126 +2130,161 @@ export function App(): React.JSX.Element {
 								}}
 							/>
 						</div>
-						<footer className="editor-footer">
-							<button onClick={() => updateLayout({ treeOpen: !layout.treeOpen })}>
-								<b>⌘B</b> árbol
-							</button>
-							<button onClick={() => updateLayout({ termOpen: !layout.termOpen })}>
-								<b>⌘J</b> terminal
-							</button>
-							<button onClick={toggleZen}>
-								<b>⌘.</b> zen
-							</button>
-							<button onClick={formatAndNormal}>
-								<b>⌘S</b> formato
-							</button>
-							<span className="fmt-switch">
-								<span className="fmt-name">valores</span>
-								{VALUE_FMTS.map((fmt) => (
-									<button
-										className={valueFmt === fmt ? "active" : ""}
-										key={fmt}
-										onClick={() => {
-											setValueFmt(fmt);
-											localStorage.setItem(VALUE_FMT_KEY, fmt);
-										}}
-									>
-										{fmt}
-									</button>
-								))}
-							</span>
-							<span
-								className={`diag-label${diagOk ? " ok" : active ? "" : " err"}`}
-							>
-								{diagLabel}
-							</span>
-						</footer>
 					</section>
 
 					{termVisible && (
 						<section className="side-panel">
 							<header className="pane-header terminal-header">
-								<nav className="term-tabs">
+								<span className={`run-dot ${termTone}`} />
+								{tab !== "output" && (
+									<span className="term-view-label">
+										{tab === "problems"
+											? `Problemas${allProblems.length ? ` ${allProblems.length}` : ""}`
+											: "Runtime"}
+									</span>
+								)}
+								<span className="term-menu-wrap">
 									<button
-										aria-label="Output"
-										className={tab === "output" ? "active" : ""}
-										onClick={() => setTab("output")}
+										aria-label="Opciones del terminal"
+										className={`term-menu-btn${termMenuOpen ? " open" : ""}`}
+										onClick={() => setTermMenuOpen((previous) => !previous)}
 									>
-										Terminal
+										<Lucide icon="ellipsis-vertical" size={15} />
 									</button>
-									<button
-										aria-label={`Problems (${allProblems.length})`}
-										className={tab === "problems" ? "active" : ""}
-										onClick={() => setTab("problems")}
-									>
-										Problemas{allProblems.length ? ` ${allProblems.length}` : ""}
-									</button>
-									<button
-										className={tab === "runtime" ? "active" : ""}
-										onClick={() => setTab("runtime")}
-									>
-										Runtime
-									</button>
-								</nav>
-								<span className="term-controls">
-									{tab === "output" && (
-										<button
-											className="clear-button"
-											onClick={() => {
-												setOutput([]);
-												pinnedLogLocationRef.current = undefined;
-												logSourceDecorationsRef.current?.clear();
-											}}
-											title="Limpiar terminal"
-										>
-											⌫
-										</button>
+									{termMenuOpen && (
+										<div className="term-menu" role="menu">
+											{!narrow && (
+												<>
+													<button
+														className={
+															dockEffective === "right" && !layout.termMax
+																? "on"
+																: ""
+														}
+														onClick={() => {
+															updateLayout({ dock: "right", termMax: false });
+															setTermMenuOpen(false);
+														}}
+														role="menuitem"
+													>
+														<Lucide icon="panel-right" size={13} />
+														<span>Acoplar a la derecha</span>
+													</button>
+													<button
+														className={
+															dockEffective === "bottom" && !layout.termMax
+																? "on"
+																: ""
+														}
+														onClick={() => {
+															updateLayout({ dock: "bottom", termMax: false });
+															setTermMenuOpen(false);
+														}}
+														role="menuitem"
+													>
+														<Lucide icon="panel-bottom" size={13} />
+														<span>Acoplar abajo</span>
+													</button>
+												</>
+											)}
+											<button
+												className={layout.termMax ? "on" : ""}
+												onClick={() => {
+													updateLayout({ termMax: !layout.termMax });
+													setTermMenuOpen(false);
+												}}
+												role="menuitem"
+											>
+												<Lucide
+													icon={layout.termMax ? "minimize-2" : "maximize-2"}
+													size={13}
+												/>
+												<span>
+													{layout.termMax ? "Restaurar tamaño" : "Maximizar"}
+												</span>
+											</button>
+											<button
+												className={drawer ? "on" : ""}
+												onClick={() => {
+													setDrawer((previous) => !previous);
+													setTermMenuOpen(false);
+												}}
+												role="menuitem"
+											>
+												<Lucide icon="flask-conical" size={13} />
+												<span>{drawer ? "Ocultar tests" : "Ver tests"}</span>
+												<b>⌘T</b>
+											</button>
+											<span className="term-menu-sep" />
+											<button
+												className={tab === "output" ? "on" : ""}
+												onClick={() => {
+													setTab("output");
+													setTermMenuOpen(false);
+												}}
+												role="menuitem"
+											>
+												<Lucide icon="terminal" size={13} />
+												<span>Salida</span>
+											</button>
+											<button
+												aria-label={`Problems (${allProblems.length})`}
+												className={tab === "problems" ? "on" : ""}
+												onClick={() => {
+													setTab("problems");
+													setTermMenuOpen(false);
+												}}
+												role="menuitem"
+											>
+												<Lucide icon="triangle-alert" size={13} />
+												<span>
+													Problemas
+													{allProblems.length ? ` ${allProblems.length}` : ""}
+												</span>
+											</button>
+											<button
+												className={tab === "runtime" ? "on" : ""}
+												onClick={() => {
+													setTab("runtime");
+													setTermMenuOpen(false);
+												}}
+												role="menuitem"
+											>
+												<Lucide icon="activity" size={13} />
+												<span>Runtime</span>
+											</button>
+											<span className="term-menu-sep" />
+											<button
+												onClick={() => {
+													setOutput([]);
+													pinnedLogLocationRef.current = undefined;
+													logSourceDecorationsRef.current?.clear();
+													setTermMenuOpen(false);
+												}}
+												role="menuitem"
+											>
+												<Lucide icon="eraser" size={13} />
+												<span>Limpiar salida</span>
+											</button>
+											<button
+												onClick={() => {
+													updateLayout({ termOpen: false });
+													setTermMenuOpen(false);
+												}}
+												role="menuitem"
+											>
+												<Lucide icon="x" size={13} />
+												<span>Cerrar terminal</span>
+												<b>⌘J</b>
+											</button>
+										</div>
 									)}
-									<button
-										className={
-											dockEffective === "right" && !layout.termMax
-												? "active"
-												: ""
-										}
-										onClick={() =>
-											updateLayout({ dock: "right", termMax: false })
-										}
-										title="Acoplar a la derecha"
-									>
-										▐
-									</button>
-									<button
-										className={
-											dockEffective === "bottom" && !layout.termMax
-												? "active"
-												: ""
-										}
-										onClick={() =>
-											updateLayout({ dock: "bottom", termMax: false })
-										}
-										title="Acoplar abajo"
-									>
-										▄
-									</button>
-									<button
-										className={layout.termMax ? "active" : ""}
-										onClick={() => updateLayout({ termMax: !layout.termMax })}
-										title="Maximizar terminal"
-									>
-										⤢
-									</button>
-									<button
-										onClick={() => updateLayout({ termOpen: false })}
-										title="Cerrar terminal (⌘J)"
-									>
-										✕
-									</button>
 								</span>
 							</header>
 
 							<div className="panel-content">
 								{tab === "output" && (
-									<div className="output-list">
+									<div className={`output-list${drawer ? " dimmed" : ""}`}>
 										<div className="terminal-command">
 											<b>$</b> {runCommand}
 											{tests.length ? ` · ${testCommand} (${tests.length})` : ""}
@@ -2218,127 +2327,8 @@ export function App(): React.JSX.Element {
 											</div>
 										)}
 
-										{tests.length > 0 && (
-											<div className="cases-card">
-												<header>
-													<span>
-														{tests.length} tests
-														{activeTests.length &&
-														activeTests.length !== tests.length
-															? ` · ${activeTests.length} en ${activePath}`
-															: ""}
-													</span>
-													<b
-														className={
-															casesState === "todos ok"
-																? "ok"
-																: casesState.includes("fallando")
-																	? "err"
-																	: ""
-														}
-													>
-														{casesState}
-													</b>
-												</header>
-												{tests.map((test) => {
-													const testResult = testResults.get(test.testId);
-													const failing =
-														testResult &&
-														failingStatuses.has(testResult.status);
-													const mark = testResult
-														? TEST_MARKS[testResult.status]
-														: "·";
-													return (
-														<div className="case-item" key={test.testId}>
-														<button
-															className={`case-row${failing ? " failed" : ""}`}
-															onClick={() => jumpToTest(test)}
-														>
-															<span
-																className={`case-mark${
-																	testResult
-																		? failing
-																			? " err"
-																			: testResult.status === "passed"
-																				? " ok"
-																				: ""
-																		: ""
-																}`}
-															>
-																{mark}
-															</span>
-															<span className="case-name">
-																{test.name}
-																{tests.some(
-																	(other) => other.path !== test.path,
-																)
-																	? ` · ${test.path.replace(/^src\//, "")}`
-																	: ""}
-															</span>
-															<span className="case-meta">
-																{testResult && !failing
-																	? testResult.status === "passed"
-																		? testResult.durationMs < 0.05
-																			? "ok"
-																			: `${testResult.durationMs.toFixed(1)}ms`
-																		: testResult.status
-																	: `L${test.line}`}
-															</span>
-														</button>
-														{failing && testResult?.message && (
-															<pre className="case-message">
-																{testResult.message}
-															</pre>
-														)}
-														</div>
-													);
-												})}
-												{[...testResults.values()]
-													.filter((testResult) => !testResult.testId)
-													.map((testResult) => (
-														<div
-															className="case-row unmatched"
-															key={testResult.name}
-														>
-															<span
-																className={`case-mark${failingStatuses.has(testResult.status) ? " err" : " ok"}`}
-															>
-																{TEST_MARKS[testResult.status]}
-															</span>
-															<span className="case-name">
-																{testResult.name}
-															</span>
-														</div>
-													))}
-												<footer>
-													salen de los bloques test "…" del archivo · clic para
-													ir a la línea
-												</footer>
-											</div>
-										)}
 
-										{history.length > 0 && (
-											<div className="history-block">
-												<div className="history-title">historial</div>
-												{history.map((entry) => (
-													<div className="history-row" key={entry.n}>
-														<span className={entry.ok ? "ok" : "err"}>
-															{entry.ok ? "✓" : "✗"} #{entry.n}
-														</span>
-														<span>{entry.ms}</span>
-													</div>
-												))}
-											</div>
-										)}
 
-										<button className="prompt-row" onClick={run}>
-											<span className="prompt-glyph">›</span>
-											<span>
-												{runCommand}
-												{tests.length ? ` · ${testCommand} (${tests.length})` : ""}
-											</span>
-											<span className="prompt-enter">↵</span>
-										</button>
 									</div>
 								)}
 								{tab === "problems" && (
@@ -2419,6 +2409,200 @@ export function App(): React.JSX.Element {
 									</div>
 								)}
 							</div>
+
+							{tab === "output" && !drawer && (
+								<button
+									className="test-bar"
+									onClick={() => setDrawer(true)}
+									title="Ver tests (⌘T)"
+								>
+									<Lucide icon="chevron-up" size={13} />
+									<span className="test-bar-label">
+										<span className={`run-dot ${testsTone}`} />
+										Tests
+									</span>
+									<span className="case-bars">
+										{tests.slice(0, 24).map((test) => (
+											<span
+												className={`case-bar ${caseBarTone(test.testId)}`}
+												key={test.testId}
+											/>
+										))}
+									</span>
+									<b className={`test-score ${testsTone}`}>{drawerScore}</b>
+									<span className="test-bar-kbd">⌘T</span>
+								</button>
+							)}
+
+							{tab === "output" && drawer && (
+								<div className="tests-drawer">
+									<button
+										className="drawer-handle"
+										onClick={() => setDrawer(false)}
+										title="Ocultar tests (⌘T)"
+									>
+										<span />
+									</button>
+									<div className="drawer-head">
+										<b className={`drawer-score ${testsTone}`}>{drawerScore}</b>
+										<div className="drawer-sub-wrap">
+											<span className="drawer-sub">{drawerSub}</span>
+											<span className="case-bars">
+												{tests.slice(0, 24).map((test) => (
+													<span
+														className={`case-bar ${caseBarTone(test.testId)}`}
+														key={test.testId}
+													/>
+												))}
+											</span>
+										</div>
+										<span className="drawer-tabs">
+											<button
+												className={drawerTab === "tests" ? "active" : ""}
+												onClick={() => setDrawerTab("tests")}
+											>
+												Tests
+											</button>
+											<button
+												className={drawerTab === "hist" ? "active" : ""}
+												onClick={() => setDrawerTab("hist")}
+											>
+												Historial
+											</button>
+										</span>
+										<button
+											className="drawer-close"
+											onClick={() => setDrawer(false)}
+											title="Cerrar (⌘T)"
+										>
+											<Lucide icon="chevron-down" size={14} />
+										</button>
+									</div>
+
+									{drawerTab === "hist" ? (
+										<div className="drawer-list history-list">
+											{history.map((entry) => (
+												<div className="history-row" key={entry.n}>
+													<Lucide
+														icon={entry.ok ? "circle-check" : "circle-x"}
+														size={13}
+													/>
+													<span className={entry.ok ? "ok" : "err"}>
+														#{entry.n}
+													</span>
+													<span className="history-ms">{entry.ms}</span>
+												</div>
+											))}
+											{!history.length && (
+												<div className="empty-state">sin corridas todavía</div>
+											)}
+										</div>
+									) : (
+										<div className="drawer-list cases-list">
+											{tests.map((test) => {
+												const testResult = testResults.get(test.testId);
+												const failing =
+													testResult &&
+													failingStatuses.has(testResult.status);
+												return (
+													<div
+														className={`case-item${failing ? " failed" : ""}`}
+														key={test.testId}
+													>
+														<button
+															className="case-row"
+															onClick={() => jumpToTest(test)}
+														>
+															<span
+																className={`case-mark${
+																	testResult
+																		? failing
+																			? " err"
+																			: testResult.status === "passed"
+																				? " ok"
+																				: ""
+																		: ""
+																}`}
+															>
+																<Lucide
+																	icon={
+																		!testResult
+																			? "circle-dashed"
+																			: failing
+																				? "circle-x"
+																				: "circle-check"
+																	}
+																	size={14}
+																/>
+															</span>
+															<span className="case-text">
+																<span className="case-name">{test.name}</span>
+																<span className="case-where">
+																	{test.path.replace(/^src\//, "")} · L
+																	{test.line}
+																</span>
+															</span>
+															<span className="case-meta">
+																{testResult && !failing
+																	? testResult.status === "passed"
+																		? testResult.durationMs < 0.05
+																			? "ok"
+																			: `${testResult.durationMs.toFixed(1)}ms`
+																		: testResult.status
+																	: `L${test.line}`}
+															</span>
+														</button>
+														{failing && (
+															<div className="case-detail">
+																{testResult?.message && (
+																	<pre className="case-message">
+																		{testResult.message}
+																	</pre>
+																)}
+																<div className="case-actions">
+																	<button onClick={() => jumpToTest(test)}>
+																		ir a L{test.line}
+																	</button>
+																	<button onClick={run}>correr tests</button>
+																</div>
+															</div>
+														)}
+													</div>
+												);
+											})}
+											{[...testResults.values()]
+												.filter((testResult) => !testResult.testId)
+												.map((testResult) => (
+													<div
+														className="case-item unmatched"
+														key={testResult.name}
+													>
+														<span
+															className={`case-mark${failingStatuses.has(testResult.status) ? " err" : " ok"}`}
+														>
+															<Lucide
+																icon={
+																	failingStatuses.has(testResult.status)
+																		? "circle-x"
+																		: "circle-check"
+																}
+																size={14}
+															/>
+														</span>
+														<span className="case-name">
+															{testResult.name}
+														</span>
+													</div>
+												))}
+											<div className="cases-hint">
+												{tests.length
+													? `${casesHintSource} · clic para ir a la línea`
+													: casesHintEmpty}
+											</div>
+										</div>
+									)}
+								</div>
+							)}
 						</section>
 					)}
 				</div>
@@ -2487,7 +2671,7 @@ export function App(): React.JSX.Element {
 						disabled={runDisabled}
 						onClick={active ? stop : run}
 					>
-						{active ? "■" : "▶"} ⌘↵
+						<Lucide icon={active ? "square" : "play"} size={12} /> Run
 					</button>
 					<button className="zen-exit" onClick={toggleZen}>
 						salir ⌘.
@@ -2542,6 +2726,58 @@ export function App(): React.JSX.Element {
 						peekNode,
 					);
 				})()}
+			{settingsOpen && (
+				<SettingsModal
+					fontIndex={appearance.fontIndex}
+					onClose={() => setSettingsOpen(false)}
+					onFont={(index) => updateAppearance({ fontIndex: index })}
+					onSize={(index) => updateAppearance({ sizeIndex: index })}
+					onTheme={(theme) => updateAppearance({ theme })}
+					onValueFmt={(fmt) => {
+						setValueFmt(fmt);
+						localStorage.setItem(VALUE_FMT_KEY, fmt);
+					}}
+					sizeIndex={appearance.sizeIndex}
+					theme={appearance.theme}
+					toggles={[
+						{
+							label: "Auto Run",
+							hint: "ejecuta al dejar de escribir",
+							on: settings.autoRun,
+							disabled: runDisabled,
+							act: toggleAutoRun,
+						},
+						{
+							label: "Auto Inspect",
+							hint: "valores en línea",
+							on: settings.autoInspect,
+							act: () => {
+								sendSettings({
+									...settings,
+									autoInspect: !settings.autoInspect,
+								});
+								setTimeout(run, 0);
+							},
+						},
+						{
+							label: "Vim Mode",
+							hint: "",
+							on: vimEnabled,
+							act: () => changeVimMode(!vimEnabled),
+						},
+						{
+							label: "Zen Mode",
+							hint: "⌘.",
+							on: zen,
+							act: () => {
+								setSettingsOpen(false);
+								toggleZen();
+							},
+						},
+					]}
+					valueFmt={valueFmt}
+				/>
+			)}
 			{paletteOpen && (
 				<CommandPalette
 					activePath={activePath}

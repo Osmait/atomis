@@ -97,7 +97,3 @@ export function FolderIcon({
 	);
 }
 
-/** Brand mark in the tree header (the Zig file icon at brand size). */
-export function ZigMark(): React.JSX.Element {
-	return <img src={zigIcon} alt="" draggable={false} />;
-}
