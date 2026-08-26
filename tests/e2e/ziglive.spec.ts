@@ -637,6 +637,27 @@ test("leader key navigates tree and terminal app-wide", async ({ page }) => {
 	await page.keyboard.press("Enter");
 	await expect(page.locator(".mode-chip")).not.toHaveText("ÁRBOL");
 
+	// leader e on a focused tree closes it
+	await page.keyboard.press(" ");
+	await page.keyboard.press("e");
+	await expect(page.locator(".mode-chip")).toHaveText("ÁRBOL");
+	await page.keyboard.press(" ");
+	await page.keyboard.press("e");
+	await expect(page.locator(".tree-card")).toHaveCount(0);
+	await page.keyboard.press("ControlOrMeta+B");
+	await expect(page.locator(".tree-card")).toBeVisible();
+
+	// leader h/l move focus across panels: editor → tree → editor → terminal
+	await page.keyboard.press(" ");
+	await page.keyboard.press("h");
+	await expect(page.locator(".mode-chip")).toHaveText("ÁRBOL");
+	await page.keyboard.press(" ");
+	await page.keyboard.press("l");
+	await expect(page.locator(".mode-chip")).not.toHaveText("ÁRBOL");
+	await page.keyboard.press(" ");
+	await page.keyboard.press("l");
+	await expect(page.locator(".mode-chip")).toHaveText("TERMINAL");
+
 	// leader t focuses the terminal; leader t again closes it
 	await page.keyboard.press("Escape");
 	await page.keyboard.press(" ");

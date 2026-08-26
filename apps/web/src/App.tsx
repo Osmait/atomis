@@ -1683,8 +1683,12 @@ export function App(): React.JSX.Element {
 				if (key === "e") {
 					event.preventDefault();
 					event.stopPropagation();
-					if (focusZoneRef.current === "tree") focusEditorZone();
-					else focusTreeZone();
+					// Same toggle shape as leader+t: focus it first, close it when
+					// it is already the focused zone.
+					if (focusZoneRef.current === "tree") {
+						updateLayout({ treeOpen: false });
+						focusEditorZone();
+					} else focusTreeZone();
 				} else if (key === "t") {
 					event.preventDefault();
 					event.stopPropagation();
@@ -1693,6 +1697,18 @@ export function App(): React.JSX.Element {
 						updateLayout({ termOpen: false });
 						focusEditorZone();
 					} else focusTermZone();
+				} else if (key === "h") {
+					// Move focus one panel to the left: terminal → editor → tree.
+					event.preventDefault();
+					event.stopPropagation();
+					if (focusZoneRef.current === "term") focusEditorZone();
+					else if (focusZoneRef.current === "editor") focusTreeZone();
+				} else if (key === "l") {
+					// Move focus one panel to the right: tree → editor → terminal.
+					event.preventDefault();
+					event.stopPropagation();
+					if (focusZoneRef.current === "tree") focusEditorZone();
+					else if (focusZoneRef.current === "editor") focusTermZone();
 				}
 				return;
 			}

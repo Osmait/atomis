@@ -185,7 +185,8 @@ export function SettingsModal({
 				<section className="settings-section">
 					<div className="settings-title">Teclado</div>
 					<div className="settings-toggle-hint">
-						leader + e abre el árbol · leader + t la terminal · j/k navegan
+						leader+e árbol · leader+t terminal · leader+h/l cambia de panel ·
+						j/k navegan
 					</div>
 					<div className="settings-pills">
 						{LEADER_OPTIONS.map((option) => (
