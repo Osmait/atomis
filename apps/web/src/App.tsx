@@ -212,7 +212,11 @@ export function App(): React.JSX.Element {
 			setOutput((previous) =>
 				[
 					...previous,
-					{ stream: event.stream, chunk: event.chunk, receivedAt: performance.now() },
+					{
+						stream: event.stream,
+						chunk: event.chunk,
+						receivedAt: performance.now(),
+					},
 				].slice(-500),
 			);
 		else if (event.type === "diagnostics") {
@@ -428,7 +432,8 @@ export function App(): React.JSX.Element {
 
 		const byLine = new Map<number, OwnedDiagnostic[]>();
 		for (const diagnostic of allProblems) {
-			if (diagnostic.line < 1 || diagnostic.line > model.getLineCount()) continue;
+			if (diagnostic.line < 1 || diagnostic.line > model.getLineCount())
+				continue;
 			const lineDiagnostics = byLine.get(diagnostic.line) ?? [];
 			if (
 				!lineDiagnostics.some(
@@ -464,18 +469,22 @@ export function App(): React.JSX.Element {
 				return {
 					range: {
 						startLineNumber: line,
-						startColumn: Math.max(1, endColumn - 1),
+						startColumn: endColumn,
 						endLineNumber: line,
 						endColumn,
 					} as MonacoApi.Range,
 					options: {
 						isWholeLine: true,
+						showIfCollapsed: true,
+						stickiness:
+							monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
 						className: `error-lens-line error-lens-${primary.severity}`,
 						linesDecorationsClassName: `error-lens-glyph error-lens-glyph-${primary.severity}`,
 						after: {
 							content: `  ${primary.severity === "error" ? "×" : "△"} ${message}`,
 							inlineClassName: `error-lens-message error-lens-message-${primary.severity}`,
 							inlineClassNameAffectsLetterSpacing: true,
+							cursorStops: monaco.editor.InjectedTextCursorStops.None,
 						},
 						hoverMessage: { value: `**${primary.owner}** — ${message}` },
 						overviewRuler: {
@@ -602,7 +611,8 @@ export function App(): React.JSX.Element {
 				<section className="editor-pane">
 					<header className="pane-header editor-header">
 						<span className="file-name">
-							<i>◆</i> main.zig <b className={stale ? "dirty active" : "dirty"} />
+							<i>◆</i> main.zig{" "}
+							<b className={stale ? "dirty active" : "dirty"} />
 						</span>
 						<span>
 							Ln {cursorPosition.line}, Col {cursorPosition.column}
@@ -749,7 +759,7 @@ export function App(): React.JSX.Element {
 					<footer className="status-bar">
 						<span>
 							Auto Run {settings.autoRun ? "activo" : "pausado"} · se ejecuta
-							 localmente
+							localmente
 							{Object.keys(session.degraded).length
 								? ` · ${Object.values(session.degraded).join(" · ")}`
 								: ""}

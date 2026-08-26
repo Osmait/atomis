@@ -118,7 +118,9 @@ pub fn main() void {
 	await expect(page.getByText(/before panic/)).toBeVisible();
 	await expect(page.getByText(/panic: expected panic/).first()).toBeVisible();
 	await page.getByRole("button", { name: /Problems/ }).click();
-	await expect(page.getByText(/Program panicked|abnormally/).first()).toBeVisible();
+	await expect(
+		page.getByText(/Program panicked|abnormally/).first(),
+	).toBeVisible();
 });
 
 test("infinite loop times out and Auto Run can be paused", async ({ page }) => {
