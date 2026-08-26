@@ -1409,7 +1409,11 @@ export function App(): React.JSX.Element {
 			? "json"
 			: activePath.endsWith(".md")
 				? "markdown"
-				: "plaintext";
+				: activePath.endsWith(".h")
+					? "c"
+					: activePath.endsWith(".hpp")
+						? "cpp"
+						: "plaintext";
 	const onChange = useCallback(
 		(source: string | undefined): void => {
 			if (!session || source === undefined) return;

@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const PROTOCOL_VERSION = 1 as const;
-export const languages = ["zig", "rust", "go", "ts", "py"] as const;
+export const languages = ["zig", "rust", "go", "ts", "py", "c", "cpp"] as const;
 export type Language = (typeof languages)[number];
 
 export function entryFileFor(language: Language): string {
@@ -9,6 +9,8 @@ export function entryFileFor(language: Language): string {
 	if (language === "go") return "main.go";
 	if (language === "ts") return "main.ts";
 	if (language === "py") return "main.py";
+	if (language === "c") return "main.c";
+	if (language === "cpp") return "main.cpp";
 	return "main.zig";
 }
 export const MAX_SOURCE_BYTES = 1024 * 1024;
@@ -312,6 +314,69 @@ export type RuntimeServerEvent =
 			message: string;
 			details?: string;
 	  };
+
+export const defaultCSource = `#include <stdio.h>
+
+int apply_tax(int price, int tax) {
+	return price + tax;
+}
+
+int main(void) {
+	int price = 40;
+	int tax = 3;
+	int total = apply_tax(price, tax);
+	int values[3] = {price, tax, total};
+
+	printf("total: %d\\n", values[2]);
+	return 0;
+}
+`;
+
+export const defaultCTestSource = `#include <assert.h>
+
+int apply_tax(int price, int tax);
+
+// Las funciones test_* corren tras main(): mira el panel de tests →
+void test_apply_tax_suma_el_impuesto(void) {
+	assert(apply_tax(40, 3) == 43);
+}
+
+void test_apply_tax_con_tasa_cero(void) {
+	assert(apply_tax(40, 0) == 40);
+}
+`;
+
+export const defaultCppSource = `#include <iostream>
+#include <string>
+
+int apply_tax(int price, int tax) {
+	return price + tax;
+}
+
+int main() {
+	int price = 40;
+	int tax = 3;
+	int total = apply_tax(price, tax);
+	std::string label = "total";
+
+	std::cout << label << ": " << total << "\\n";
+	return 0;
+}
+`;
+
+export const defaultCppTestSource = `#include <cassert>
+
+int apply_tax(int price, int tax);
+
+// Las funciones test_* corren tras main(): mira el panel de tests →
+void test_apply_tax_suma_el_impuesto() {
+	assert(apply_tax(40, 3) == 43);
+}
+
+void test_apply_tax_con_tasa_cero() {
+	assert(apply_tax(40, 0) == 40);
+}
+`;
 
 export const defaultPySource = `def apply_tax(price, tax):
     return price + tax

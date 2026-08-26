@@ -16,4 +16,5 @@
 - Folders are implicit (they exist through their files); renaming or deleting a whole folder means moving its files one by one.
 - TS/JS: Node's type stripping runs erasable TypeScript only (no `enum`/`namespace` values); relative imports need explicit `.ts` extensions; `tsc` type errors are diagnostics and never stop the run.
 - Python: probes cover simple `name = …` / `name: T = …` assignments (reassignments re-emit with an execution count); test files import the visible modules, so the program's top level runs again during the test phase.
+- C/C++: previews cover arithmetic types and `char*` in C (`_Generic`) and anything with `operator<<` in C++; the instrumenter parses with empty stub headers, so declarations of template-heavy unknown types can be missed (they run fine, just without a probe); a failing `assert()` aborts the test binary, so later tests stay unreported for that run.
 - Node 22 is the deployment baseline; Node 23/24 are accepted for development to support current host environments.

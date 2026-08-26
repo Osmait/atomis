@@ -786,3 +786,84 @@ test("python sessions run with inline values, tests and tracebacks", async ({
 		page.getByText(/src\/main\.py · runtime · Ln 2/).first(),
 	).toBeVisible();
 });
+
+async function openCFamily(
+	page: import("@playwright/test").Page,
+	language: "c" | "cpp",
+): Promise<boolean> {
+	await page.goto("/");
+	const available = await page.evaluate(async () => {
+		const response = await fetch("/api/doctor");
+		const body = (await response.json()) as {
+			checks: { name: string; detected: string }[];
+		};
+		return body.checks.some(
+			(check) =>
+				check.name === "C/C++ clang" && !check.detected.includes("degraded"),
+		);
+	});
+	if (!available) return false;
+	await page.evaluate((lang) => {
+		localStorage.clear();
+		localStorage.setItem("ziglive.language.v1", lang);
+	}, language);
+	await page.reload();
+	await expect(page.locator(".brand-chip")).toBeVisible();
+	const vimMode = page.getByLabel("Vim Mode");
+	if (await vimMode.isChecked()) await vimMode.uncheck();
+	return true;
+}
+
+test("c sessions run with typed probes, tests and mapped diagnostics", async ({
+	page,
+}) => {
+	test.skip(!(await openCFamily(page, "c")), "clang not available");
+	await expect(page.locator(".state-succeeded")).toBeVisible({
+		timeout: 60_000,
+	});
+	await expect(page.locator(".editor-header")).toContainText("src/main.c");
+	await expect(page.getByText("40 : long", { exact: true })).toBeVisible();
+	await expect(page.locator(".cases-card")).toContainText("2 tests");
+	await expect(page.locator(".cases-card")).toContainText("todos ok");
+
+	await replaceEditor(
+		page,
+		"#include <stdio.h>\n\nint main(void) {\n\tint x = 5\n\treturn 0;\n}\n",
+	);
+	await expect(page.locator(".state-compile_error")).toBeVisible({
+		timeout: 60_000,
+	});
+	await page.getByRole("button", { name: /Problems/ }).click();
+	await expect(
+		page.getByText(/expected ';' at end of declaration/).first(),
+	).toBeVisible();
+	await expect(
+		page.getByText(/src\/main\.c · compiler · Ln 4/).first(),
+	).toBeVisible();
+});
+
+test("cpp sessions run with stream previews and failing asserts", async ({
+	page,
+}) => {
+	test.skip(!(await openCFamily(page, "cpp")), "clang not available");
+	await expect(page.locator(".state-succeeded")).toBeVisible({
+		timeout: 60_000,
+	});
+	await expect(page.locator(".editor-header")).toContainText("src/main.cpp");
+	await expect(
+		page.locator(".inline-value").filter({ hasText: "total : std::basic_string" }),
+	).toBeVisible();
+	await expect(page.locator(".cases-card")).toContainText("todos ok");
+
+	// a failing assert aborts the run and correlates the stderr message
+	await page.getByRole("button", { name: "main_test.cpp", exact: true }).click();
+	await replaceEditor(
+		page,
+		"#include <cassert>\n\nint apply_tax(int price, int tax);\n\nvoid test_falla() {\n\tassert(apply_tax(40, 0) == 41);\n}\n",
+	);
+	await expect(page.locator(".cases-card")).toContainText("1 fallando", {
+		timeout: 60_000,
+	});
+	await expect(page.locator(".case-message")).toContainText(/Assertion|assert/);
+	await expect(page.locator(".test-lens-message.failed")).toBeVisible();
+});

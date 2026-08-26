@@ -1,5 +1,6 @@
 import type { Language } from "@ziglive/protocol";
 import type * as Monaco from "monaco-editor";
+import { registerC } from "./editor/cLanguage.js";
 import { registerGo } from "./editor/goLanguage.js";
 import { registerPy } from "./editor/pyLanguage.js";
 import { registerTs } from "./editor/tsLanguage.js";
@@ -68,6 +69,26 @@ export const WEB_LANGUAGE_PACKS: Record<Language, WebLanguagePack> = {
 		runCommand: "python3 main.py",
 		testCommand: "python3 tests",
 		register: registerPy,
+	},
+	c: {
+		id: "c",
+		extensions: [".c"],
+		entryFile: "main.c",
+		monacoId: "c",
+		serverName: "clangd",
+		runCommand: "clang main.c && ./a.out",
+		testCommand: "tests",
+		register: registerC,
+	},
+	cpp: {
+		id: "cpp",
+		extensions: [".cpp", ".cc"],
+		entryFile: "main.cpp",
+		monacoId: "cpp",
+		serverName: "clangd",
+		runCommand: "clang++ main.cpp && ./a.out",
+		testCommand: "tests",
+		register: () => {},
 	},
 };
 

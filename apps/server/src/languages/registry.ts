@@ -3,6 +3,10 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Language } from "@ziglive/protocol";
 import {
+	defaultCSource,
+	defaultCTestSource,
+	defaultCppSource,
+	defaultCppTestSource,
 	defaultGoSource,
 	defaultGoTestSource,
 	defaultPySource,
@@ -15,6 +19,10 @@ import {
 import type { LanguageRunner } from "../compiler/CompilerRunner.js";
 import { CompilerRunner } from "../compiler/CompilerRunner.js";
 import { GoCompilerRunner } from "../compiler/GoCompilerRunner.js";
+import {
+	CFamilyCompilerRunner,
+	type CFamilyConfig,
+} from "../compiler/CFamilyCompilerRunner.js";
 import { PyCompilerRunner } from "../compiler/PyCompilerRunner.js";
 import { TsCompilerRunner } from "../compiler/TsCompilerRunner.js";
 import { RustCompilerRunner } from "../compiler/RustCompilerRunner.js";
@@ -310,12 +318,94 @@ const pyPack: LanguagePack = {
 	},
 };
 
+function cFamilyPack(config: CFamilyConfig, options: {
+	entryFile: string;
+	defaultSource: string;
+	extraFiles: Record<string, string>;
+	extensions: readonly string[];
+}): LanguagePack {
+	return {
+		id: config.language,
+		extensions: options.extensions,
+		entryFile: options.entryFile,
+		defaultSource: options.defaultSource,
+		extraFiles: options.extraFiles,
+		scaffoldAlways: false,
+		async scaffold(root) {
+			await cp(
+				join(PROJECT_ROOT, "cfamily/runtime", config.runtimeHeader),
+				join(root, "generated", config.runtimeHeader),
+			);
+		},
+		instrumenterPath: () =>
+			join(PROJECT_ROOT, "cfamily", "instrumenter", "clive-instrument.mjs"),
+		createRunner: (supervisor, instrumenter) =>
+			new CFamilyCompilerRunner(supervisor, instrumenter, config),
+		lsp: { command: "clangd", args: () => [] },
+		toolchain: {
+			run: {
+				command: config.compiler,
+				args: ["--version"],
+				compatible: (version) => {
+					const match = /clang version (\d+)/.exec(version);
+					return Boolean(match && Number(match[1]) >= 15);
+				},
+				expected: `${config.compiler} 15+`,
+			},
+			lsp: {
+				command: "clangd",
+				args: ["--version"],
+				compatible: (version) => /clangd/i.test(version),
+				expected: "clangd",
+			},
+		},
+	};
+}
+
+const cPack = cFamilyPack(
+	{
+		language: "c",
+		compiler: "clang",
+		std: "c17",
+		codeFile: /\.c$/,
+		testFile: /_test\.c$/,
+		runtimeHeader: "ziglive_runtime.h",
+		testMainName: "__ziglive_test_main.c",
+	},
+	{
+		entryFile: "main.c",
+		defaultSource: defaultCSource,
+		extraFiles: { "main_test.c": defaultCTestSource },
+		extensions: [".c"],
+	},
+);
+
+const cppPack = cFamilyPack(
+	{
+		language: "cpp",
+		compiler: "clang++",
+		std: "c++20",
+		codeFile: /\.(cpp|cc)$/,
+		testFile: /_test\.(cpp|cc)$/,
+		runtimeHeader: "ziglive_runtime.hpp",
+		testMainName: "__ziglive_test_main.cpp",
+	},
+	{
+		entryFile: "main.cpp",
+		defaultSource: defaultCppSource,
+		extraFiles: { "main_test.cpp": defaultCppTestSource },
+		extensions: [".cpp", ".cc"],
+	},
+);
+
 export const LANGUAGE_PACKS: Record<Language, LanguagePack> = {
 	zig: zigPack,
 	rust: rustPack,
 	go: goPack,
 	ts: tsPack,
 	py: pyPack,
+	c: cPack,
+	cpp: cppPack,
 };
 
 export function packForPath(path: string): LanguagePack | undefined {

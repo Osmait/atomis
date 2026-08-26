@@ -11,7 +11,7 @@
     "zig:build": "zig build",
     "dev": "pnpm zig:build && pnpm rust:build && pnpm go:build && pnpm --filter @ziglive/protocol build && concurrently -k -n server,web -c blue,green \"pnpm --filter @ziglive/server dev\" \"pnpm --filter @ziglive/web dev\"",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm zig:build test && pnpm rust:build && pnpm rust:test && pnpm go:build && pnpm go:test && pnpm ts:test && pnpm py:test && pnpm --filter @ziglive/protocol build && pnpm -r --if-present test",
+    "test": "pnpm zig:build test && pnpm rust:build && pnpm rust:test && pnpm go:build && pnpm go:test && pnpm ts:test && pnpm py:test && pnpm cfamily:test && pnpm --filter @ziglive/protocol build && pnpm -r --if-present test",
     "test:e2e": "playwright test",
     "build": "pnpm zig:build && pnpm rust:build && pnpm go:build && pnpm -r build",
     "start": "pnpm --filter @ziglive/server start",
@@ -20,7 +20,8 @@
     "go:build": "node scripts/go-build.mjs",
     "go:test": "node scripts/go-test.mjs",
     "ts:test": "node --test ts/instrumenter/instrument.test.mjs",
-    "py:test": "python3 -m unittest discover -s python/instrumenter -p 'instrument_test.py'"
+    "py:test": "python3 -m unittest discover -s python/instrumenter -p 'instrument_test.py'",
+    "cfamily:test": "node --test cfamily/instrumenter/instrument.test.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",

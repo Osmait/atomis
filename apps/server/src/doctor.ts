@@ -88,6 +88,9 @@ export async function runDoctor(): Promise<DoctorCheck[]> {
 			"pyright-langserver",
 			"any (optional, enables Python editor features)",
 		],
+		["C/C++", "clang", "15+ (optional, enables C sessions)"],
+		["C/C++", "clang++", "15+ (optional, enables C++ sessions)"],
+		["C/C++", "clangd", "any (optional, enables C/C++ editor features)"],
 	] as const) {
 		const args = tool === "go" ? ["version"] : ["--version"];
 		const result = await command(tool, [...args]);
