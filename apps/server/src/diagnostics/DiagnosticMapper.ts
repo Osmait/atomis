@@ -21,7 +21,8 @@ function generatedProjectPath(
 		return `src/${normalized.slice(root.length + 1)}`;
 	const marker = "generated/";
 	const markerIndex = normalized.lastIndexOf(marker);
-	if (markerIndex >= 0) return `src/${normalized.slice(markerIndex + marker.length)}`;
+	if (markerIndex >= 0)
+		return `src/${normalized.slice(markerIndex + marker.length)}`;
 	if (generatedPathAliases(generatedPath).includes(normalized))
 		return `src/${normalized.split("/").at(-1) ?? "main.zig"}`;
 	return undefined;

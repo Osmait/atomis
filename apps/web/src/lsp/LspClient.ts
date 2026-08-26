@@ -538,7 +538,9 @@ export class LspClient {
 				diagnostics?: LspDiagnostic[];
 			};
 			if (!params.uri) return;
-			const model = this.monaco.editor.getModel(this.monaco.Uri.parse(params.uri));
+			const model = this.monaco.editor.getModel(
+				this.monaco.Uri.parse(params.uri),
+			);
 			if (!model) return;
 			const diagnostics = params.diagnostics ?? [];
 			this.monaco.editor.setModelMarkers(

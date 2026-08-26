@@ -19,33 +19,37 @@ import { ProcessSupervisor } from "./processes/ProcessSupervisor.js";
 import { validOrigin } from "./security/origin.js";
 import { SessionManager, type Session } from "./sessions/SessionManager.js";
 
-type ProjectRuntimeClientMessage = Exclude<
-	RuntimeClientMessage,
-	{ type: "document.update" }
-> & { sessionId: string } | {
-	type: "document.update";
-	sessionId: string;
-	version: number;
-	path: string;
-	source: string;
-} | {
-	type: "file.create";
-	sessionId: string;
-	version: number;
-	path: string;
-	source: string;
-} | {
-	type: "file.rename";
-	sessionId: string;
-	version: number;
-	path: string;
-	newPath: string;
-} | {
-	type: "file.delete";
-	sessionId: string;
-	version: number;
-	path: string;
-};
+type ProjectRuntimeClientMessage =
+	| (Exclude<RuntimeClientMessage, { type: "document.update" }> & {
+			sessionId: string;
+	  })
+	| {
+			type: "document.update";
+			sessionId: string;
+			version: number;
+			path: string;
+			source: string;
+	  }
+	| {
+			type: "file.create";
+			sessionId: string;
+			version: number;
+			path: string;
+			source: string;
+	  }
+	| {
+			type: "file.rename";
+			sessionId: string;
+			version: number;
+			path: string;
+			newPath: string;
+	  }
+	| {
+			type: "file.delete";
+			sessionId: string;
+			version: number;
+			path: string;
+	  };
 
 const host = "127.0.0.1";
 const requestedPort = Number(process.env.ZIGLIVE_PORT ?? 4317);
@@ -217,7 +221,10 @@ function handleRuntime(socket: WebSocket, session: Session): void {
 							message.newPath,
 						);
 					else
-						snapshot = await session.store.delete(message.version, message.path);
+						snapshot = await session.store.delete(
+							message.version,
+							message.path,
+						);
 					send(socket, {
 						type: "project.files",
 						documentVersion: snapshot.version,

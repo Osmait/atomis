@@ -103,7 +103,10 @@ export class CompilerRunner {
 		const runtimePath = join(session.root, "generated", "runzig_runtime.zig");
 		const runtimeSource = await readFile(runtimePath);
 		await rm(join(session.root, "generated"), { recursive: true, force: true });
-		await mkdir(join(session.root, "generated"), { recursive: true, mode: 0o700 });
+		await mkdir(join(session.root, "generated"), {
+			recursive: true,
+			mode: 0o700,
+		});
 		await writeFile(runtimePath, runtimeSource, { mode: 0o600 });
 		const probes: ProjectProbe[] = [];
 		const instrumentDiagnostics: ProjectDiagnostic[] = [];

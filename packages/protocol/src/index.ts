@@ -132,7 +132,9 @@ export const projectPathSchema = z
 			!value.startsWith("/") &&
 			!value.includes("\\") &&
 			!/[\u0000-\u001f]/.test(value) &&
-			value.split("/").every((part) => part.length > 0 && part !== "." && part !== ".."),
+			value
+				.split("/")
+				.every((part) => part.length > 0 && part !== "." && part !== ".."),
 		"Invalid project-relative path",
 	);
 const settings = z

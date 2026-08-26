@@ -139,8 +139,7 @@ export class LspProxy {
 				params.diagnostics = filterObservedUnused(
 					params.diagnostics,
 					this.session.probes.filter(
-						(probe) =>
-							!("path" in probe) || probe.path === projectPath,
+						(probe) => !("path" in probe) || probe.path === projectPath,
 					),
 				);
 			}

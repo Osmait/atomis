@@ -54,7 +54,9 @@ export class DocumentStore {
 	): Promise<DocumentSnapshot> {
 		this.assertVersion(version);
 		if (this.snapshot.files.length >= MAX_PROJECT_FILES)
-			throw new Error(`A project can contain at most ${MAX_PROJECT_FILES} files`);
+			throw new Error(
+				`A project can contain at most ${MAX_PROJECT_FILES} files`,
+			);
 		if (this.snapshot.files.some((file) => file.path === path))
 			throw new Error(`File already exists: ${path}`);
 		const files = [...this.snapshot.files, this.projectFile(path, source)];
@@ -85,7 +87,10 @@ export class DocumentStore {
 		);
 	}
 
-	public async delete(version: number, path: string): Promise<DocumentSnapshot> {
+	public async delete(
+		version: number,
+		path: string,
+	): Promise<DocumentSnapshot> {
 		this.assertVersion(version);
 		if (path === "main.zig") throw new Error("main.zig cannot be deleted");
 		if (!this.snapshot.files.some((file) => file.path === path))

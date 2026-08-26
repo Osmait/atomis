@@ -421,7 +421,8 @@ export function App(): React.JSX.Element {
 			files: ProjectFile[];
 		};
 		if (projectEvent.type === "project.files") {
-			if (!acceptsVersion(versionRef.current, projectEvent.documentVersion)) return;
+			if (!acceptsVersion(versionRef.current, projectEvent.documentVersion))
+				return;
 			filesRef.current = projectEvent.files;
 			setFiles(projectEvent.files);
 			return;
@@ -472,9 +473,7 @@ export function App(): React.JSX.Element {
 						category: event.category,
 						chunk: event.chunk,
 						receivedAt: performance.now(),
-						...(sourceLocation
-							? { sourceLocation }
-							: {}),
+						...(sourceLocation ? { sourceLocation } : {}),
 					},
 				].slice(-500),
 			);
@@ -857,7 +856,9 @@ export function App(): React.JSX.Element {
 
 	const createFile = useCallback((): void => {
 		if (!session) return;
-		const path = window.prompt("Ruta del nuevo archivo (relativa a src/):")?.trim();
+		const path = window
+			.prompt("Ruta del nuevo archivo (relativa a src/):")
+			?.trim();
 		if (!path) return;
 		if (
 			path.startsWith("/") ||
@@ -942,7 +943,9 @@ export function App(): React.JSX.Element {
 		activePathRef.current = "main.zig";
 		setActivePath("main.zig");
 		lspRef.current?.close(current.uri);
-		monacoRef.current?.editor.getModel(monacoRef.current.Uri.parse(current.uri))?.dispose();
+		monacoRef.current?.editor
+			.getModel(monacoRef.current.Uri.parse(current.uri))
+			?.dispose();
 		const version = ++versionRef.current;
 		sendRuntime({
 			type: "file.delete",
@@ -964,7 +967,10 @@ export function App(): React.JSX.Element {
 		return () => clearTimeout(timer);
 	}, [activeFile]);
 	const visibleSource =
-		activeFile?.source ?? session?.initialSource ?? localStorage.getItem(SOURCE_KEY) ?? "";
+		activeFile?.source ??
+		session?.initialSource ??
+		localStorage.getItem(SOURCE_KEY) ??
+		"";
 	const editorLanguage = activePath.endsWith(".zig")
 		? "zig"
 		: activePath.endsWith(".json")
@@ -1208,10 +1214,15 @@ export function App(): React.JSX.Element {
 											key={index}
 											onClick={() => {
 												if (!entry.sourceLocation) return;
-												const path = (entry.sourceLocation.path ?? "src/main.zig").replace(/^src\//, "");
+												const path = (
+													entry.sourceLocation.path ?? "src/main.zig"
+												).replace(/^src\//, "");
 												selectFile(path);
 												pinnedLogLocationRef.current = entry.sourceLocation;
-												setTimeout(() => highlightLogSource(entry.sourceLocation, true), 0);
+												setTimeout(
+													() => highlightLogSource(entry.sourceLocation, true),
+													0,
+												);
 											}}
 											onKeyDown={(event) => {
 												if (
@@ -1219,10 +1230,16 @@ export function App(): React.JSX.Element {
 													(event.key === "Enter" || event.key === " ")
 												) {
 													event.preventDefault();
-													const path = (entry.sourceLocation.path ?? "src/main.zig").replace(/^src\//, "");
+													const path = (
+														entry.sourceLocation.path ?? "src/main.zig"
+													).replace(/^src\//, "");
 													selectFile(path);
 													pinnedLogLocationRef.current = entry.sourceLocation;
-													setTimeout(() => highlightLogSource(entry.sourceLocation, true), 0);
+													setTimeout(
+														() =>
+															highlightLogSource(entry.sourceLocation, true),
+														0,
+													);
 												}
 											}}
 											onMouseEnter={() =>
@@ -1251,12 +1268,14 @@ export function App(): React.JSX.Element {
 											<pre className={entry.category}>{entry.chunk}</pre>
 											{entry.sourceLocation && (
 												<span className="log-origin-tooltip">
-													↳ {entry.sourceLocation.path ?? "src/main.zig"}:{entry.sourceLocation.line}:
+													↳ {entry.sourceLocation.path ?? "src/main.zig"}:
+													{entry.sourceLocation.line}:
 													{entry.sourceLocation.column} · ejecución #
 													{entry.sourceLocation.executionIndex}
 													{entry.sourceLocation.loop && (
 														<>
-															{" "}· bucle {entry.sourceLocation.loop.line}:
+															{" "}
+															· bucle {entry.sourceLocation.loop.line}:
 															{entry.sourceLocation.loop.column} ·{" "}
 															<b>
 																{entry.sourceLocation.loop.variable}=
@@ -1283,7 +1302,9 @@ export function App(): React.JSX.Element {
 										>
 											<button
 												onClick={() => {
-													selectFile((item.path ?? "src/main.zig").replace(/^src\//, ""));
+													selectFile(
+														(item.path ?? "src/main.zig").replace(/^src\//, ""),
+													);
 													setTimeout(() => {
 														editorRef.current?.setPosition({
 															lineNumber: item.line,
@@ -1297,7 +1318,8 @@ export function App(): React.JSX.Element {
 												<i>{item.severity === "error" ? "×" : "△"}</i>
 												<span>{item.message}</span>
 												<small>
-													{item.path ?? "src/main.zig"} · {item.owner} · Ln {item.line}, Col {item.column}
+													{item.path ?? "src/main.zig"} · {item.owner} · Ln{" "}
+													{item.line}, Col {item.column}
 												</small>
 											</button>
 										</li>
