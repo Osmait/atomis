@@ -84,6 +84,74 @@ fn isDirectBlockStatement(tree: Ast, node: Ast.Node.Index) bool {
     return false;
 }
 
+const LoopContext = struct {
+    line: usize,
+    column: usize,
+    variable: []const u8,
+};
+
+fn plainIdentifier(value: []const u8) bool {
+    if (value.len == 0 or !(std.ascii.isAlphabetic(value[0]) or value[0] == '_')) return false;
+    for (value[1..]) |byte| if (!(std.ascii.isAlphanumeric(byte) or byte == '_')) return false;
+    return !std.mem.eql(u8, value, "_");
+}
+
+fn lastPayloadIdentifier(tree: Ast, first_token: Ast.TokenIndex) ?Ast.TokenIndex {
+    var result: ?Ast.TokenIndex = null;
+    var token = first_token;
+    while (token < tree.tokens.len and tree.tokenTag(token) != .pipe) : (token += 1) {
+        if (tree.tokenTag(token) == .identifier and plainIdentifier(tree.tokenSlice(token))) result = token;
+    }
+    return result;
+}
+
+fn firstNodeIdentifier(tree: Ast, node: Ast.Node.Index) ?Ast.TokenIndex {
+    var token = tree.firstToken(node);
+    const last = tree.lastToken(node);
+    while (token <= last) : (token += 1) {
+        if (tree.tokenTag(token) == .identifier and plainIdentifier(tree.tokenSlice(token))) return token;
+    }
+    return null;
+}
+
+fn enclosingLoop(tree: Ast, source: []const u8, node: Ast.Node.Index) ?LoopContext {
+    const node_first = tree.tokenStart(tree.firstToken(node));
+    const node_last_token = tree.lastToken(node);
+    const node_last = tree.tokenStart(node_last_token) + tree.tokenSlice(node_last_token).len;
+    var best: ?LoopContext = null;
+    var best_span: usize = std.math.maxInt(usize);
+    var index: usize = 1;
+    while (index < tree.nodes.len) : (index += 1) {
+        const candidate: Ast.Node.Index = @enumFromInt(index);
+        var loop_token: Ast.TokenIndex = undefined;
+        var body: Ast.Node.Index = undefined;
+        var variable_token: ?Ast.TokenIndex = null;
+        if (tree.fullFor(candidate)) |loop| {
+            loop_token = loop.ast.for_token;
+            body = loop.ast.then_expr;
+            variable_token = lastPayloadIdentifier(tree, loop.payload_token);
+        } else if (tree.fullWhile(candidate)) |loop| {
+            loop_token = loop.ast.while_token;
+            body = loop.ast.then_expr;
+            variable_token = if (loop.payload_token) |payload|
+                lastPayloadIdentifier(tree, payload)
+            else if (loop.ast.cont_expr.unwrap()) |continuation|
+                firstNodeIdentifier(tree, continuation)
+            else
+                firstNodeIdentifier(tree, loop.ast.cond_expr);
+        } else continue;
+        const body_first = tree.tokenStart(tree.firstToken(body));
+        const body_last_token = tree.lastToken(body);
+        const body_last = tree.tokenStart(body_last_token) + tree.tokenSlice(body_last_token).len;
+        if (node_first < body_first or node_last > body_last or body_last - body_first >= best_span) continue;
+        const token = variable_token orelse continue;
+        const loop_pos = position(source, tree.tokenStart(loop_token));
+        best = .{ .line = loop_pos.line, .column = loop_pos.column, .variable = tree.tokenSlice(token) };
+        best_span = body_last - body_first;
+    }
+    return best;
+}
+
 fn unsupportedInitializer(tree: Ast, init_node: Ast.Node.Index) bool {
     return switch (tree.nodeTag(init_node)) {
         .fn_decl,
@@ -131,7 +199,8 @@ pub fn instrument(
     manual_ids: []const []const u8,
 ) !Result {
     if (std.mem.indexOf(u8, source, "@import(\"runzig_runtime.zig\").probe(") != null or
-        std.mem.indexOf(u8, source, "@import(\"runzig_runtime.zig\").logSource(") != null)
+        std.mem.indexOf(u8, source, "@import(\"runzig_runtime.zig\").logSource(") != null or
+        std.mem.indexOf(u8, source, "@import(\"runzig_runtime.zig\").logSourceLoop(") != null)
     {
         return .{
             .generated = try allocator.dupe(u8, source[0..source.len]),
@@ -215,6 +284,7 @@ pub fn instrument(
         probe_index: usize = 0,
         line: usize = 0,
         column: usize = 0,
+        loop: ?LoopContext = null,
     };
     var insertions: std.ArrayList(Insertion) = .empty;
     defer insertions.deinit(allocator);
@@ -240,7 +310,13 @@ pub fn instrument(
         if (tree.tokenTag(semicolon) != .semicolon) continue;
         const marker_offset = tree.tokenStart(semicolon) + tree.tokenSlice(semicolon).len;
         const call_pos = position(source, fn_first);
-        try insertions.append(allocator, .{ .offset = marker_offset, .kind = .log_marker, .line = call_pos.line, .column = call_pos.column });
+        try insertions.append(allocator, .{
+            .offset = marker_offset,
+            .kind = .log_marker,
+            .line = call_pos.line,
+            .column = call_pos.column,
+            .loop = enclosingLoop(tree, source, node),
+        });
     }
 
     // Zig 0.16 diagnoses `_ = value;` as a pointless discard once a probe also
@@ -278,8 +354,11 @@ pub fn instrument(
     for (insertions.items) |insertion| switch (insertion.kind) {
         .comment_open => try generated.insertSlice(allocator, insertion.offset, "// ziglive: observed discard "),
         .log_marker => {
-            var snippet: [192]u8 = undefined;
-            const text = try std.fmt.bufPrint(&snippet, " @import(\"runzig_runtime.zig\").logSource(.{{ .line = {d}, .column = {d} }});", .{ insertion.line, insertion.column });
+            var snippet: [384]u8 = undefined;
+            const text = if (insertion.loop) |loop|
+                try std.fmt.bufPrint(&snippet, " @import(\"runzig_runtime.zig\").logSourceLoop(.{{ .line = {d}, .column = {d}, .loop_line = {d}, .loop_column = {d}, .loop_name = \"{s}\" }}, {s});", .{ insertion.line, insertion.column, loop.line, loop.column, loop.variable, loop.variable })
+            else
+                try std.fmt.bufPrint(&snippet, " @import(\"runzig_runtime.zig\").logSource(.{{ .line = {d}, .column = {d} }});", .{ insertion.line, insertion.column });
             try generated.insertSlice(allocator, insertion.offset, text);
         },
         .probe => {
@@ -328,6 +407,28 @@ test "marks log statements with original source locations" {
     try std.testing.expect(std.mem.indexOf(u8, result.generated.?, "std.debug.print(\"hello\\n\", .{}); @import(\"runzig_runtime.zig\").logSource(.{ .line = 3, .column = 5 });") != null);
     try std.testing.expect(std.mem.indexOf(u8, result.generated.?, "std.log.info(\"world\", .{}); @import(\"runzig_runtime.zig\").logSource(.{ .line = 4, .column = 5 });") != null);
     try std.testing.expectEqual(std.mem.count(u8, source, "\n"), std.mem.count(u8, result.generated.?, "\n"));
+}
+
+test "captures the innermost loop variable for logs" {
+    const source: [:0]const u8 = "const std = @import(\"std\");\npub fn main() void {\n    for (0..3) |i| {\n        std.debug.print(\"{d}\\n\", .{i});\n    }\n}\n";
+    const result = try instrument(std.testing.allocator, source, "file:///loop.zig", false, &.{});
+    defer {
+        std.testing.allocator.free(result.generated.?);
+        for (result.probes) |probe| std.testing.allocator.free(probe.name);
+        std.testing.allocator.free(result.probes);
+    }
+    try std.testing.expect(std.mem.indexOf(u8, result.generated.?, "logSourceLoop(.{ .line = 4, .column = 9, .loop_line = 3, .loop_column = 5, .loop_name = \"i\" }, i)") != null);
+}
+
+test "captures a while continuation variable for logs" {
+    const source: [:0]const u8 = "const std = @import(\"std\");\npub fn main() void {\n    var i: usize = 0;\n    while (i < 2) : (i += 1) {\n        std.debug.print(\"{d}\\n\", .{i});\n    }\n}\n";
+    const result = try instrument(std.testing.allocator, source, "file:///while.zig", false, &.{});
+    defer {
+        std.testing.allocator.free(result.generated.?);
+        for (result.probes) |probe| std.testing.allocator.free(probe.name);
+        std.testing.allocator.free(result.probes);
+    }
+    try std.testing.expect(std.mem.indexOf(u8, result.generated.?, "logSourceLoop(.{ .line = 5, .column = 9, .loop_line = 4, .loop_column = 5, .loop_name = \"i\" }, i)") != null);
 }
 
 test "parse errors do not generate source" {

@@ -14,7 +14,7 @@ All runtime messages are JSON and versioned at protocol version 1. Shared TypeSc
 - `run.request` and `run.cancel`;
 - `settings.update` for Auto Run, Auto Inspect, debounce, timeout and manual IDs.
 
-Server events include `run.state`, `probe.catalog`, `probe_value`, capped output chunks, owner-separated diagnostics, `run.finished` metrics and typed recoverable errors. Output chunks retain the OS stream and carry a `program` or `error` category so normal Zig stderr output is not presented as a failure. Instrumented `std.debug.print` and `std.log` chunks also carry an optional original `sourceLocation`, displayed when hovering the terminal row. The browser ignores every event whose `documentVersion` is not active.
+Server events include `run.state`, `probe.catalog`, `probe_value`, capped output chunks, owner-separated diagnostics, `run.finished` metrics and typed recoverable errors. Output chunks retain the OS stream and carry a `program` or `error` category so normal Zig stderr output is not presented as a failure. Instrumented `std.debug.print` and `std.log` chunks also carry an optional `sourceLocation` with the original line/column and `executionIndex`. When detected, `sourceLocation.loop` contains the enclosing loop line/column plus its variable name and runtime value. Hovering a sourced terminal row temporarily highlights the print and loop lines; clicking pins the highlight and reveals the print line. The browser ignores every event whose `documentVersion` is not active.
 
 ## LSP WebSocket
 

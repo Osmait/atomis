@@ -436,8 +436,32 @@ button:disabled {
 	color: #ff858a;
 }
 
-.output-entry.has-source:hover {
-	background: rgb(87 217 139 / 5%);
+.output-entry.has-source {
+	cursor: pointer;
+}
+
+.output-entry.has-source:hover,
+.output-entry.has-source:focus-visible {
+	outline: none;
+	background: rgb(87 217 139 / 7%);
+}
+
+.monaco-editor .log-source-line {
+	background: rgb(87 217 139 / 17%);
+	box-shadow: inset 2px 0 0 var(--green);
+}
+
+.monaco-editor .log-loop-line {
+	background: rgb(229 192 123 / 12%);
+	box-shadow: inset 2px 0 0 #e5c07b;
+}
+
+.monaco-editor .log-source-glyph {
+	border-left: 3px solid var(--green);
+}
+
+.monaco-editor .log-loop-glyph {
+	border-left: 3px solid #e5c07b;
 }
 
 .log-origin-tooltip {
@@ -457,8 +481,13 @@ button:disabled {
 	pointer-events: none;
 }
 
-.output-entry.has-source:hover .log-origin-tooltip {
+.output-entry.has-source:hover .log-origin-tooltip,
+.output-entry.has-source:focus-visible .log-origin-tooltip {
 	display: block;
+}
+
+.log-origin-tooltip b {
+	color: #e5c07b;
 }
 
 .empty-state {

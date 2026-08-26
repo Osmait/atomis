@@ -11,6 +11,14 @@ pub const LogMeta = struct {
     column: u32,
 };
 
+pub const LogLoopMeta = struct {
+    line: u32,
+    column: u32,
+    loop_line: u32,
+    loop_column: u32,
+    loop_name: []const u8,
+};
+
 const MAX_PREVIEW = 4096;
 const MAX_EVENT = 64 * 1024;
 var lock: std.atomic.Mutex = .unlocked;
@@ -78,6 +86,48 @@ fn renderPreview(writer: *std.Io.Writer, value_ptr: anytype) !void {
         },
         else => try writer.print("{any}", .{value_ptr.*}),
     }
+}
+
+pub inline fn logSourceLoop(comptime meta: LogLoopMeta, value: anytype) void {
+    switch (@typeInfo(@TypeOf(value))) {
+        .comptime_int => {
+            const materialized: i128 = value;
+            emitLogSourceLoop(meta, &materialized);
+        },
+        .comptime_float => {
+            const materialized: f128 = value;
+            emitLogSourceLoop(meta, &materialized);
+        },
+        else => {
+            const materialized = value;
+            emitLogSourceLoop(meta, &materialized);
+        },
+    }
+}
+
+inline fn emitLogSourceLoop(comptime meta: LogLoopMeta, value_ptr: anytype) void {
+    var value_buffer: [MAX_PREVIEW]u8 = undefined;
+    var value_writer: std.Io.Writer = .fixed(&value_buffer);
+    renderPreview(&value_writer, value_ptr) catch {
+        value_writer = .fixed(&value_buffer);
+        value_writer.writeAll("<preview unavailable>") catch return;
+    };
+
+    var marker_buffer: [MAX_PREVIEW + 256]u8 = undefined;
+    var marker_writer: std.Io.Writer = .fixed(&marker_buffer);
+    marker_writer.print("\x1eZIGLIVE_LOG:{d}:{d}:{d}:{d}:{s}:", .{
+        meta.line,
+        meta.column,
+        meta.loop_line,
+        meta.loop_column,
+        meta.loop_name,
+    }) catch return;
+    marker_writer.writeAll(value_writer.buffered()) catch return;
+    marker_writer.writeByte('\x1f') catch return;
+
+    while (!lock.tryLock()) std.atomic.spinLoopHint();
+    defer lock.unlock();
+    writeAllFd(2, marker_writer.buffered());
 }
 
 pub inline fn probe(comptime probe_id: []const u8, value: anytype, comptime meta: ProbeMeta) void {

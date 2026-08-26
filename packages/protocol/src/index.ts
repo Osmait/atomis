@@ -85,6 +85,18 @@ export interface ProbeValueEvent {
 	count: number;
 }
 
+export interface LogSourceLocation {
+	line: number;
+	column: number;
+	executionIndex: number;
+	loop?: {
+		line: number;
+		column: number;
+		variable: string;
+		value: string;
+	};
+}
+
 export interface RunResult {
 	instrumentationMs: number;
 	compilationMs: number;
@@ -152,7 +164,7 @@ export type RuntimeServerEvent =
 			stream: "stdout" | "stderr";
 			category: "program" | "error";
 			chunk: string;
-			sourceLocation?: { line: number; column: number };
+			sourceLocation?: LogSourceLocation;
 	  }
 	| {
 			type: "diagnostics";

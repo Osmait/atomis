@@ -158,25 +158,34 @@ test("each run clears the terminal and colors only failures red", async ({
 
 	await replaceEditor(
 		page,
-		'const std = @import("std");\npub fn main() void {\n    std.debug.print("hello from ZigLive\\n", .{});\n}\n',
+		'const std = @import("std");\npub fn main() void {\n    for (0..3) |i| {\n        std.debug.print("iteration {d}\\n", .{i});\n    }\n}\n',
 	);
 	await expect(page.locator(".state-succeeded")).toBeVisible();
 	await expect(terminal).not.toContainText("too few arguments");
-	await expect(terminal.locator("pre.program")).toContainText(
-		"hello from ZigLive",
+	await expect(terminal.locator("pre.program").first()).toContainText(
+		"iteration 0",
 	);
 	await expect(terminal.locator("pre.error")).toHaveCount(0);
-	const sourcedLog = terminal
-		.locator(".output-entry.has-source")
-		.filter({ hasText: "hello from ZigLive" });
-	await expect(sourcedLog).toHaveAttribute(
+	const sourcedLogs = terminal.locator(".output-entry.has-source");
+	await expect(sourcedLogs).toHaveCount(3);
+	const secondIteration = sourcedLogs.filter({ hasText: "iteration 1" });
+	await expect(secondIteration).toHaveAttribute(
 		"title",
-		/Generado por src\/main\.zig:3:/,
+		/Generado por src\/main\.zig:4:13 · ejecución #2/,
 	);
-	await sourcedLog.hover();
-	await expect(sourcedLog.locator(".log-origin-tooltip")).toContainText(
-		/src\/main\.zig:3:/,
-	);
+	await secondIteration.hover();
+	await expect(
+		secondIteration.locator(".log-origin-tooltip"),
+	).toContainText("src/main.zig:4:13 · ejecución #2 · bucle 3:5 · i=1");
+	await expect(page.locator(".log-source-line")).toBeVisible();
+	await expect(page.locator(".log-loop-line")).toBeVisible();
+	await page.locator(".terminal-header").hover();
+	await expect(page.locator(".log-source-line")).toHaveCount(0);
+	await expect(page.locator(".log-loop-line")).toHaveCount(0);
+	await secondIteration.click();
+	await expect(page.locator(".cursor-status")).toHaveText("4:13");
+	await expect(page.locator(".log-source-line")).toBeVisible();
+	await expect(page.locator(".log-loop-line")).toBeVisible();
 });
 
 test("Auto Inspect can be replaced by a gutter manual probe", async ({

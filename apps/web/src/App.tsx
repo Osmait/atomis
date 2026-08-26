@@ -24,6 +24,18 @@ import {
 	type InlineValue,
 } from "./state/runtimeState.js";
 
+interface LogSourceLocation {
+	line: number;
+	column: number;
+	executionIndex: number;
+	loop?: {
+		line: number;
+		column: number;
+		variable: string;
+		value: string;
+	};
+}
+
 interface Settings {
 	autoRun: boolean;
 	autoInspect: boolean;
@@ -133,7 +145,7 @@ export function App(): React.JSX.Element {
 			category: "program" | "error";
 			chunk: string;
 			receivedAt: number;
-			sourceLocation?: { line: number; column: number };
+			sourceLocation?: LogSourceLocation;
 		}[]
 	>([]);
 	const [diagnostics, setDiagnostics] = useState<
@@ -165,6 +177,10 @@ export function App(): React.JSX.Element {
 	const errorLensDecorationsRef = useRef<
 		MonacoApi.editor.IEditorDecorationsCollection | undefined
 	>(undefined);
+	const logSourceDecorationsRef = useRef<
+		MonacoApi.editor.IEditorDecorationsCollection | undefined
+	>(undefined);
+	const pinnedLogLocationRef = useRef<LogSourceLocation | undefined>(undefined);
 	const errorLensWidgetsRef = useRef<MonacoApi.editor.IContentWidget[]>([]);
 	const versionRef = useRef(1);
 	const sourceRef = useRef("");
@@ -311,6 +327,62 @@ export function App(): React.JSX.Element {
 		editor.focus();
 	}, []);
 
+	const highlightLogSource = useCallback(
+		(location?: LogSourceLocation, reveal = false): void => {
+			const editor = editorRef.current;
+			const decorations = logSourceDecorationsRef.current;
+			const model = editor?.getModel();
+			if (!editor || !decorations || !model) return;
+			if (!location || location.line > model.getLineCount()) {
+				decorations.clear();
+				return;
+			}
+			const ranges: MonacoApi.editor.IModelDeltaDecoration[] = [
+				{
+					range: {
+						startLineNumber: location.line,
+						startColumn: 1,
+						endLineNumber: location.line,
+						endColumn: model.getLineMaxColumn(location.line),
+					} as MonacoApi.Range,
+					options: {
+						isWholeLine: true,
+						className: "log-source-line",
+						linesDecorationsClassName: "log-source-glyph",
+					},
+				},
+			];
+			if (
+				location.loop &&
+				location.loop.line !== location.line &&
+				location.loop.line <= model.getLineCount()
+			)
+				ranges.push({
+					range: {
+						startLineNumber: location.loop.line,
+						startColumn: 1,
+						endLineNumber: location.loop.line,
+						endColumn: model.getLineMaxColumn(location.loop.line),
+					} as MonacoApi.Range,
+					options: {
+						isWholeLine: true,
+						className: "log-loop-line",
+						linesDecorationsClassName: "log-loop-glyph",
+					},
+				});
+			decorations.set(ranges);
+			if (reveal) {
+				editor.setPosition({
+					lineNumber: location.line,
+					column: location.column,
+				});
+				editor.revealLineInCenter(location.line);
+				editor.focus();
+			}
+		},
+		[],
+	);
+
 	const handleRuntimeEvent = useCallback((event: RuntimeServerEvent): void => {
 		if (
 			"documentVersion" in event &&
@@ -321,6 +393,8 @@ export function App(): React.JSX.Element {
 			setRunState(event.state);
 			if (event.state === "instrumenting") {
 				setOutput([]);
+				pinnedLogLocationRef.current = undefined;
+				logSourceDecorationsRef.current?.clear();
 				setResult(undefined);
 				setDiagnostics((previous) => ({
 					...previous,
@@ -345,19 +419,19 @@ export function App(): React.JSX.Element {
 			setValues((previous) => updateInlineValue(previous, event));
 			setStale(false);
 		} else if (event.type === "output") {
-			const outputEvent = event as typeof event & {
-				sourceLocation?: { line: number; column: number };
-			};
+			const sourceLocation = event.sourceLocation as
+				| LogSourceLocation
+				| undefined;
 			setOutput((previous) =>
 				[
 					...previous,
 					{
-						stream: outputEvent.stream,
-						category: outputEvent.category,
-						chunk: outputEvent.chunk,
+						stream: event.stream,
+						category: event.category,
+						chunk: event.chunk,
 						receivedAt: performance.now(),
-						...(outputEvent.sourceLocation
-							? { sourceLocation: outputEvent.sourceLocation }
+						...(sourceLocation
+							? { sourceLocation }
 							: {}),
 					},
 				].slice(-500),
@@ -397,6 +471,7 @@ export function App(): React.JSX.Element {
 			sourceRef.current = model.getValue();
 			decorationsRef.current = editor.createDecorationsCollection();
 			errorLensDecorationsRef.current = editor.createDecorationsCollection();
+			logSourceDecorationsRef.current = editor.createDecorationsCollection();
 			setCursorPosition({
 				line: editor.getPosition()?.lineNumber ?? 1,
 				column: editor.getPosition()?.column ?? 1,
@@ -706,6 +781,8 @@ export function App(): React.JSX.Element {
 			if (!session || source === undefined || source === sourceRef.current)
 				return;
 			sourceRef.current = source;
+			pinnedLogLocationRef.current = undefined;
+			logSourceDecorationsRef.current?.clear();
 			localStorage.setItem(SOURCE_KEY, source);
 			const version = ++versionRef.current;
 			setStale(true);
@@ -892,9 +969,32 @@ export function App(): React.JSX.Element {
 										<div
 											className={`output-entry${entry.sourceLocation ? " has-source" : ""}`}
 											key={index}
+											onClick={() => {
+												if (!entry.sourceLocation) return;
+												pinnedLogLocationRef.current = entry.sourceLocation;
+												highlightLogSource(entry.sourceLocation, true);
+											}}
+											onKeyDown={(event) => {
+												if (
+													entry.sourceLocation &&
+													(event.key === "Enter" || event.key === " ")
+												) {
+													event.preventDefault();
+													pinnedLogLocationRef.current = entry.sourceLocation;
+													highlightLogSource(entry.sourceLocation, true);
+												}
+											}}
+											onMouseEnter={() =>
+												highlightLogSource(entry.sourceLocation)
+											}
+											onMouseLeave={() =>
+												highlightLogSource(pinnedLogLocationRef.current)
+											}
+											role={entry.sourceLocation ? "button" : undefined}
+											tabIndex={entry.sourceLocation ? 0 : undefined}
 											title={
 												entry.sourceLocation
-													? `Generado por src/main.zig:${entry.sourceLocation.line}:${entry.sourceLocation.column}`
+													? `Generado por src/main.zig:${entry.sourceLocation.line}:${entry.sourceLocation.column} · ejecución #${entry.sourceLocation.executionIndex}`
 													: undefined
 											}
 										>
@@ -911,7 +1011,18 @@ export function App(): React.JSX.Element {
 											{entry.sourceLocation && (
 												<span className="log-origin-tooltip">
 													↳ src/main.zig:{entry.sourceLocation.line}:
-													{entry.sourceLocation.column}
+													{entry.sourceLocation.column} · ejecución #
+													{entry.sourceLocation.executionIndex}
+													{entry.sourceLocation.loop && (
+														<>
+															{" "}· bucle {entry.sourceLocation.loop.line}:
+															{entry.sourceLocation.loop.column} ·{" "}
+															<b>
+																{entry.sourceLocation.loop.variable}=
+																{entry.sourceLocation.loop.value}
+															</b>
+														</>
+													)}
 												</span>
 											)}
 										</div>
@@ -1000,7 +1111,14 @@ export function App(): React.JSX.Element {
 							</button>
 						</div>
 						{tab === "output" && (
-							<button className="clear-button" onClick={() => setOutput([])}>
+							<button
+								className="clear-button"
+								onClick={() => {
+									setOutput([]);
+									pinnedLogLocationRef.current = undefined;
+									logSourceDecorationsRef.current?.clear();
+								}}
+							>
 								:clear
 							</button>
 						)}

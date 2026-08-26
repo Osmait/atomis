@@ -11,6 +11,18 @@ import { parseCompilerDiagnostics } from "../diagnostics/DiagnosticMapper.js";
 import type { ProcessSupervisor } from "../processes/ProcessSupervisor.js";
 import { ProbeEventReader } from "./ProbeEventReader.js";
 
+interface LogSourceLocation {
+	line: number;
+	column: number;
+	executionIndex: number;
+	loop?: {
+		line: number;
+		column: number;
+		variable: string;
+		value: string;
+	};
+}
+
 interface InstrumentationOutput {
 	protocolVersion: 1;
 	documentVersion: number;
@@ -27,7 +39,7 @@ export interface RunnerCallbacks {
 		stream: "stdout" | "stderr",
 		chunk: string,
 		category: "program" | "error",
-		sourceLocation?: { line: number; column: number },
+		sourceLocation?: LogSourceLocation,
 	) => void;
 	diagnostic: (owner: string, diagnostics: AppDiagnostic[]) => void;
 	probe: (
@@ -229,13 +241,15 @@ export class CompilerRunner {
 
 		callbacks.state("running");
 		const counts = new Map<string, number>();
+		const logCounts = new Map<string, number>();
 		let probeError: string | undefined;
 		let runtimeStderrIsError = false;
 		let runtimeStderrBuffer = "";
-		const logMarker = /\x1eZIGLIVE_LOG:(\d+):(\d+)\x1f/;
+		const logMarker =
+			/\x1eZIGLIVE_LOG:(\d+):(\d+)(?::(\d+):(\d+):([A-Za-z_][A-Za-z0-9_]*):([\s\S]*?))?\x1f/;
 		const emitRuntimeStderrText = (
 			text: string,
-			sourceLocation?: { line: number; column: number },
+			sourceLocation?: LogSourceLocation,
 		): void => {
 			for (const line of text.match(/[^\n]*\n|[^\n]+/g) ?? []) {
 				if (/(?:^|\s)(?:thread \d+ )?panic:/i.test(line))
@@ -254,10 +268,30 @@ export class CompilerRunner {
 			runtimeStderrBuffer += chunk;
 			let marker = logMarker.exec(runtimeStderrBuffer);
 			while (marker?.[1] && marker[2]) {
-				emitRuntimeStderrText(runtimeStderrBuffer.slice(0, marker.index), {
-					line: Number(marker[1]),
-					column: Number(marker[2]),
-				});
+				const line = Number(marker[1]);
+				const column = Number(marker[2]);
+				const countKey = `${line}:${column}`;
+				const executionIndex = (logCounts.get(countKey) ?? 0) + 1;
+				logCounts.set(countKey, executionIndex);
+				const sourceLocation: LogSourceLocation = {
+					line,
+					column,
+					executionIndex,
+					...(marker[3] && marker[4] && marker[5] && marker[6] !== undefined
+						? {
+								loop: {
+									line: Number(marker[3]),
+									column: Number(marker[4]),
+									variable: marker[5],
+									value: marker[6],
+								},
+							}
+						: {}),
+				};
+				emitRuntimeStderrText(
+					runtimeStderrBuffer.slice(0, marker.index),
+					sourceLocation,
+				);
 				runtimeStderrBuffer = runtimeStderrBuffer.slice(
 					marker.index + marker[0].length,
 				);
