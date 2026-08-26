@@ -1,7 +1,9 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import type { WebSocket } from "ws";
+import type { Language } from "@ziglive/protocol";
 import type { Session } from "../sessions/SessionManager.js";
 import { filterObservedUnused } from "../diagnostics/DiagnosticMapper.js";
+import { LANGUAGE_PACKS } from "../languages/registry.js";
 import { LspFramer } from "./LspFramer.js";
 
 interface JsonRpcMessage {
@@ -21,7 +23,7 @@ export class LspProxy {
 
 	public constructor(
 		private readonly session: Session,
-		private readonly language: "zig" | "rust" = "zig",
+		private readonly language: Language = "zig",
 		private readonly commandOverride?: string,
 	) {}
 
@@ -50,11 +52,9 @@ export class LspProxy {
 
 	private start(): void {
 		this.framer = new LspFramer();
-		const rust = this.language === "rust";
-		const command = this.commandOverride ?? (rust ? "rust-analyzer" : "zls");
-		const args = rust
-			? []
-			: ["--config-path", `${this.session.root}/zls.json`];
+		const pack = LANGUAGE_PACKS[this.language];
+		const command = this.commandOverride ?? pack.lsp?.command ?? "zls";
+		const args = pack.lsp?.args(this.session.root) ?? [];
 		const child = spawn(command, args, {
 			cwd: this.session.root,
 			shell: false,
@@ -82,7 +82,7 @@ export class LspProxy {
 		child.stderr.setEncoding("utf8").on("data", (chunk: string) => {
 			console.error(
 				JSON.stringify({
-					component: this.language === "rust" ? "rust-analyzer" : "zls",
+					component: LANGUAGE_PACKS[this.language].lsp?.command ?? "lsp",
 					sessionId: this.session.id,
 					message: chunk.trim(),
 				}),

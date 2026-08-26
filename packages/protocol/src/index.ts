@@ -123,9 +123,10 @@ export interface CreateSessionResponse {
 	rustcVersion?: string;
 	cargoVersion?: string;
 	rustAnalyzerVersion?: string;
+	toolchains?: Partial<Record<Language, { run: string; lsp: string }>>;
 	initialSource: string;
 	files: ProjectFile[];
-	degraded: { zig?: string; zls?: string; rust?: string; rustAnalyzer?: string };
+	degraded: Partial<Record<string, string>>;
 }
 
 export const createSessionRequestSchema = z

@@ -111,7 +111,8 @@ export class LspClient {
 			diagnostics: LspDiagnostic[],
 		) => void,
 		private readonly onStatus: (status: string) => void,
-		private readonly languageId: "zig" | "rust" = "zig",
+		private readonly languageId: string = "zig",
+		private readonly serverName: string = "zls",
 	) {}
 
 	public connect(url: string, documentVersion: number): void {
@@ -123,10 +124,10 @@ export class LspClient {
 			this.receive(String(event.data)),
 		);
 		this.socket.addEventListener("close", () =>
-			this.onStatus(`${this.languageId === "rust" ? "rust-analyzer" : "ZLS"} disconnected`),
+			this.onStatus(`${this.serverName} disconnected`),
 		);
 		this.socket.addEventListener("error", () =>
-			this.onStatus(`${this.languageId === "rust" ? "rust-analyzer" : "ZLS"} unavailable`),
+			this.onStatus(`${this.serverName} unavailable`),
 		);
 	}
 
@@ -185,7 +186,7 @@ export class LspClient {
 		this.notify("initialized", {});
 		this.open(this.model, documentVersion);
 		this.registerProviders();
-		this.onStatus(`${this.languageId === "rust" ? "rust-analyzer" : "ZLS"} connected`);
+		this.onStatus(`${this.serverName} connected`);
 	}
 
 	public open(model: Monaco.editor.ITextModel, version: number): void {
@@ -564,16 +565,14 @@ export class LspClient {
 			const diagnostics = params.diagnostics ?? [];
 			this.monaco.editor.setModelMarkers(
 				model,
-				this.languageId === "zig" ? "zls" : "rust-analyzer",
+				this.serverName,
 				diagnostics.map((diagnostic) => ({
 					...range(diagnostic.range),
 					message: diagnostic.message,
 					...(diagnostic.code !== undefined
 						? { code: String(diagnostic.code) }
 						: {}),
-					source:
-						diagnostic.source ??
-						(this.languageId === "zig" ? "zls" : "rust-analyzer"),
+					source: diagnostic.source ?? this.serverName,
 					severity:
 						[
 							0,

@@ -13,9 +13,8 @@ import {
 	type RuntimeClientMessage,
 	type RuntimeServerEvent,
 } from "@ziglive/protocol";
-import { CompilerRunner } from "./compiler/CompilerRunner.js";
-import { RustCompilerRunner } from "./compiler/RustCompilerRunner.js";
 import { RunScheduler } from "./compiler/RunScheduler.js";
+import { LANGUAGE_PACKS, packForPath } from "./languages/registry.js";
 import { runDoctor } from "./doctor.js";
 import { LspProxy } from "./lsp/LspProxy.js";
 import { ProcessSupervisor } from "./processes/ProcessSupervisor.js";
@@ -155,12 +154,6 @@ app.server.on("upgrade", (request, socket, head) => {
 	}
 });
 
-function languageForPath(path: string): Language | undefined {
-	if (path.endsWith(".rs")) return "rust";
-	if (path.endsWith(".zig")) return "zig";
-	return undefined;
-}
-
 function handleRuntime(socket: WebSocket, session: Session): void {
 	if (runtimeSockets.has(session.id)) {
 		socket.close(1008, "A runtime connection already exists for this session");
@@ -168,17 +161,14 @@ function handleRuntime(socket: WebSocket, session: Session): void {
 	}
 	runtimeSockets.set(session.id, socket);
 	session.runtimeConnections++;
-	const runners = {
-		zig: new CompilerRunner(supervisor, sessions.instrumenterPath("zig")),
-		...(session.support.rust.present
-			? {
-					rust: new RustCompilerRunner(
-						supervisor,
-						sessions.instrumenterPath("rust"),
-					),
-				}
-			: {}),
-	};
+	const runners = Object.fromEntries(
+		Object.values(LANGUAGE_PACKS)
+			.filter((pack) => session.support[pack.id].present)
+			.map((pack) => [
+				pack.id,
+				pack.createRunner(supervisor, pack.instrumenterPath()),
+			]),
+	);
 	const scheduler = new RunScheduler(session, runners, (event) =>
 		send(socket, event),
 	);
@@ -255,7 +245,7 @@ function handleRuntime(socket: WebSocket, session: Session): void {
 						files: snapshot.files,
 					});
 					const language =
-						languageForPath(message.path) ?? session.language;
+						packForPath(message.path)?.id ?? session.language;
 					if (session.support[language].run)
 						scheduler.documentUpdated(language);
 					else

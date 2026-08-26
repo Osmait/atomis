@@ -21,8 +21,12 @@ import {
 } from "monaco-vim";
 import { CommandPalette } from "./components/CommandPalette.js";
 import { FileIcon, FolderIcon, ZigMark } from "./components/FileIcon.js";
-import { registerRust } from "./editor/rustLanguage.js";
-import { registerZig } from "./editor/zigLanguage.js";
+import {
+	ENTRY_FILES,
+	languageForPath,
+	registerAllLanguages,
+	WEB_LANGUAGE_PACKS,
+} from "./languages.js";
 import { LspClient } from "./lsp/LspClient.js";
 import {
 	acceptsVersion,
@@ -171,17 +175,6 @@ const LANGUAGE_KEY = "ziglive.language.v1";
 
 function loadLanguage(): Language {
 	return localStorage.getItem(LANGUAGE_KEY) === "rust" ? "rust" : "zig";
-}
-
-function languageForPath(path: string): Language | undefined {
-	if (path.endsWith(".rs")) return "rust";
-	if (path.endsWith(".zig")) return "zig";
-	return undefined;
-}
-
-function registerEditorLanguages(monaco: Monaco): void {
-	registerZig(monaco);
-	registerRust(monaco);
 }
 
 function loadSettings(): Settings {
@@ -357,7 +350,7 @@ export function App(): React.JSX.Element {
 			})
 			.then((created) => {
 				sessionRef.current = created;
-				const entry = created.language === "rust" ? "main.rs" : "main.zig";
+				const entry = WEB_LANGUAGE_PACKS[created.language].entryFile;
 				entryRef.current = entry;
 				activeLanguageRef.current = created.language;
 				activePathRef.current = entry;
@@ -669,7 +662,8 @@ export function App(): React.JSX.Element {
 				0,
 				created.documentUri.lastIndexOf("/"),
 			);
-			const serverName = language === "rust" ? "rust-analyzer" : "zls";
+			const pack = WEB_LANGUAGE_PACKS[language];
+			const serverName = pack.serverName;
 			const client = new LspClient(
 				monaco,
 				model,
@@ -706,7 +700,8 @@ export function App(): React.JSX.Element {
 					}));
 				},
 				setStatus,
-				language === "rust" ? "rust" : "zig",
+				pack.monacoId,
+				serverName,
 			);
 			lspClientsRef.current[language] = client;
 			client.connect(
@@ -1327,7 +1322,7 @@ export function App(): React.JSX.Element {
 	);
 
 	const renameActiveFile = useCallback((): void => {
-		if (!session || activePathRef.current === entryRef.current) return;
+		if (!session || ENTRY_FILES.has(activePathRef.current)) return;
 		const path = activePathRef.current;
 		const newPath = window.prompt("Nueva ruta relativa a src/:", path)?.trim();
 		if (!newPath || newPath === path) return;
@@ -1364,7 +1359,7 @@ export function App(): React.JSX.Element {
 	}, [sendRuntime, session]);
 
 	const deleteActiveFile = useCallback((): void => {
-		if (!session || activePathRef.current === entryRef.current) return;
+		if (!session || ENTRY_FILES.has(activePathRef.current)) return;
 		const path = activePathRef.current;
 		if (!window.confirm(`¿Eliminar src/${path}?`)) return;
 		const current = filesRef.current.find((file) => file.path === path);
@@ -1404,11 +1399,10 @@ export function App(): React.JSX.Element {
 		session?.initialSource ??
 		localStorage.getItem(SOURCE_KEY) ??
 		"";
-	const editorLanguage = activePath.endsWith(".zig")
-		? "zig"
-		: activePath.endsWith(".rs")
-			? "rust"
-			: activePath.endsWith(".json")
+	const activeLanguageId = languageForPath(activePath);
+	const editorLanguage = activeLanguageId
+		? WEB_LANGUAGE_PACKS[activeLanguageId].monacoId
+		: activePath.endsWith(".json")
 			? "json"
 			: activePath.endsWith(".md")
 				? "markdown"
@@ -1556,12 +1550,9 @@ export function App(): React.JSX.Element {
 				: "err";
 	const activeLanguage =
 		languageForPath(activePath) ?? activeLanguageRef.current;
-	const runDisabled = Boolean(
-		activeLanguage === "rust" ? session.degraded.rust : session.degraded.zig,
-	);
-	const runCommand =
-		activeLanguage === "rust" ? "cargo run" : "zig build run";
-	const testCommand = activeLanguage === "rust" ? "cargo test" : "zig test";
+	const runDisabled = Boolean(session.degraded[activeLanguage]);
+	const runCommand = WEB_LANGUAGE_PACKS[activeLanguage].runCommand;
+	const testCommand = WEB_LANGUAGE_PACKS[activeLanguage].testCommand;
 	const toggleAutoRun = (): void =>
 		sendSettings({ ...settings, autoRun: !settings.autoRun });
 
@@ -1731,14 +1722,14 @@ export function App(): React.JSX.Element {
 									＋/
 								</button>
 								<button
-									disabled={activePath === entryRef.current}
+									disabled={ENTRY_FILES.has(activePath)}
 									onClick={renameActiveFile}
 									title="Renombrar archivo"
 								>
 									✎
 								</button>
 								<button
-									disabled={activePath === entryRef.current}
+									disabled={ENTRY_FILES.has(activePath)}
 									onClick={deleteActiveFile}
 									title="Eliminar archivo"
 								>
@@ -1900,7 +1891,7 @@ export function App(): React.JSX.Element {
 								language={editorLanguage}
 								value={visibleSource}
 								theme={zen ? "ziglive-zen" : "ziglive-dark"}
-								beforeMount={registerEditorLanguages}
+								beforeMount={registerAllLanguages}
 								onMount={handleMount}
 								onChange={onChange}
 								options={{
@@ -2256,9 +2247,8 @@ export function App(): React.JSX.Element {
 										</b>
 										<span>Toolchain</span>
 										<b>
-											{activeLanguage === "rust"
-												? (session.rustcVersion ?? "—")
-												: session.zigVersion}
+											{session.toolchains?.[activeLanguage]?.run ??
+												session.zigVersion}
 										</b>
 										<span>LSP</span>
 										<b className="capabilities">
