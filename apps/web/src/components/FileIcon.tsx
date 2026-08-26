@@ -2,6 +2,7 @@ export type FileKind =
 	| "zig"
 	| "zon"
 	| "rs"
+	| "go"
 	| "toml"
 	| "txt"
 	| "md"
@@ -12,11 +13,42 @@ export function fileKind(path: string): FileKind {
 	if (path.endsWith(".zig")) return "zig";
 	if (path.endsWith(".zon")) return "zon";
 	if (path.endsWith(".rs")) return "rs";
+	if (path.endsWith(".go")) return "go";
+	if (path.endsWith(".mod") || path.endsWith(".sum")) return "toml";
 	if (path.endsWith(".toml")) return "toml";
 	if (path.endsWith(".txt")) return "txt";
 	if (path.endsWith(".md")) return "md";
 	if (path.endsWith(".json")) return "json";
 	return "file";
+}
+
+/** Simplified Go mark: the language name in its brand cyan. */
+export function GoMark(): React.JSX.Element {
+	return (
+		<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+			<rect
+				x="1"
+				y="3"
+				width="14"
+				height="10"
+				rx="3"
+				fill="none"
+				stroke="currentColor"
+				strokeWidth="1.4"
+			/>
+			<text
+				x="8"
+				y="11.2"
+				textAnchor="middle"
+				fontSize="7.4"
+				fontFamily="'JetBrains Mono', monospace"
+				fontWeight="700"
+				fill="currentColor"
+			>
+				Go
+			</text>
+		</svg>
+	);
 }
 
 /** Simplified Rust gear-R mark drawn with currentColor. */
@@ -135,6 +167,8 @@ export function FileIcon({ path }: { path: string }): React.JSX.Element {
 				<ZigMark />
 			) : kind === "rs" ? (
 				<RustGear />
+			) : kind === "go" ? (
+				<GoMark />
 			) : (
 				<DocumentIcon braces={kind === "json" || kind === "toml"} />
 			)}

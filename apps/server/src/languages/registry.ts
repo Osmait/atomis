@@ -2,9 +2,15 @@ import { cp, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Language } from "@ziglive/protocol";
-import { defaultRustSource, defaultSource } from "@ziglive/protocol";
+import {
+	defaultGoSource,
+	defaultGoTestSource,
+	defaultRustSource,
+	defaultSource,
+} from "@ziglive/protocol";
 import type { LanguageRunner } from "../compiler/CompilerRunner.js";
 import { CompilerRunner } from "../compiler/CompilerRunner.js";
+import { GoCompilerRunner } from "../compiler/GoCompilerRunner.js";
 import { RustCompilerRunner } from "../compiler/RustCompilerRunner.js";
 import type { ProcessSupervisor } from "../processes/ProcessSupervisor.js";
 
@@ -24,6 +30,8 @@ export interface LanguagePack {
 	extensions: readonly string[];
 	entryFile: string;
 	defaultSource: string;
+	/** additional starter files created alongside the entry */
+	extraFiles?: Record<string, string>;
 	/** scaffold even when the toolchain is missing (degraded sessions) */
 	scaffoldAlways: boolean;
 	scaffold(root: string): Promise<void>;
@@ -144,9 +152,51 @@ const rustPack: LanguagePack = {
 	},
 };
 
+const goPack: LanguagePack = {
+	id: "go",
+	extensions: [".go"],
+	entryFile: "main.go",
+	defaultSource: defaultGoSource,
+	extraFiles: { "main_test.go": defaultGoTestSource },
+	scaffoldAlways: false,
+	async scaffold(root) {
+		await cp(
+			join(PROJECT_ROOT, "go/session-template/go.mod"),
+			join(root, "go.mod"),
+		);
+		await cp(
+			join(PROJECT_ROOT, "go/runtime/ziglive_runtime.go"),
+			join(root, "generated/ziglive_runtime.go"),
+		);
+	},
+	instrumenterPath: () =>
+		join(PROJECT_ROOT, "go", "instrumenter", "bin", "golive-instrument"),
+	createRunner: (supervisor, instrumenter) =>
+		new GoCompilerRunner(supervisor, instrumenter),
+	lsp: { command: "gopls", args: () => [] },
+	toolchain: {
+		run: {
+			command: "go",
+			args: ["version"],
+			compatible: (version) => {
+				const match = /go version go1\.(\d+)/.exec(version);
+				return Boolean(match && Number(match[1]) >= 22);
+			},
+			expected: "Go 1.22+",
+		},
+		lsp: {
+			command: "gopls",
+			args: ["version"],
+			compatible: (version) => /gopls/i.test(version),
+			expected: "gopls",
+		},
+	},
+};
+
 export const LANGUAGE_PACKS: Record<Language, LanguagePack> = {
 	zig: zigPack,
 	rust: rustPack,
+	go: goPack,
 };
 
 export function packForPath(path: string): LanguagePack | undefined {

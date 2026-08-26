@@ -67,22 +67,32 @@ export async function runDoctor(): Promise<DoctorCheck[]> {
 		});
 	}
 
-	for (const tool of ["rustc", "cargo", "rust-analyzer"] as const) {
-		const result = await command(tool, ["--version"]);
+	for (const [group, tool, expected] of [
+		["Rust", "rustc", "1.75+ (optional, enables Rust sessions)"],
+		["Rust", "cargo", "1.75+ (optional, enables Rust sessions)"],
+		[
+			"Rust",
+			"rust-analyzer",
+			"any (optional, enables Rust editor features)",
+		],
+		["Go", "go", "1.22+ (optional, enables Go sessions)"],
+		["Go", "gopls", "any (optional, enables Go editor features)"],
+	] as const) {
+		const args = tool === "go" ? ["version"] : ["--version"];
+		const result = await command(tool, [...args]);
 		const detected =
 			result.stdout.trim().split("\n")[0] ||
 			result.stderr.trim() ||
 			"not found";
 		checks.push({
-			name: `Rust ${tool}`,
+			name: `${group} ${tool}`,
 			ok: true,
 			detected:
-				result.code === 0 ? detected : `${detected} — Rust sessions disabled`,
-			expected:
-				tool === "rust-analyzer"
-					? "any (optional, enables Rust editor features)"
-					: "1.75+ (optional, enables Rust sessions)",
-			command: `${tool} --version`,
+				result.code === 0
+					? detected
+					: `${detected} — ${group} support degraded`,
+			expected,
+			command: `${tool} ${args.join(" ")}`,
 		});
 	}
 

@@ -8,3 +8,4 @@ zig-out/
 *.log
 .env
 rust/instrumenter/target/
+go/instrumenter/bin/

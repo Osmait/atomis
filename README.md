@@ -1,6 +1,6 @@
 # ZigLive
 
-A loopback-only Zig 0.16 **and Rust** playground inspired by RunJS: Monaco + real language servers (ZLS / rust-analyzer), cancellable native compilation/execution, per-test results, and inline local values produced by AST instrumentation without changing visible code.
+A loopback-only **Zig, Rust and Go** playground inspired by RunJS: Monaco + real language servers (ZLS / rust-analyzer), cancellable native compilation/execution, per-test results, and inline local values produced by AST instrumentation without changing visible code.
 
 > **El código se ejecuta localmente con tus permisos.** ZigLive is not a security sandbox. Pause Auto Run before pasting untrusted code.
 
@@ -11,6 +11,7 @@ A loopback-only Zig 0.16 **and Rust** playground inspired by RunJS: Monaco + rea
 - Zig 0.16.x on `PATH`
 - ZLS 0.16.x on `PATH`
 - Optional, enables Rust sessions: Rust 1.75+ (`rustc`/`cargo`) and `rust-analyzer` on `PATH`
+- Optional, enables Go sessions: Go 1.22+ and `gopls` on `PATH`
 - Corepack/pnpm 11.24.0
 
 ZigLive never downloads toolchains at runtime. Releases: <https://ziglang.org/download/>, <https://zigtools.org/zls/releases/0.16.0/> and <https://rustup.rs>. The Rust instrumenter's crates (`syn`, `proc-macro2`, `quote`, `unicode-ident`) are vendored in `rust/instrumenter/vendor/` so builds stay offline.
@@ -65,12 +66,12 @@ pnpm typecheck
 
 The UI is a Catppuccin-Mocha workspace of floating cards: file tree, editor and a dockable terminal, with a top bar (tabs, Run, auto, zen) and a status bar (mode chip, run state, timings, cursor).
 
-Every workspace is **bilingual by extension**: when a Rust toolchain is present the session starts with both `main.zig` and `main.rs`, and the file you are editing decides everything — Run (and Auto Run after an edit) executes that file's language pipeline, ZLS and rust-analyzer run side by side routed by extension, and assets like `input.txt` are shared between both. The status bar and terminal prompt reflect the active file's language, and the last language you touched is remembered for the next session. Rust runs use `cargo build`/`cargo run` with structured `--message-format=json` diagnostics, `#[test]` functions in the tests panel, and the same inline probe values and log-source tracing via `rustlive-instrument`.
+Every workspace is **multilingual by extension**: the session starts with the entry file of every language whose toolchain is present (`main.zig`, `main.rs`, `main.go` + `main_test.go`), and the file you are editing decides everything — Run (and Auto Run after an edit) executes that file's language pipeline, ZLS and rust-analyzer run side by side routed by extension, and assets like `input.txt` are shared between both. The status bar and terminal prompt reflect the active file's language, and the last language you touched is remembered for the next session. Rust runs use `cargo build`/`cargo run` with structured `--message-format=json` diagnostics, `#[test]` functions in the tests panel, and the same inline probe values and log-source tracing via `rustlive-instrument`.
 
 Keyboard: **Ctrl/Cmd+Enter** run · **Ctrl/Cmd+S** format the document (ZLS / rust-analyzer) and return Vim to Normal mode · **Ctrl/Cmd+B** toggle tree · **Ctrl/Cmd+J** toggle terminal · **Ctrl/Cmd+K** command palette (open, or ⌘↵ open-and-run, or create a file by typing a new name) · **Ctrl/Cmd+.** zen mode. Layout (dock side, tree, zen) persists in the browser.
 
-- Create, open, rename and delete files from the project tree or the palette. Tabs preserve Monaco models and can be closed with ✕; Zig modules can import one another with relative `@import` paths.
-- `test "…"` blocks (Zig) and `#[test]` functions (Rust) in any project file run automatically after `main()`: the terminal shows a per-test panel (pass/fail/skip/leak, duration, click to jump), the editor shows an error-lens result at the end of each test line, the tree shows failing counts per file, and the last four runs appear in the history block.
+- Create, open, rename and delete files — and organize them in folders — from the project tree or the palette (type `carpeta/archivo.ext`; the `＋/` button creates an empty folder that materializes with its first file). Folders collapse, and their badge aggregates failing tests. Tabs preserve Monaco models and can be closed with ✕; Zig modules can import one another with relative `@import` paths.
+- `test "…"` blocks (Zig), `#[test]` functions (Rust) and `func TestXxx` in `*_test.go` files (Go, via `go test -json`) run automatically after `main()`: the terminal shows a per-test panel (pass/fail/skip/leak, duration, click to jump), the editor shows an error-lens result at the end of each test line, the tree shows failing counts per file, and the last four runs appear in the history block.
 - ZLS diagnostics, completion, hover, definition, formatting, semantic tokens, inlay hints and code actions work across opened `.zig` files when advertised.
 - Auto Run debounces edits for 400 ms. **Ctrl/Cmd+Enter** runs immediately; clicking the Run button while it shows “Corriendo” cancels the active run.
 - Vim Mode is enabled by default and can be toggled in the navigator. Use `i` to insert, `Esc` for Normal mode and `:w` to run the current source. Native Ctrl/Cmd+A/C/X/V shortcuts and the editor's right-click Copy/Paste menu remain available.

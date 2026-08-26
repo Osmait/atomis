@@ -1,5 +1,6 @@
 import type { Language } from "@ziglive/protocol";
 import type * as Monaco from "monaco-editor";
+import { registerGo } from "./editor/goLanguage.js";
 import { registerRust } from "./editor/rustLanguage.js";
 import { registerZig } from "./editor/zigLanguage.js";
 
@@ -35,6 +36,16 @@ export const WEB_LANGUAGE_PACKS: Record<Language, WebLanguagePack> = {
 		runCommand: "cargo run",
 		testCommand: "cargo test",
 		register: registerRust,
+	},
+	go: {
+		id: "go",
+		extensions: [".go"],
+		entryFile: "main.go",
+		monacoId: "go",
+		serverName: "gopls",
+		runCommand: "go run",
+		testCommand: "go test",
+		register: registerGo,
 	},
 };
 

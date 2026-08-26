@@ -159,9 +159,12 @@ export class SessionManager {
 		)
 			? preferred
 			: "zig";
-		const sources = new Map(
-			includedPacks.map((pack) => [pack.entryFile, pack.defaultSource]),
-		);
+		const sources = new Map<string, string>();
+		for (const pack of includedPacks) {
+			sources.set(pack.entryFile, pack.defaultSource);
+			for (const [path, source] of Object.entries(pack.extraFiles ?? {}))
+				sources.set(path, source);
+		}
 		for (const [entry, source] of sources) {
 			await writeFile(join(sourceRoot, entry), source, {
 				encoding: "utf8",

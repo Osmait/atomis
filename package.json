@@ -9,14 +9,16 @@
   "scripts": {
     "doctor": "tsx apps/server/src/doctor.ts",
     "zig:build": "zig build",
-    "dev": "pnpm zig:build && pnpm rust:build && pnpm --filter @ziglive/protocol build && concurrently -k -n server,web -c blue,green \"pnpm --filter @ziglive/server dev\" \"pnpm --filter @ziglive/web dev\"",
+    "dev": "pnpm zig:build && pnpm rust:build && pnpm go:build && pnpm --filter @ziglive/protocol build && concurrently -k -n server,web -c blue,green \"pnpm --filter @ziglive/server dev\" \"pnpm --filter @ziglive/web dev\"",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm zig:build test && pnpm rust:build && pnpm rust:test && pnpm --filter @ziglive/protocol build && pnpm -r --if-present test",
+    "test": "pnpm zig:build test && pnpm rust:build && pnpm rust:test && pnpm go:build && pnpm go:test && pnpm --filter @ziglive/protocol build && pnpm -r --if-present test",
     "test:e2e": "playwright test",
-    "build": "pnpm zig:build && pnpm rust:build && pnpm -r build",
+    "build": "pnpm zig:build && pnpm rust:build && pnpm go:build && pnpm -r build",
     "start": "pnpm --filter @ziglive/server start",
     "rust:build": "node scripts/rust-build.mjs",
-    "rust:test": "node scripts/rust-test.mjs"
+    "rust:test": "node scripts/rust-test.mjs",
+    "go:build": "node scripts/go-build.mjs",
+    "go:test": "node scripts/go-test.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",

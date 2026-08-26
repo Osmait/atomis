@@ -174,7 +174,8 @@ const VIM_MODE_KEY = "ziglive.vim-mode.v1";
 const LANGUAGE_KEY = "ziglive.language.v1";
 
 function loadLanguage(): Language {
-	return localStorage.getItem(LANGUAGE_KEY) === "rust" ? "rust" : "zig";
+	const stored = localStorage.getItem(LANGUAGE_KEY);
+	return stored && stored in WEB_LANGUAGE_PACKS ? (stored as Language) : "zig";
 }
 
 function loadSettings(): Settings {
@@ -2297,9 +2298,14 @@ export function App(): React.JSX.Element {
 					{RUN_STATE_LABELS[runState]}
 				</span>
 				<span className="status-path">src/{activePath}</span>
-				{Object.keys(session.degraded).length > 0 && (
+				{Object.entries(session.degraded).some(([key]) =>
+					key.startsWith(activeLanguage),
+				) && (
 					<span className="degraded">
-						{Object.values(session.degraded).join(" · ")}
+						{Object.entries(session.degraded)
+							.filter(([key]) => key.startsWith(activeLanguage))
+							.map(([, message]) => message)
+							.join(" · ")}
 					</span>
 				)}
 				<span className="status-spacer" />

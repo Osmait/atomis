@@ -586,3 +586,72 @@ test("folders group files and collapse in the tree", async ({ page }) => {
 		page.getByRole("button", { name: "aoc/day1.zig" }),
 	).toBeVisible();
 });
+
+async function openGo(page: import("@playwright/test").Page): Promise<boolean> {
+	await page.goto("/");
+	const available = await page.evaluate(async () => {
+		const response = await fetch("/api/doctor");
+		const body = (await response.json()) as {
+			checks: { name: string; detected: string }[];
+		};
+		return body.checks.some(
+			(check) => check.name === "Go go" && !check.detected.includes("degraded"),
+		);
+	});
+	if (!available) return false;
+	await page.evaluate(() => {
+		localStorage.clear();
+		localStorage.setItem("ziglive.language.v1", "go");
+	});
+	await page.reload();
+	await expect(page.locator(".brand-chip")).toBeVisible();
+	const vimMode = page.getByLabel("Vim Mode");
+	if (await vimMode.isChecked()) await vimMode.uncheck();
+	return true;
+}
+
+test("go sessions run with inline values, tests and mapped diagnostics", async ({
+	page,
+}) => {
+	test.skip(!(await openGo(page)), "go not available");
+	await expect(page.locator(".state-succeeded")).toBeVisible({
+		timeout: 60_000,
+	});
+	await expect(page.locator(".editor-header")).toContainText("src/main.go");
+	await expect(page.getByText("40 : int", { exact: true })).toBeVisible();
+	await expect(
+		page.locator(".inline-value").filter({ hasText: "[]int{40, 3, 43} : []int" }),
+	).toBeVisible();
+	await expect(page.locator(".cases-card")).toContainText("2 tests");
+	await expect(page.locator(".cases-card")).toContainText("todos ok");
+	await expect(page.locator(".panel-content")).toContainText("go run");
+
+	await replaceEditor(
+		page,
+		'package main\n\nimport "fmt"\n\nfunc main() {\n\tvar x int = "no"\n\tfmt.Println(x)\n}\n',
+	);
+	await expect(page.locator(".state-compile_error")).toBeVisible({
+		timeout: 60_000,
+	});
+	await page.getByRole("button", { name: /Problems/ }).click();
+	await expect(page.getByText(/cannot use "no"/).first()).toBeVisible();
+	await expect(
+		page.getByText(/src\/main\.go · compiler · Ln 6/).first(),
+	).toBeVisible();
+
+	await page.getByRole("button", { name: "Output" }).click();
+	await replaceEditor(
+		page,
+		'package main\n\nimport "fmt"\n\nfunc main() {\n\tfmt.Println("antes")\n\tpanic("boom")\n}\n',
+	);
+	await expect(page.locator(".state-runtime_error")).toBeVisible({
+		timeout: 60_000,
+	});
+	await expect(
+		page
+			.locator(".panel-content")
+			.locator("pre.error")
+			.filter({ hasText: /panic: boom/ })
+			.first(),
+	).toBeVisible();
+});

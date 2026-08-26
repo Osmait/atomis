@@ -1,42 +1,33 @@
-import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
 import type {
-	AppDiagnostic,
 	DocumentSnapshot,
 	ProbeDescriptor,
-	ProbeValueEvent,
 	RunResult,
 	TestCase,
-	TestStatus,
 } from "@ziglive/protocol";
 import type { Session, SessionSettings } from "../sessions/SessionManager.js";
-import { parseCompilerDiagnostics } from "../diagnostics/DiagnosticMapper.js";
 import type { ProcessSupervisor } from "../processes/ProcessSupervisor.js";
 import { ProbeEventReader } from "./ProbeEventReader.js";
+import {
+	resetGenerated,
+	type RunnerCallbacks,
+	type RunnerOutcome,
+	type ProjectDiagnostic,
+} from "./CompilerRunner.js";
 import { createMarkerParser } from "./RuntimeOutputParser.js";
-import { discoverTests, matchRunnerName } from "./TestDiscovery.js";
-import { TestEventReader, type RawTestResult } from "./TestEventReader.js";
+import {
+	discoverGoTests,
+	parseGoDiagnostics,
+	parseGoTestEvents,
+} from "./GoTestDiscovery.js";
 
-export type ProjectDiagnostic = AppDiagnostic & { path?: string };
 type ProjectProbe = ProbeDescriptor & { path?: string };
 
 interface ProjectFile {
 	path: string;
 	uri: string;
 	source: string;
-}
-
-interface LogSourceLocation {
-	path?: string;
-	line: number;
-	column: number;
-	executionIndex: number;
-	loop?: {
-		line: number;
-		column: number;
-		variable: string;
-		value: string;
-	};
 }
 
 interface InstrumentationOutput {
@@ -53,92 +44,23 @@ interface InstrumentationOutput {
 	}[];
 }
 
-export interface RunnerCallbacks {
-	state: (state: "instrumenting" | "compiling" | "running" | "testing") => void;
-	catalog: (probes: ProbeDescriptor[]) => void;
-	testCatalog: (tests: TestCase[]) => void;
-	testResult: (result: {
-		testId?: string;
-		name: string;
-		status: TestStatus;
-		durationMs: number;
-		message?: string;
-	}) => void;
-	testSummary: (summary: {
-		passed: number;
-		failed: number;
-		skipped: number;
-		leaked: number;
-		durationMs: number;
-	}) => void;
-	output: (
-		stream: "stdout" | "stderr",
-		chunk: string,
-		category: "program" | "error",
-		sourceLocation?: LogSourceLocation,
-	) => void;
-	diagnostic: (owner: string, diagnostics: ProjectDiagnostic[]) => void;
-	probe: (
-		event: Omit<
-			ProbeValueEvent,
-			"sessionId" | "runId" | "documentVersion" | "timestamp" | "count" | "type"
-		> & { count?: number },
-	) => void;
-}
+const COMPILE_TIMEOUT_MS = 60_000;
 
-const RUNTIME_FILES = [
-	"runzig_runtime.zig",
-	"ziglive_runtime.rs",
-	"ziglive_runtime.go",
-] as const;
-
-/**
- * Clears the generated mirror while preserving every language runtime that is
- * present, so alternating Zig and Rust runs in the same bilingual workspace
- * never destroy each other's support files.
- */
-export async function resetGenerated(root: string): Promise<void> {
-	const generated = join(root, "generated");
-	const preserved: [string, Buffer][] = [];
-	for (const name of RUNTIME_FILES) {
-		try {
-			preserved.push([name, await readFile(join(generated, name))]);
-		} catch {
-			// runtime for the other language is absent; nothing to keep
-		}
-	}
-	await rm(generated, { recursive: true, force: true });
-	await mkdir(generated, { recursive: true, mode: 0o700 });
-	for (const [name, content] of preserved)
-		await writeFile(join(generated, name), content, { mode: 0o600 });
-}
-
-export interface LanguageRunner {
-	run(
-		session: Session,
-		snapshot: DocumentSnapshot,
-		settings: SessionSettings,
-		runId: string,
-		signal: AbortSignal,
-		callbacks: RunnerCallbacks,
-	): Promise<RunnerOutcome>;
-}
-
-export interface RunnerOutcome {
-	result: RunResult;
-	terminalState:
-		| "succeeded"
-		| "compile_error"
-		| "runtime_error"
-		| "timed_out"
-		| "cancelled";
-}
-
-export class CompilerRunner {
+export class GoCompilerRunner {
 	public constructor(
 		private readonly supervisor: ProcessSupervisor,
 		private readonly instrumenter: string,
 	) {}
+
+	private goEnv(root: string): Record<string, string> {
+		return {
+			GOCACHE: join(root, ".gocache"),
+			GOFLAGS: "-mod=mod",
+			GOPROXY: "off",
+			GO111MODULE: "on",
+			CGO_ENABLED: "0",
+		};
+	}
 
 	public async run(
 		session: Session,
@@ -148,7 +70,6 @@ export class CompilerRunner {
 		signal: AbortSignal,
 		callbacks: RunnerCallbacks,
 	): Promise<RunnerOutcome> {
-		const generatedPath = join(session.root, "generated", "main.zig");
 		const metrics: RunResult = {
 			instrumentationMs: 0,
 			compilationMs: 0,
@@ -163,20 +84,8 @@ export class CompilerRunner {
 		const projectFiles = (
 			snapshot as DocumentSnapshot & { files: ProjectFile[] }
 		).files;
-		const testCatalog = discoverTests(projectFiles);
+		const testCatalog = discoverGoTests(projectFiles);
 		callbacks.testCatalog(testCatalog);
-		const testImports = projectFiles
-			.filter((file) => extname(file.path).toLowerCase() === ".zig")
-			.map(
-				(file) =>
-					`    _ = @import("src/${file.path.replaceAll('"', '\\"')}");\n`,
-			)
-			.join("");
-		await writeFile(
-			join(session.root, "test_root.zig"),
-			`comptime {\n${testImports}}\n`,
-			{ encoding: "utf8", mode: 0o600 },
-		);
 		await resetGenerated(session.root);
 		const probes: ProjectProbe[] = [];
 		const instrumentDiagnostics: ProjectDiagnostic[] = [];
@@ -186,7 +95,12 @@ export class CompilerRunner {
 			const sourcePath = join(session.root, "src", file.path);
 			const outputPath = join(session.root, "generated", file.path);
 			await mkdir(dirname(outputPath), { recursive: true, mode: 0o700 });
-			if (extname(file.path).toLowerCase() !== ".zig") {
+			// `go build` ignores *_test.go, so test files travel as plain
+			// assets and stay uninstrumented like the other languages' tests.
+			if (
+				extname(file.path).toLowerCase() !== ".go" ||
+				file.path.endsWith("_test.go")
+			) {
 				await copyFile(sourcePath, outputPath);
 				continue;
 			}
@@ -241,7 +155,7 @@ export class CompilerRunner {
 					severity: "error",
 					line: 1,
 					column: 1,
-					source: "runzig-instrument",
+					source: "golive-instrument",
 				});
 				continue;
 			}
@@ -255,7 +169,7 @@ export class CompilerRunner {
 					severity: "error",
 					line: 1,
 					column: 1,
-					source: "runzig-instrument",
+					source: "golive-instrument",
 				});
 				continue;
 			}
@@ -270,7 +184,7 @@ export class CompilerRunner {
 					severity: "error",
 					line: 1,
 					column: 1,
-					source: "runzig-instrument",
+					source: "golive-instrument",
 				});
 				continue;
 			}
@@ -288,7 +202,7 @@ export class CompilerRunner {
 						severity: "error" as const,
 						line: item.line ?? 1,
 						column: item.column ?? 1,
-						source: "runzig-instrument",
+						source: "golive-instrument",
 					})),
 				);
 		}
@@ -302,26 +216,22 @@ export class CompilerRunner {
 			};
 
 		callbacks.state("compiling");
+		const executable = join(session.root, "target", "go-bin");
+		await mkdir(join(session.root, "target"), {
+			recursive: true,
+			mode: 0o700,
+		});
 		const compile = await this.supervisor.run(
-			"zig",
-			[
-				"build",
-				"instrumented",
-				...(testCatalog.length ? ["tests"] : []),
-				"--color",
-				"off",
-			],
+			"go",
+			["build", "-o", executable, "./generated"],
 			{
 				cwd: session.root,
 				signal,
+				env: this.goEnv(session.root),
 				limits: {
-					timeoutMs: 30_000,
+					timeoutMs: COMPILE_TIMEOUT_MS,
 					stdoutBytes: 512 * 1024,
-					stderrBytes: 512 * 1024,
-				},
-				callbacks: {
-					stdout: (chunk) => callbacks.output("stdout", chunk, "program"),
-					stderr: (chunk) => callbacks.output("stderr", chunk, "error"),
+					stderrBytes: 1024 * 1024,
 				},
 			},
 		);
@@ -331,11 +241,11 @@ export class CompilerRunner {
 				terminalState: "cancelled",
 				result: { ...metrics, cancelled: true, reason: "superseded" },
 			};
+		const compileDiagnostics = parseGoDiagnostics(compile.stderr);
+		callbacks.diagnostic("compiler", compileDiagnostics);
 		if (compile.exitCode !== 0 || compile.limit) {
-			callbacks.diagnostic(
-				"compiler",
-				parseCompilerDiagnostics(compile.stderr, generatedPath),
-			);
+			if (!compileDiagnostics.length)
+				callbacks.output("stderr", compile.stderr, "error");
 			return {
 				terminalState: "compile_error",
 				result: {
@@ -348,11 +258,16 @@ export class CompilerRunner {
 				},
 			};
 		}
-		callbacks.diagnostic("compiler", []);
 
 		callbacks.state("running");
 		const counts = new Map<string, number>();
 		let probeError: string | undefined;
+		const stdoutParser = createMarkerParser({
+			stream: "stdout",
+			detectErrors: false,
+			fileIds,
+			emit: callbacks.output,
+		});
 		const stderrParser = createMarkerParser({
 			stream: "stderr",
 			detectErrors: true,
@@ -368,7 +283,6 @@ export class CompilerRunner {
 			const path = probePaths.get(event.probeId);
 			callbacks.probe({ ...event, ...(path ? { path } : {}), count });
 		});
-		const executable = join(session.root, "zig-out", "bin", "ziglive-session");
 		const execution = await this.supervisor.run(executable, [], {
 			cwd: join(session.root, "src"),
 			signal,
@@ -380,7 +294,7 @@ export class CompilerRunner {
 				probeBytes: 1024 * 1024,
 			},
 			callbacks: {
-				stdout: (chunk) => callbacks.output("stdout", chunk, "program"),
+				stdout: (chunk) => stdoutParser.push(chunk),
 				stderr: (chunk) => stderrParser.push(chunk),
 				probe: (chunk) => {
 					try {
@@ -391,6 +305,7 @@ export class CompilerRunner {
 				},
 			},
 		});
+		stdoutParser.flush();
 		stderrParser.flush();
 		metrics.executionMs = execution.durationMs;
 		metrics.exitCode = execution.exitCode;
@@ -422,15 +337,17 @@ export class CompilerRunner {
 				},
 			};
 		if (execution.exitCode !== 0 || execution.signal) {
-			const location = new RegExp(
-				`${generatedPath.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}:(\\d+):(\\d+)`,
-			).exec(execution.stderr);
+			const location =
+				/(?:^|[\s\t])(?:.*[/\\])?(?:generated|src)[/\\]([\w./-]+\.go):(\d+)/.exec(
+					execution.stderr,
+				);
 			callbacks.diagnostic("runtime", [
 				{
+					...(location?.[1] ? { path: `src/${location[1]}` } : {}),
 					message: "Program panicked or exited abnormally",
 					severity: "error",
-					line: Number(location?.[1] ?? 1),
-					column: Number(location?.[2] ?? 1),
+					line: Number(location?.[2] ?? 1),
+					column: 1,
 					source: "runtime",
 				},
 			]);
@@ -454,89 +371,72 @@ export class CompilerRunner {
 	): Promise<void> {
 		if (!catalog.length || signal.aborted) return;
 		callbacks.state("testing");
-		const started = new Map<number, string>();
-		const counts = { passed: 0, failed: 0, skipped: 0, leaked: 0 };
-		let stderrBuffer = "";
-		let summary: typeof counts | undefined;
-		let readError: string | undefined;
-		const emitResult = (raw: RawTestResult): void => {
-			started.delete(raw.index);
-			counts[raw.status]++;
-			const matched = matchRunnerName(catalog, raw.name);
-			const failing = raw.status === "failed" || raw.status === "leaked";
-			const message = failing
-				? stderrBuffer.trim().slice(0, 1200) || raw.error
-				: undefined;
-			callbacks.testResult({
-				...(matched ? { testId: matched.testId } : {}),
-				name: matched?.name ?? raw.name,
-				status: raw.status,
-				durationMs: raw.durationNs / 1_000_000,
-				...(message ? { message } : {}),
-			});
-			stderrBuffer = "";
-		};
-		const reader = new TestEventReader((event) => {
-			if (event.kind === "test_start") {
-				started.set(event.index, event.name);
-				stderrBuffer = "";
-			} else if (event.kind === "test_result") emitResult(event);
-			else
-				summary = {
-					passed: event.passed,
-					failed: event.failed,
-					skipped: event.skipped,
-					leaked: event.leaked,
-				};
-		});
-		const executable = join(session.root, "zig-out", "bin", "ziglive-tests");
-		const execution = await this.supervisor.run(executable, [], {
-			cwd: join(session.root, "src"),
-			signal,
-			probeFd: true,
-			limits: {
-				timeoutMs: Math.max(settings.timeoutMs, 3000),
-				stdoutBytes: 512 * 1024,
-				stderrBytes: 512 * 1024,
-				probeBytes: 1024 * 1024,
-			},
-			callbacks: {
-				stderr: (chunk) => {
-					stderrBuffer += chunk;
-				},
-				probe: (chunk) => {
-					try {
-						reader.push(chunk);
-					} catch (error) {
-						readError ??=
-							error instanceof Error ? error.message : String(error);
-					}
+		const execution = await this.supervisor.run(
+			"go",
+			["test", "-json", "-count=1", "-vet=off", "./src"],
+			{
+				cwd: session.root,
+				signal,
+				env: this.goEnv(session.root),
+				limits: {
+					timeoutMs: Math.max(settings.timeoutMs + COMPILE_TIMEOUT_MS, 10_000),
+					stdoutBytes: 4 * 1024 * 1024,
+					stderrBytes: 512 * 1024,
 				},
 			},
-		});
-		try {
-			reader.end();
-		} catch (error) {
-			readError ??= error instanceof Error ? error.message : String(error);
-		}
+		);
 		if (execution.cancelled || signal.aborted) return;
-		for (const name of started.values()) {
-			counts.failed++;
-			const matched = matchRunnerName(catalog, name);
-			const tail = stderrBuffer.trim().slice(0, 1200);
+		const results = parseGoTestEvents(execution.stdout);
+		if (!results.length && execution.exitCode !== 0) {
+			const diagnostics = parseGoDiagnostics(
+				`${execution.stderr}\n${execution.stdout
+					.split("\n")
+					.filter((line) => line.trim().startsWith("{"))
+					.map((line) => {
+						try {
+							return String(
+								(JSON.parse(line) as { Output?: string }).Output ?? "",
+							);
+						} catch {
+							return "";
+						}
+					})
+					.join("")}`,
+			);
+			if (diagnostics.length) callbacks.diagnostic("compiler", diagnostics);
+			else callbacks.output("stderr", execution.stderr, "error");
+		}
+		const counts = { passed: 0, failed: 0, skipped: 0 };
+		const reported = new Set<string>();
+		for (const result of results) {
+			counts[result.status]++;
+			const matched = catalog.find(
+				(candidate) => candidate.name === result.name,
+			);
+			if (matched) reported.add(matched.testId);
 			callbacks.testResult({
 				...(matched ? { testId: matched.testId } : {}),
-				name: matched?.name ?? name,
-				status: execution.timedOut ? "timed_out" : "failed",
-				durationMs: 0,
-				...(tail ? { message: tail } : {}),
+				name: result.name,
+				status: result.status,
+				durationMs: result.durationMs,
+				...(result.message ? { message: result.message } : {}),
 			});
-			stderrBuffer = "";
 		}
-		if (readError)
-			callbacks.output("stderr", `test channel error: ${readError}\n`, "error");
+		if (execution.timedOut) {
+			for (const test of catalog) {
+				if (reported.has(test.testId)) continue;
+				counts.failed++;
+				callbacks.testResult({
+					testId: test.testId,
+					name: test.name,
+					status: "timed_out",
+					durationMs: 0,
+				});
+			}
+		}
 		callbacks.testSummary({
-			...(summary ?? counts),
+			...counts,
+			leaked: 0,
 			durationMs: execution.durationMs,
 		});
 	}

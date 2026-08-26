@@ -28,6 +28,7 @@
 	--sky: #89dceb;
 	--zig-orange: #f7a41d;
 	--rust-orange: #f74c00;
+	--go-cyan: #00add8;
 	--card-shadow:
 		0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 20px 44px rgba(0, 0, 0, 0.55);
 	--card-radius: 13px;
@@ -498,6 +499,10 @@ input:focus-visible,
 
 .file-glyph.rs {
 	color: var(--rust-orange);
+}
+
+.file-glyph.go {
+	color: var(--go-cyan);
 }
 
 .file-glyph.toml {

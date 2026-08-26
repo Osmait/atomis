@@ -12,4 +12,6 @@
 - Tests run sequentially in one process after the program run. A panic inside a test aborts the remaining tests (they are reported from the interruption), and failure messages are correlated from stderr heuristically, so a message can occasionally attach to the neighbouring test.
 - Test discovery is regex-based over `test "…"`/`test decl {` lines; exotic formatting (a `test` keyword mid-line) is executed by the runner but may miss catalog mapping.
 - Rust: per-test durations are wall-clock arrival deltas (libtest exposes no stable timing) and failure messages come from the captured `---- name stdout ----` blocks; probes cover simple `let` bindings only (no destructuring), and rust-analyzer needs a few seconds of indexing after a session starts before completions appear.
+- Go: all `.go` files live in one `package main` under `src/` (subfolder packages are not wired into the module yet); tests follow the `*_test.go` convention; `gopls` needs Go on PATH and indexes on first start.
+- Folders are implicit (they exist through their files); renaming or deleting a whole folder means moving its files one by one.
 - Node 22 is the deployment baseline; Node 23/24 are accepted for development to support current host environments.

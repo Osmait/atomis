@@ -1,11 +1,13 @@
 import { z } from "zod";
 
 export const PROTOCOL_VERSION = 1 as const;
-export const languages = ["zig", "rust"] as const;
+export const languages = ["zig", "rust", "go"] as const;
 export type Language = (typeof languages)[number];
 
 export function entryFileFor(language: Language): string {
-	return language === "rust" ? "main.rs" : "main.zig";
+	if (language === "rust") return "main.rs";
+	if (language === "go") return "main.go";
+	return "main.zig";
 }
 export const MAX_SOURCE_BYTES = 1024 * 1024;
 export const MAX_PROJECT_FILES = 64;
@@ -308,6 +310,42 @@ export type RuntimeServerEvent =
 			message: string;
 			details?: string;
 	  };
+
+export const defaultGoSource = `package main
+
+import "fmt"
+
+func main() {
+	price := 40
+	tax := 3
+	total := applyTax(price, tax)
+	values := []int{price, tax, total}
+
+	fmt.Println("total:", values[2])
+}
+
+func applyTax(price int, tax int) int {
+	return price + tax
+}
+`;
+
+export const defaultGoTestSource = `package main
+
+import "testing"
+
+// Las funciones TestXxx corren tras main(): mira el panel de tests →
+func TestApplyTaxSumaElImpuesto(t *testing.T) {
+	if applyTax(40, 3) != 43 {
+		t.Fatalf("esperado 43, recibido %d", applyTax(40, 3))
+	}
+}
+
+func TestApplyTaxConTasaCero(t *testing.T) {
+	if applyTax(40, 0) != 40 {
+		t.Fatalf("esperado 40, recibido %d", applyTax(40, 0))
+	}
+}
+`;
 
 export const defaultRustSource = `fn main() {
     let price: i32 = 40;
