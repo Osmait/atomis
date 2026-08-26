@@ -658,6 +658,20 @@ test("leader key navigates tree and terminal app-wide", async ({ page }) => {
 	await page.keyboard.press("l");
 	await expect(page.locator(".mode-chip")).toHaveText("TERMINAL");
 
+	// Shift+L / Shift+H cycle open tabs; leader+o closes the others
+	await page.locator(".tree-file", { hasText: "main.rs" }).first().click();
+	await expect(page.locator(".status-path")).toContainText("src/main.rs");
+	await page.locator(".monaco-editor").click();
+	await page.keyboard.press("Escape");
+	await page.keyboard.press("Shift+H");
+	await expect(page.locator(".status-path")).not.toContainText("src/main.rs");
+	await page.keyboard.press("Shift+L");
+	await expect(page.locator(".status-path")).toContainText("src/main.rs");
+	await page.keyboard.press(" ");
+	await page.keyboard.press("o");
+	await expect(page.locator(".buffer-tab")).toHaveCount(1);
+	await expect(page.locator(".buffer-tab")).toContainText("main.rs");
+
 	// leader t focuses the terminal; leader t again closes it
 	await page.keyboard.press("Escape");
 	await page.keyboard.press(" ");

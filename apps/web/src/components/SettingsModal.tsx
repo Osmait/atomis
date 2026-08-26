@@ -186,6 +186,7 @@ export function SettingsModal({
 					<div className="settings-title">Teclado</div>
 					<div className="settings-toggle-hint">
 						leader+e árbol · leader+t terminal · leader+h/l cambia de panel ·
+						leader+o cierra otras pestañas · Shift+H/L cambia de pestaña ·
 						j/k navegan
 					</div>
 					<div className="settings-pills">

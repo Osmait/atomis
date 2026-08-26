@@ -299,6 +299,8 @@ export function App(): React.JSX.Element {
 	const [files, setFiles] = useState<ProjectFile[]>([]);
 	const [activePath, setActivePath] = useState(entryRef.current);
 	const [openTabs, setOpenTabs] = useState([entryRef.current]);
+	const openTabsRef = useRef(openTabs);
+	openTabsRef.current = openTabs;
 	const [startupError, setStartupError] = useState<string>();
 	const [settings, setSettings] = useState<Settings>(loadSettings);
 	const [valueFmt, setValueFmt] = useState<ValueFmt>(loadValueFmt);
@@ -1709,6 +1711,11 @@ export function App(): React.JSX.Element {
 					event.stopPropagation();
 					if (focusZoneRef.current === "tree") focusEditorZone();
 					else if (focusZoneRef.current === "editor") focusTermZone();
+				} else if (key === "o") {
+					// vim :only — close every tab except the active one.
+					event.preventDefault();
+					event.stopPropagation();
+					setOpenTabs([activePathRef.current]);
 				}
 				return;
 			}
@@ -1726,6 +1733,25 @@ export function App(): React.JSX.Element {
 					leaderPendingRef.current = true;
 					setLeaderPending(true);
 					leaderTimerRef.current = setTimeout(cancelLeader, 1500);
+					return;
+				}
+			}
+
+			if (event.key === "H" || event.key === "L") {
+				const allowed = inMonaco
+					? vimEnabledRef.current && vimModeRef.current === "NORMAL"
+					: true;
+				const tabs = openTabsRef.current;
+				if (allowed && tabs.length > 1) {
+					event.preventDefault();
+					event.stopPropagation();
+					const index = tabs.indexOf(activePathRef.current);
+					const nextIndex =
+						event.key === "L"
+							? (index + 1) % tabs.length
+							: (index - 1 + tabs.length) % tabs.length;
+					const next = tabs[nextIndex];
+					if (next) selectFile(next);
 					return;
 				}
 			}
