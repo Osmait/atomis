@@ -143,8 +143,11 @@ app.server.on("upgrade", (request, socket, head) => {
 			handleRuntime(webSocket, session),
 		);
 	} else if (url.pathname === "/ws/lsp") {
+		const langParam = url.searchParams.get("lang");
 		const language: Language =
-			url.searchParams.get("lang") === "rust" ? "rust" : "zig";
+			langParam && langParam in LANGUAGE_PACKS
+				? (langParam as Language)
+				: "zig";
 		lspWss.handleUpgrade(request, socket, head, (webSocket) =>
 			handleLsp(webSocket, session, language),
 		);

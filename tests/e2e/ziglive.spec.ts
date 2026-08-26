@@ -626,6 +626,15 @@ test("go sessions run with inline values, tests and mapped diagnostics", async (
 	await expect(page.locator(".cases-card")).toContainText("todos ok");
 	await expect(page.locator(".panel-content")).toContainText("go run");
 
+	// regression: opening a Go file must never route its content to ZLS
+	await page.getByRole("button", { name: "main_test.go", exact: true }).click();
+	await expect(page.locator(".editor-header")).toContainText(
+		"src/main_test.go",
+	);
+	await page.waitForTimeout(1500);
+	await expect(page.locator(".error-lens-message")).toHaveCount(0);
+	await page.getByRole("button", { name: "main.go", exact: true }).click();
+
 	await replaceEditor(
 		page,
 		'package main\n\nimport "fmt"\n\nfunc main() {\n\tvar x int = "no"\n\tfmt.Println(x)\n}\n',
