@@ -936,6 +936,14 @@ test("cpp sessions run with stream previews and failing asserts", async ({
 	).toBeVisible();
 	await expect(page.locator(".cases-card")).toContainText("todos ok");
 
+	// regression: LSP features must work on a freshly opened file WITHOUT
+	// typing — didOpen used to be dropped while the socket was connecting
+	await page.locator('.view-line span:text-is("apply_tax")').first().hover();
+	await expect(
+		page.locator(".monaco-hover:not(.hidden)").first(),
+	).toContainText("apply_tax", { timeout: 15_000 });
+	await page.keyboard.press("Escape");
+
 	// a failing assert aborts the run and correlates the stderr message
 	await page.getByRole("button", { name: "main_test.cpp", exact: true }).click();
 	await replaceEditor(

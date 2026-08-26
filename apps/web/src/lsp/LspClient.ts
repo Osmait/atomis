@@ -97,6 +97,9 @@ export class LspClient {
 	>();
 	private readonly disposables: Monaco.IDisposable[] = [];
 	private readonly openedModels = new Map<string, Monaco.editor.ITextModel>();
+	private readonly pendingOpens = new Map<string, Monaco.editor.ITextModel>();
+	private initialized = false;
+	private lastVersion = 0;
 	private capabilities: Record<string, unknown> = {};
 
 	public constructor(
@@ -184,13 +187,26 @@ export class LspClient {
 		this.capabilities = result.capabilities;
 		this.onCapabilities(result.capabilities);
 		this.notify("initialized", {});
+		this.initialized = true;
 		this.open(this.model, documentVersion);
+		// Models opened while the socket was still connecting queued up: their
+		// didOpen would have been dropped pre-initialize. Send them now.
+		const queued = [...this.pendingOpens.values()];
+		this.pendingOpens.clear();
+		for (const model of queued) this.open(model, this.lastVersion);
 		this.registerProviders();
 		this.onStatus(`${this.serverName} connected`);
 	}
 
 	public open(model: Monaco.editor.ITextModel, version: number): void {
 		const uri = model.uri.toString();
+		this.lastVersion = Math.max(this.lastVersion, version);
+		if (!this.initialized) {
+			// The server ignores anything before initialize completes; queue the
+			// model so the real didOpen goes out right after the handshake.
+			if (!this.openedModels.has(uri)) this.pendingOpens.set(uri, model);
+			return;
+		}
 		if (this.openedModels.has(uri)) return;
 		this.openedModels.set(uri, model);
 		this.notify("textDocument/didOpen", {
@@ -216,6 +232,7 @@ export class LspClient {
 	}
 
 	public close(uri: string): void {
+		this.pendingOpens.delete(uri);
 		if (!this.openedModels.delete(uri)) return;
 		this.notify("textDocument/didClose", { textDocument: { uri } });
 	}
@@ -634,6 +651,7 @@ export class LspClient {
 		for (const uri of this.openedModels.keys())
 			this.notify("textDocument/didClose", { textDocument: { uri } });
 		this.openedModels.clear();
+		this.pendingOpens.clear();
 		for (const disposable of this.disposables) disposable.dispose();
 		this.socket?.close();
 		for (const pending of this.pending.values()) pending.resolve(null);
