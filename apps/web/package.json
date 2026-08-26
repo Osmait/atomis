@@ -12,6 +12,7 @@
   "dependencies": {
     "@monaco-editor/react": "4.7.0",
     "@ziglive/protocol": "workspace:*",
+    "material-icon-theme": "^5.38.1",
     "monaco-editor": "0.56.0",
     "monaco-vim": "0.4.4",
     "react": "19.2.8",

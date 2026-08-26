@@ -26,14 +26,6 @@
 	--blue: #89b4fa;
 	--teal: #94e2d5;
 	--sky: #89dceb;
-	--zig-orange: #f7a41d;
-	--rust-orange: #dea584;
-	--go-cyan: #00add8;
-	--ts-blue: #3178c6;
-	--js-yellow: #f0db4f;
-	--py-blue: #4b8bbe;
-	--c-blue: #649ad2;
-	--cpp-pink: #f34b7d;
 	--card-shadow:
 		0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 20px 44px rgba(0, 0, 0, 0.55);
 	--card-radius: 13px;
@@ -131,14 +123,13 @@ input:focus-visible,
 }
 
 .brand-glyph {
-	color: var(--zig-orange);
 	display: inline-flex;
-	width: 15px;
-	height: 15px;
+	width: 16px;
+	height: 16px;
 	flex-shrink: 0;
 }
 
-.brand-glyph svg {
+.brand-glyph img {
 	width: 100%;
 	height: 100%;
 	display: block;
@@ -179,7 +170,7 @@ input:focus-visible,
 }
 
 .buffer-tab:not(.active) .file-glyph {
-	color: var(--overlay);
+	opacity: 0.55;
 }
 
 .tab-close {
@@ -380,14 +371,13 @@ input:focus-visible,
 }
 
 .folder-glyph {
-	color: var(--yellow);
 	display: inline-flex;
-	width: 14px;
-	height: 14px;
+	width: 15px;
+	height: 15px;
 	flex-shrink: 0;
 }
 
-.folder-glyph svg {
+.folder-glyph img {
 	width: 100%;
 	height: 100%;
 	display: block;
@@ -475,71 +465,15 @@ input:focus-visible,
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	width: 14px;
-	height: 14px;
+	width: 15px;
+	height: 15px;
 	flex-shrink: 0;
 }
 
-.file-glyph svg {
+.file-glyph img {
 	width: 100%;
 	height: 100%;
 	display: block;
-}
-
-.file-glyph.zig {
-	color: var(--zig-orange);
-}
-
-.file-glyph.zon {
-	color: var(--blue);
-}
-
-.file-glyph.rs {
-	color: var(--rust-orange);
-}
-
-.file-glyph.go {
-	color: var(--go-cyan);
-}
-
-.file-glyph.ts {
-	color: var(--ts-blue);
-}
-
-.file-glyph.js {
-	color: var(--js-yellow);
-}
-
-.file-glyph.py {
-	color: var(--py-blue);
-}
-
-.file-glyph.c {
-	color: var(--c-blue);
-}
-
-.file-glyph.cpp {
-	color: var(--cpp-pink);
-}
-
-.file-glyph.toml {
-	color: var(--peach);
-}
-
-.file-glyph.txt {
-	color: var(--teal);
-}
-
-.file-glyph.md {
-	color: var(--sky);
-}
-
-.file-glyph.json {
-	color: var(--yellow);
-}
-
-.file-glyph.file {
-	color: var(--overlay);
 }
 
 .file-glyph.new {

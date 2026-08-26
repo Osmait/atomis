@@ -89,7 +89,7 @@ Each browser session gets `/tmp/ziglive/<random-id>/` with a visible multi-file 
 
 ## Credits
 
-The Zig mark used for `.zig`/`.zon` file icons comes from [ziglang/logo](https://github.com/ziglang/logo) (CC-BY-SA-4.0, Zig Software Foundation). The vendored Rust crates under `rust/instrumenter/vendor/` keep their original MIT/Apache-2.0 licenses.
+File, folder and language icons come from [material-icon-theme](https://github.com/material-extensions/vscode-material-icon-theme) (MIT), bundled at build time — no icon CDN is used. The vendored Rust crates under `rust/instrumenter/vendor/` keep their original MIT/Apache-2.0 licenses.
 
 ## Documentation
 
