@@ -599,25 +599,29 @@ test("one workspace runs both languages by extension", async ({ page }) => {
 	);
 	await expect(page.getByText("40 : i32", { exact: true })).toBeVisible();
 
+	// Entering the file is enough: the inspect re-runs for the new language
+	// without typing or a manual run.
 	await page.getByRole("button", { name: "main.rs" }).click();
 	await expect(page.locator(".editor-header")).toContainText("src/main.rs");
-	await page.keyboard.press("ControlOrMeta+Enter");
-	await expect(page.locator(".state-succeeded")).toBeVisible({
+	await expect(page.locator(".panel-content")).toContainText("cargo run", {
 		timeout: 40_000,
 	});
-	await expect(page.locator(".panel-content")).toContainText("cargo run");
 	await expect(
 		page.locator(".inline-value").filter({ hasText: "[40, 3, 43] : [i32; 3]" }),
-	).toBeVisible();
+	).toBeVisible({ timeout: 40_000 });
 	await expect(page.locator(".cases-card")).toContainText("2 tests");
+	await expect(page.locator(".editor-header")).toContainText(
+		"2 tests en el archivo",
+	);
 
 	await page.getByRole("button", { name: "main.zig" }).click();
 	await expect(page.locator(".editor-header")).toContainText("src/main.zig");
-	await page.keyboard.press("ControlOrMeta+Enter");
-	await expect(page.locator(".state-succeeded")).toBeVisible({
+	await expect(page.locator(".panel-content")).toContainText("zig build run", {
 		timeout: 40_000,
 	});
-	await expect(page.locator(".panel-content")).toContainText("zig build run");
+	await expect(page.getByText("40 : i32", { exact: true })).toBeVisible({
+		timeout: 40_000,
+	});
 });
 
 test("folders group files and collapse in the tree", async ({ page }) => {

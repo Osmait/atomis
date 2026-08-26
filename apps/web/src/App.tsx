@@ -321,6 +321,7 @@ export function App(): React.JSX.Element {
 	const versionRef = useRef(1);
 	const filesRef = useRef<ProjectFile[]>([]);
 	const activePathRef = useRef(entryRef.current);
+	const lastRunLanguageRef = useRef<Language | null>(null);
 	const settingsRef = useRef(settings);
 	const catalogRef = useRef<ProbeDescriptor[]>([]);
 	const testLensDecorationsRef = useRef<
@@ -423,20 +424,37 @@ export function App(): React.JSX.Element {
 	);
 
 	const run = useCallback((): void => {
-		if (session)
-			sendRuntime({
-				type: "run.request",
-				sessionId: session.sessionId,
-				version: versionRef.current,
-				reason: "manual",
-				language:
-					languageForPath(activePathRef.current) ?? activeLanguageRef.current,
-			});
+		if (!session) return;
+		const language =
+			languageForPath(activePathRef.current) ?? activeLanguageRef.current;
+		lastRunLanguageRef.current = language;
+		sendRuntime({
+			type: "run.request",
+			sessionId: session.sessionId,
+			version: versionRef.current,
+			reason: "manual",
+			language,
+		});
 	}, [sendRuntime, session]);
 	const stop = useCallback((): void => {
 		if (session)
 			sendRuntime({ type: "run.cancel", sessionId: session.sessionId });
 	}, [sendRuntime, session]);
+
+	// Probe/test state holds the LAST run's language only: entering a file of
+	// a different language would show nothing until an edit re-ran it. Kick
+	// an automatic run for the newly active language instead.
+	useEffect(() => {
+		if (!session) return;
+		const language = languageForPath(activePath);
+		if (!language) return;
+		const last = lastRunLanguageRef.current ?? session.language;
+		if (language === last) return;
+		if (!settingsRef.current.autoRun) return;
+		if (session.degraded[language]) return;
+		const timer = setTimeout(run, 80);
+		return () => clearTimeout(timer);
+	}, [activePath, session, run]);
 
 	const changeVimMode = useCallback((enabled: boolean): void => {
 		vimEnabledRef.current = enabled;
@@ -1547,6 +1565,8 @@ export function App(): React.JSX.Element {
 			const language = languageForPath(path);
 			if (model && language)
 				lspClientsRef.current[language]?.change(model, version, source);
+			if (language && settingsRef.current.autoRun)
+				lastRunLanguageRef.current = language;
 			sendRuntime({
 				type: "document.update",
 				sessionId: session.sessionId,
