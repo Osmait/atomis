@@ -1284,17 +1284,26 @@ input:focus-visible,
 	border-radius: 50%;
 }
 
+/* Hidden until you hover the gutter cell (VS Code breakpoint style);
+ * only manually-enabled probes stay visible. */
 .manual-probe::after {
 	content: "◦";
 	color: var(--dim);
 	display: block;
 	text-align: center;
 	line-height: 22px;
+	opacity: 0;
+	transition: opacity 0.1s ease;
+}
+
+.manual-probe:hover::after {
+	opacity: 0.8;
 }
 
 .manual-probe.enabled::after {
 	content: "●";
 	color: var(--mauve);
+	opacity: 1;
 }
 
 .error-lens-line {
