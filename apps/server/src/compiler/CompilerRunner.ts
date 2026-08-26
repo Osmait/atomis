@@ -90,6 +90,7 @@ const RUNTIME_FILES = [
 	"runzig_runtime.zig",
 	"ziglive_runtime.rs",
 	"ziglive_runtime.go",
+	"__ziglive_runtime.mjs",
 ] as const;
 
 /**

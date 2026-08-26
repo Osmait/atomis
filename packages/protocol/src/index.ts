@@ -1,12 +1,13 @@
 import { z } from "zod";
 
 export const PROTOCOL_VERSION = 1 as const;
-export const languages = ["zig", "rust", "go"] as const;
+export const languages = ["zig", "rust", "go", "ts"] as const;
 export type Language = (typeof languages)[number];
 
 export function entryFileFor(language: Language): string {
 	if (language === "rust") return "main.rs";
 	if (language === "go") return "main.go";
+	if (language === "ts") return "main.ts";
 	return "main.zig";
 }
 export const MAX_SOURCE_BYTES = 1024 * 1024;
@@ -310,6 +311,32 @@ export type RuntimeServerEvent =
 			message: string;
 			details?: string;
 	  };
+
+export const defaultTsSource = `export function applyTax(price: number, tax: number): number {
+	return price + tax;
+}
+
+const price: number = 40;
+const tax: number = 3;
+const total = applyTax(price, tax);
+const values = [price, tax, total];
+
+console.log("total:", values[2]);
+`;
+
+export const defaultTsTestSource = `import { test } from "node:test";
+import assert from "node:assert/strict";
+import { applyTax } from "./main.ts";
+
+// Los tests de node:test corren tras el programa: mira el panel →
+test("applyTax suma el impuesto", () => {
+	assert.equal(applyTax(40, 3), 43);
+});
+
+test("applyTax con tasa cero", () => {
+	assert.equal(applyTax(40, 0), 40);
+});
+`;
 
 export const defaultGoSource = `package main
 

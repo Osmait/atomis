@@ -3,6 +3,8 @@ export type FileKind =
 	| "zon"
 	| "rs"
 	| "go"
+	| "ts"
+	| "js"
 	| "toml"
 	| "txt"
 	| "md"
@@ -14,12 +16,35 @@ export function fileKind(path: string): FileKind {
 	if (path.endsWith(".zon")) return "zon";
 	if (path.endsWith(".rs")) return "rs";
 	if (path.endsWith(".go")) return "go";
+	if (path.endsWith(".ts")) return "ts";
+	if (path.endsWith(".js") || path.endsWith(".mjs") || path.endsWith(".cjs"))
+		return "js";
 	if (path.endsWith(".mod") || path.endsWith(".sum")) return "toml";
 	if (path.endsWith(".toml")) return "toml";
 	if (path.endsWith(".txt")) return "txt";
 	if (path.endsWith(".md")) return "md";
 	if (path.endsWith(".json")) return "json";
 	return "file";
+}
+
+/** Rounded-square language badge used for the TS and JS marks. */
+export function LangBadge({ label }: { label: string }): React.JSX.Element {
+	return (
+		<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+			<rect x="1.5" y="1.5" width="13" height="13" rx="2.6" fill="currentColor" />
+			<text
+				x="8"
+				y="11.6"
+				textAnchor="middle"
+				fontSize="7.2"
+				fontFamily="'JetBrains Mono', monospace"
+				fontWeight="700"
+				fill="var(--base, #11111b)"
+			>
+				{label}
+			</text>
+		</svg>
+	);
 }
 
 /** Simplified Go mark: the language name in its brand cyan. */
@@ -169,6 +194,10 @@ export function FileIcon({ path }: { path: string }): React.JSX.Element {
 				<RustGear />
 			) : kind === "go" ? (
 				<GoMark />
+			) : kind === "ts" ? (
+				<LangBadge label="TS" />
+			) : kind === "js" ? (
+				<LangBadge label="JS" />
 			) : (
 				<DocumentIcon braces={kind === "json" || kind === "toml"} />
 			)}

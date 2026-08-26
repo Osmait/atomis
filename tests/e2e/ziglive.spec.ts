@@ -664,3 +664,61 @@ test("go sessions run with inline values, tests and mapped diagnostics", async (
 			.first(),
 	).toBeVisible();
 });
+
+test("ts sessions run with inline values, tests and non-blocking type errors", async ({
+	page,
+}) => {
+	await page.goto("/");
+	await page.evaluate(() => {
+		localStorage.clear();
+		localStorage.setItem("ziglive.language.v1", "ts");
+	});
+	await page.reload();
+	await expect(page.locator(".brand-chip")).toBeVisible();
+	const vimMode = page.getByLabel("Vim Mode");
+	if (await vimMode.isChecked()) await vimMode.uncheck();
+	await expect(page.locator(".state-succeeded")).toBeVisible({
+		timeout: 60_000,
+	});
+	await expect(page.locator(".editor-header")).toContainText("src/main.ts");
+	await expect(page.getByText("40 : number", { exact: true })).toBeVisible();
+	await expect(
+		page.locator(".inline-value").filter({ hasText: "[ 40, 3, 43 ] : Array" }),
+	).toBeVisible();
+	await expect(page.locator(".cases-card")).toContainText("2 tests");
+	await expect(page.locator(".cases-card")).toContainText("todos ok");
+	await expect(page.locator(".panel-content")).toContainText("node main.ts");
+
+	// A type error surfaces as a diagnostic but the program still runs.
+	await replaceEditor(
+		page,
+		'const bad: number = "no";\nconsole.log("sigue corriendo:", bad);\n',
+	);
+	await expect(page.locator(".state-succeeded")).toBeVisible({
+		timeout: 60_000,
+	});
+	await expect(page.locator(".panel-content")).toContainText(
+		"sigue corriendo: no",
+	);
+	await page.getByRole("button", { name: /Problems/ }).click();
+	await expect(
+		page.getByText(/Type 'string' is not assignable/).first(),
+	).toBeVisible();
+
+	// An uncaught throw is a runtime error with a mapped location.
+	await page.getByRole("button", { name: "Output" }).click();
+	await replaceEditor(
+		page,
+		'console.log("antes");\nthrow new Error("boom esperado");\n',
+	);
+	await expect(page.locator(".state-runtime_error")).toBeVisible({
+		timeout: 60_000,
+	});
+	await expect(
+		page
+			.locator(".panel-content")
+			.locator("pre.error")
+			.filter({ hasText: /boom esperado/ })
+			.first(),
+	).toBeVisible();
+});

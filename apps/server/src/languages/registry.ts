@@ -7,10 +7,13 @@ import {
 	defaultGoTestSource,
 	defaultRustSource,
 	defaultSource,
+	defaultTsSource,
+	defaultTsTestSource,
 } from "@ziglive/protocol";
 import type { LanguageRunner } from "../compiler/CompilerRunner.js";
 import { CompilerRunner } from "../compiler/CompilerRunner.js";
 import { GoCompilerRunner } from "../compiler/GoCompilerRunner.js";
+import { TsCompilerRunner } from "../compiler/TsCompilerRunner.js";
 import { RustCompilerRunner } from "../compiler/RustCompilerRunner.js";
 import type { ProcessSupervisor } from "../processes/ProcessSupervisor.js";
 
@@ -193,10 +196,85 @@ const goPack: LanguagePack = {
 	},
 };
 
+export function nodeCompatible(version: string): boolean {
+	const match = /v(\d+)\.(\d+)/.exec(version);
+	if (!match) return false;
+	const major = Number(match[1]);
+	const minor = Number(match[2]);
+	// Type stripping ships enabled by default from 22.18 / 23.6 onward.
+	return major >= 23 || (major === 22 && minor >= 18);
+}
+
+const tsPack: LanguagePack = {
+	id: "ts",
+	extensions: [".ts", ".js", ".mjs"],
+	entryFile: "main.ts",
+	defaultSource: defaultTsSource,
+	extraFiles: { "main.test.ts": defaultTsTestSource },
+	scaffoldAlways: false,
+	async scaffold(root) {
+		await cp(
+			join(PROJECT_ROOT, "ts/session-template/package.json"),
+			join(root, "package.json"),
+		);
+		await cp(
+			join(PROJECT_ROOT, "ts/runtime/ziglive_runtime.mjs"),
+			join(root, "generated/__ziglive_runtime.mjs"),
+		);
+		const typeRoots = join(PROJECT_ROOT, "node_modules", "@types").replaceAll(
+			"\\",
+			"/",
+		);
+		await writeFile(
+			join(root, "tsconfig.json"),
+			`${JSON.stringify(
+				{
+					compilerOptions: {
+						strict: true,
+						noEmit: true,
+						target: "ES2023",
+						module: "nodenext",
+						moduleResolution: "nodenext",
+						allowImportingTsExtensions: true,
+						skipLibCheck: true,
+						allowJs: true,
+						typeRoots: [typeRoots],
+						types: ["node"],
+					},
+					include: ["src"],
+				},
+				null,
+				"\t",
+			)}\n`,
+			{ encoding: "utf8", mode: 0o600 },
+		);
+	},
+	instrumenterPath: () =>
+		join(PROJECT_ROOT, "ts", "instrumenter", "instrument.mjs"),
+	createRunner: (supervisor, instrumenter) =>
+		new TsCompilerRunner(supervisor, instrumenter),
+	lsp: { command: "typescript-language-server", args: () => ["--stdio"] },
+	toolchain: {
+		run: {
+			command: "node",
+			args: ["--version"],
+			compatible: nodeCompatible,
+			expected: "Node 22.18+ (type stripping)",
+		},
+		lsp: {
+			command: "typescript-language-server",
+			args: ["--version"],
+			compatible: (version) => /\d/.test(version),
+			expected: "typescript-language-server",
+		},
+	},
+};
+
 export const LANGUAGE_PACKS: Record<Language, LanguagePack> = {
 	zig: zigPack,
 	rust: rustPack,
 	go: goPack,
+	ts: tsPack,
 };
 
 export function packForPath(path: string): LanguagePack | undefined {

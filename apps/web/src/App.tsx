@@ -1402,7 +1402,9 @@ export function App(): React.JSX.Element {
 		"";
 	const activeLanguageId = languageForPath(activePath);
 	const editorLanguage = activeLanguageId
-		? WEB_LANGUAGE_PACKS[activeLanguageId].monacoId
+		? /\.(js|mjs|cjs)$/.test(activePath)
+			? "javascript"
+			: WEB_LANGUAGE_PACKS[activeLanguageId].monacoId
 		: activePath.endsWith(".json")
 			? "json"
 			: activePath.endsWith(".md")

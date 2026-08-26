@@ -77,6 +77,11 @@ export async function runDoctor(): Promise<DoctorCheck[]> {
 		],
 		["Go", "go", "1.22+ (optional, enables Go sessions)"],
 		["Go", "gopls", "any (optional, enables Go editor features)"],
+		[
+			"TS",
+			"typescript-language-server",
+			"any (optional, enables TS/JS editor features)",
+		],
 	] as const) {
 		const args = tool === "go" ? ["version"] : ["--version"];
 		const result = await command(tool, [...args]);

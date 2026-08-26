@@ -29,6 +29,8 @@
 	--zig-orange: #f7a41d;
 	--rust-orange: #f74c00;
 	--go-cyan: #00add8;
+	--ts-blue: #3178c6;
+	--js-yellow: #f0db4f;
 	--card-shadow:
 		0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 20px 44px rgba(0, 0, 0, 0.55);
 	--card-radius: 13px;
@@ -503,6 +505,14 @@ input:focus-visible,
 
 .file-glyph.go {
 	color: var(--go-cyan);
+}
+
+.file-glyph.ts {
+	color: var(--ts-blue);
+}
+
+.file-glyph.js {
+	color: var(--js-yellow);
 }
 
 .file-glyph.toml {
