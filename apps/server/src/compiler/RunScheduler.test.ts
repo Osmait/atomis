@@ -7,6 +7,7 @@ describe("RunScheduler", () => {
 		const events: unknown[] = [];
 		const session = {
 			id: "x",
+			language: "zig",
 			settings: {
 				autoRun: true,
 				autoInspect: true,
@@ -28,8 +29,10 @@ describe("RunScheduler", () => {
 				cancelled: false,
 			},
 		}));
-		const scheduler = new RunScheduler(session, { run } as never, (event) =>
-			events.push(event),
+		const scheduler = new RunScheduler(
+			session,
+			{ zig: { run } } as never,
+			(event) => events.push(event),
 		);
 		scheduler.documentUpdated();
 		scheduler.documentUpdated();

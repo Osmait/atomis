@@ -57,8 +57,8 @@ fn renderResult(writer: *std.Io.Writer, result: AstAdapter.Result, options: Opti
     for (result.parse_diagnostics, 0..) |diagnostic, index| {
         if (index != 0) try writer.writeByte(',');
         try writer.writeAll("{\"message\":");
-        try jsonString(writer, diagnostic);
-        try writer.writeAll(",\"severity\":\"error\"}");
+        try jsonString(writer, diagnostic.message);
+        try writer.print(",\"severity\":\"error\",\"line\":{d},\"column\":{d}}}", .{ diagnostic.line, diagnostic.column });
     }
     try writer.writeAll("]}");
 }

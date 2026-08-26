@@ -6,13 +6,18 @@ import type {
 	ProbeDescriptor,
 	ProbeValueEvent,
 	RunResult,
+	TestCase,
+	TestStatus,
 } from "@ziglive/protocol";
 import type { Session, SessionSettings } from "../sessions/SessionManager.js";
 import { parseCompilerDiagnostics } from "../diagnostics/DiagnosticMapper.js";
 import type { ProcessSupervisor } from "../processes/ProcessSupervisor.js";
 import { ProbeEventReader } from "./ProbeEventReader.js";
+import { createMarkerParser } from "./RuntimeOutputParser.js";
+import { discoverTests, matchRunnerName } from "./TestDiscovery.js";
+import { TestEventReader, type RawTestResult } from "./TestEventReader.js";
 
-type ProjectDiagnostic = AppDiagnostic & { path?: string };
+export type ProjectDiagnostic = AppDiagnostic & { path?: string };
 type ProjectProbe = ProbeDescriptor & { path?: string };
 
 interface ProjectFile {
@@ -40,12 +45,32 @@ interface InstrumentationOutput {
 	generatedPath?: string;
 	sourceMapPath?: string;
 	probes: ProbeDescriptor[];
-	parseDiagnostics: { message: string; severity: string }[];
+	parseDiagnostics: {
+		message: string;
+		severity: string;
+		line?: number;
+		column?: number;
+	}[];
 }
 
 export interface RunnerCallbacks {
-	state: (state: "instrumenting" | "compiling" | "running") => void;
+	state: (state: "instrumenting" | "compiling" | "running" | "testing") => void;
 	catalog: (probes: ProbeDescriptor[]) => void;
+	testCatalog: (tests: TestCase[]) => void;
+	testResult: (result: {
+		testId?: string;
+		name: string;
+		status: TestStatus;
+		durationMs: number;
+		message?: string;
+	}) => void;
+	testSummary: (summary: {
+		passed: number;
+		failed: number;
+		skipped: number;
+		leaked: number;
+		durationMs: number;
+	}) => void;
 	output: (
 		stream: "stdout" | "stderr",
 		chunk: string,
@@ -59,6 +84,40 @@ export interface RunnerCallbacks {
 			"sessionId" | "runId" | "documentVersion" | "timestamp" | "count" | "type"
 		> & { count?: number },
 	) => void;
+}
+
+const RUNTIME_FILES = ["runzig_runtime.zig", "ziglive_runtime.rs"] as const;
+
+/**
+ * Clears the generated mirror while preserving every language runtime that is
+ * present, so alternating Zig and Rust runs in the same bilingual workspace
+ * never destroy each other's support files.
+ */
+export async function resetGenerated(root: string): Promise<void> {
+	const generated = join(root, "generated");
+	const preserved: [string, Buffer][] = [];
+	for (const name of RUNTIME_FILES) {
+		try {
+			preserved.push([name, await readFile(join(generated, name))]);
+		} catch {
+			// runtime for the other language is absent; nothing to keep
+		}
+	}
+	await rm(generated, { recursive: true, force: true });
+	await mkdir(generated, { recursive: true, mode: 0o700 });
+	for (const [name, content] of preserved)
+		await writeFile(join(generated, name), content, { mode: 0o600 });
+}
+
+export interface LanguageRunner {
+	run(
+		session: Session,
+		snapshot: DocumentSnapshot,
+		settings: SessionSettings,
+		runId: string,
+		signal: AbortSignal,
+		callbacks: RunnerCallbacks,
+	): Promise<RunnerOutcome>;
 }
 
 export interface RunnerOutcome {
@@ -100,14 +159,21 @@ export class CompilerRunner {
 		const projectFiles = (
 			snapshot as DocumentSnapshot & { files: ProjectFile[] }
 		).files;
-		const runtimePath = join(session.root, "generated", "runzig_runtime.zig");
-		const runtimeSource = await readFile(runtimePath);
-		await rm(join(session.root, "generated"), { recursive: true, force: true });
-		await mkdir(join(session.root, "generated"), {
-			recursive: true,
-			mode: 0o700,
-		});
-		await writeFile(runtimePath, runtimeSource, { mode: 0o600 });
+		const testCatalog = discoverTests(projectFiles);
+		callbacks.testCatalog(testCatalog);
+		const testImports = projectFiles
+			.filter((file) => extname(file.path).toLowerCase() === ".zig")
+			.map(
+				(file) =>
+					`    _ = @import("src/${file.path.replaceAll('"', '\\"')}");\n`,
+			)
+			.join("");
+		await writeFile(
+			join(session.root, "test_root.zig"),
+			`comptime {\n${testImports}}\n`,
+			{ encoding: "utf8", mode: 0o600 },
+		);
+		await resetGenerated(session.root);
 		const probes: ProjectProbe[] = [];
 		const instrumentDiagnostics: ProjectDiagnostic[] = [];
 		const fileIds = new Map<number, string>();
@@ -216,8 +282,8 @@ export class CompilerRunner {
 						path: `src/${file.path}`,
 						message: item.message,
 						severity: "error" as const,
-						line: 1,
-						column: 1,
+						line: item.line ?? 1,
+						column: item.column ?? 1,
 						source: "runzig-instrument",
 					})),
 				);
@@ -234,7 +300,13 @@ export class CompilerRunner {
 		callbacks.state("compiling");
 		const compile = await this.supervisor.run(
 			"zig",
-			["build", "instrumented", "--color", "off"],
+			[
+				"build",
+				"instrumented",
+				...(testCatalog.length ? ["tests"] : []),
+				"--color",
+				"off",
+			],
 			{
 				cwd: session.root,
 				signal,
@@ -257,7 +329,7 @@ export class CompilerRunner {
 			};
 		if (compile.exitCode !== 0 || compile.limit) {
 			callbacks.diagnostic(
-				"zig-compiler",
+				"compiler",
 				parseCompilerDiagnostics(compile.stderr, generatedPath),
 			);
 			return {
@@ -272,73 +344,17 @@ export class CompilerRunner {
 				},
 			};
 		}
-		callbacks.diagnostic("zig-compiler", []);
+		callbacks.diagnostic("compiler", []);
 
 		callbacks.state("running");
 		const counts = new Map<string, number>();
-		const logCounts = new Map<string, number>();
 		let probeError: string | undefined;
-		let runtimeStderrIsError = false;
-		let runtimeStderrBuffer = "";
-		const logMarker =
-			/\x1eZIGLIVE_LOG:(\d+):(\d+):(\d+)(?::(\d+):(\d+):([A-Za-z_][A-Za-z0-9_]*):([\s\S]*?))?\x1f/;
-		const emitRuntimeStderrText = (
-			text: string,
-			sourceLocation?: LogSourceLocation,
-		): void => {
-			for (const line of text.match(/[^\n]*\n|[^\n]+/g) ?? []) {
-				if (/(?:^|\s)(?:thread \d+ )?panic:/i.test(line))
-					runtimeStderrIsError = true;
-				const lineIsError =
-					runtimeStderrIsError || /(?:^|\s)error:/i.test(line);
-				callbacks.output(
-					"stderr",
-					line,
-					lineIsError ? "error" : "program",
-					runtimeStderrIsError ? undefined : sourceLocation,
-				);
-			}
-		};
-		const emitRuntimeStderr = (chunk: string): void => {
-			runtimeStderrBuffer += chunk;
-			let marker = logMarker.exec(runtimeStderrBuffer);
-			while (marker?.[1] && marker[2] && marker[3]) {
-				const path = fileIds.get(Number(marker[1]));
-				const line = Number(marker[2]);
-				const column = Number(marker[3]);
-				const countKey = `${path ?? "unknown"}:${line}:${column}`;
-				const executionIndex = (logCounts.get(countKey) ?? 0) + 1;
-				logCounts.set(countKey, executionIndex);
-				const sourceLocation: LogSourceLocation = {
-					...(path ? { path } : {}),
-					line,
-					column,
-					executionIndex,
-					...(marker[4] && marker[5] && marker[6] && marker[7] !== undefined
-						? {
-								loop: {
-									line: Number(marker[4]),
-									column: Number(marker[5]),
-									variable: marker[6],
-									value: marker[7],
-								},
-							}
-						: {}),
-				};
-				emitRuntimeStderrText(
-					runtimeStderrBuffer.slice(0, marker.index),
-					sourceLocation,
-				);
-				runtimeStderrBuffer = runtimeStderrBuffer.slice(
-					marker.index + marker[0].length,
-				);
-				marker = logMarker.exec(runtimeStderrBuffer);
-			}
-		};
-		const flushRuntimeStderr = (): void => {
-			emitRuntimeStderrText(runtimeStderrBuffer);
-			runtimeStderrBuffer = "";
-		};
+		const stderrParser = createMarkerParser({
+			stream: "stderr",
+			detectErrors: true,
+			fileIds,
+			emit: callbacks.output,
+		});
 		const probePaths = new Map(
 			probes.map((probe) => [probe.probeId, probe.path] as const),
 		);
@@ -361,7 +377,7 @@ export class CompilerRunner {
 			},
 			callbacks: {
 				stdout: (chunk) => callbacks.output("stdout", chunk, "program"),
-				stderr: emitRuntimeStderr,
+				stderr: (chunk) => stderrParser.push(chunk),
 				probe: (chunk) => {
 					try {
 						reader.push(chunk);
@@ -371,7 +387,7 @@ export class CompilerRunner {
 				},
 			},
 		});
-		flushRuntimeStderr();
+		stderrParser.flush();
 		metrics.executionMs = execution.durationMs;
 		metrics.exitCode = execution.exitCode;
 		metrics.signal = execution.signal;
@@ -405,7 +421,7 @@ export class CompilerRunner {
 			const location = new RegExp(
 				`${generatedPath.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}:(\\d+):(\\d+)`,
 			).exec(execution.stderr);
-			callbacks.diagnostic("zig-runtime", [
+			callbacks.diagnostic("runtime", [
 				{
 					message: "Program panicked or exited abnormally",
 					severity: "error",
@@ -414,12 +430,110 @@ export class CompilerRunner {
 					source: "runtime",
 				},
 			]);
+			await this.runTests(session, settings, testCatalog, signal, callbacks);
 			return {
 				terminalState: "runtime_error",
 				result: { ...metrics, reason: "abnormal exit" },
 			};
 		}
-		callbacks.diagnostic("zig-runtime", []);
+		callbacks.diagnostic("runtime", []);
+		await this.runTests(session, settings, testCatalog, signal, callbacks);
 		return { terminalState: "succeeded", result: metrics };
+	}
+
+	private async runTests(
+		session: Session,
+		settings: SessionSettings,
+		catalog: TestCase[],
+		signal: AbortSignal,
+		callbacks: RunnerCallbacks,
+	): Promise<void> {
+		if (!catalog.length || signal.aborted) return;
+		callbacks.state("testing");
+		const started = new Map<number, string>();
+		const counts = { passed: 0, failed: 0, skipped: 0, leaked: 0 };
+		let stderrBuffer = "";
+		let summary: typeof counts | undefined;
+		let readError: string | undefined;
+		const emitResult = (raw: RawTestResult): void => {
+			started.delete(raw.index);
+			counts[raw.status]++;
+			const matched = matchRunnerName(catalog, raw.name);
+			const failing = raw.status === "failed" || raw.status === "leaked";
+			const message = failing
+				? stderrBuffer.trim().slice(0, 1200) || raw.error
+				: undefined;
+			callbacks.testResult({
+				...(matched ? { testId: matched.testId } : {}),
+				name: matched?.name ?? raw.name,
+				status: raw.status,
+				durationMs: raw.durationNs / 1_000_000,
+				...(message ? { message } : {}),
+			});
+			stderrBuffer = "";
+		};
+		const reader = new TestEventReader((event) => {
+			if (event.kind === "test_start") {
+				started.set(event.index, event.name);
+				stderrBuffer = "";
+			} else if (event.kind === "test_result") emitResult(event);
+			else
+				summary = {
+					passed: event.passed,
+					failed: event.failed,
+					skipped: event.skipped,
+					leaked: event.leaked,
+				};
+		});
+		const executable = join(session.root, "zig-out", "bin", "ziglive-tests");
+		const execution = await this.supervisor.run(executable, [], {
+			cwd: join(session.root, "src"),
+			signal,
+			probeFd: true,
+			limits: {
+				timeoutMs: Math.max(settings.timeoutMs, 3000),
+				stdoutBytes: 512 * 1024,
+				stderrBytes: 512 * 1024,
+				probeBytes: 1024 * 1024,
+			},
+			callbacks: {
+				stderr: (chunk) => {
+					stderrBuffer += chunk;
+				},
+				probe: (chunk) => {
+					try {
+						reader.push(chunk);
+					} catch (error) {
+						readError ??=
+							error instanceof Error ? error.message : String(error);
+					}
+				},
+			},
+		});
+		try {
+			reader.end();
+		} catch (error) {
+			readError ??= error instanceof Error ? error.message : String(error);
+		}
+		if (execution.cancelled || signal.aborted) return;
+		for (const name of started.values()) {
+			counts.failed++;
+			const matched = matchRunnerName(catalog, name);
+			const tail = stderrBuffer.trim().slice(0, 1200);
+			callbacks.testResult({
+				...(matched ? { testId: matched.testId } : {}),
+				name: matched?.name ?? name,
+				status: execution.timedOut ? "timed_out" : "failed",
+				durationMs: 0,
+				...(tail ? { message: tail } : {}),
+			});
+			stderrBuffer = "";
+		}
+		if (readError)
+			callbacks.output("stderr", `test channel error: ${readError}\n`, "error");
+		callbacks.testSummary({
+			...(summary ?? counts),
+			durationMs: execution.durationMs,
+		});
 	}
 }

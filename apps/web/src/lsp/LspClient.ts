@@ -89,7 +89,11 @@ export class LspClient {
 	private nextId = 1;
 	private readonly pending = new Map<
 		number,
-		{ resolve: (value: unknown) => void; reject: (reason: Error) => void }
+		{
+			method: string;
+			resolve: (value: unknown) => void;
+			reject: (reason: Error) => void;
+		}
 	>();
 	private readonly disposables: Monaco.IDisposable[] = [];
 	private readonly openedModels = new Map<string, Monaco.editor.ITextModel>();
@@ -107,6 +111,7 @@ export class LspClient {
 			diagnostics: LspDiagnostic[],
 		) => void,
 		private readonly onStatus: (status: string) => void,
+		private readonly languageId: "zig" | "rust" = "zig",
 	) {}
 
 	public connect(url: string, documentVersion: number): void {
@@ -118,17 +123,19 @@ export class LspClient {
 			this.receive(String(event.data)),
 		);
 		this.socket.addEventListener("close", () =>
-			this.onStatus("ZLS disconnected"),
+			this.onStatus(`${this.languageId === "rust" ? "rust-analyzer" : "ZLS"} disconnected`),
 		);
 		this.socket.addEventListener("error", () =>
-			this.onStatus("ZLS unavailable"),
+			this.onStatus(`${this.languageId === "rust" ? "rust-analyzer" : "ZLS"} unavailable`),
 		);
 	}
 
 	private async initialize(documentVersion: number): Promise<void> {
-		const result = await this.request<{
-			capabilities: Record<string, unknown>;
-		}>("initialize", {
+		let result: { capabilities: Record<string, unknown> } | null = null;
+		try {
+			result = await this.request<{
+				capabilities: Record<string, unknown>;
+			}>("initialize", {
 			processId: null,
 			rootUri: this.workspaceUri,
 			workspaceFolders: [{ uri: this.workspaceUri, name: "ZigLive session" }],
@@ -166,12 +173,19 @@ export class LspClient {
 				},
 			},
 		});
+		} catch (error) {
+			this.onStatus(
+				`Language server initialize failed: ${error instanceof Error ? error.message : String(error)}`,
+			);
+			return;
+		}
+		if (!result) return;
 		this.capabilities = result.capabilities;
 		this.onCapabilities(result.capabilities);
 		this.notify("initialized", {});
 		this.open(this.model, documentVersion);
 		this.registerProviders();
-		this.onStatus("ZLS connected");
+		this.onStatus(`${this.languageId === "rust" ? "rust-analyzer" : "ZLS"} connected`);
 	}
 
 	public open(model: Monaco.editor.ITextModel, version: number): void {
@@ -181,7 +195,7 @@ export class LspClient {
 		this.notify("textDocument/didOpen", {
 			textDocument: {
 				uri,
-				languageId: "zig",
+				languageId: this.languageId,
 				version,
 				text: model.getValue(),
 			},
@@ -209,7 +223,7 @@ export class LspClient {
 		const capabilities = this.capabilities;
 		if (capabilities.completionProvider)
 			this.disposables.push(
-				this.monaco.languages.registerCompletionItemProvider("zig", {
+				this.monaco.languages.registerCompletionItemProvider(this.languageId, {
 					...((
 						capabilities.completionProvider as { triggerCharacters?: string[] }
 					).triggerCharacters
@@ -281,7 +295,7 @@ export class LspClient {
 
 		if (capabilities.hoverProvider)
 			this.disposables.push(
-				this.monaco.languages.registerHoverProvider("zig", {
+				this.monaco.languages.registerHoverProvider(this.languageId, {
 					provideHover: async (model, at) => {
 						const hover = await this.request<{
 							contents?: unknown;
@@ -310,7 +324,7 @@ export class LspClient {
 
 		if (capabilities.definitionProvider)
 			this.disposables.push(
-				this.monaco.languages.registerDefinitionProvider("zig", {
+				this.monaco.languages.registerDefinitionProvider(this.languageId, {
 					provideDefinition: async (model, at) => {
 						const response = await this.request<Location | Location[] | null>(
 							"textDocument/definition",
@@ -329,7 +343,7 @@ export class LspClient {
 
 		if (capabilities.documentFormattingProvider)
 			this.disposables.push(
-				this.monaco.languages.registerDocumentFormattingEditProvider("zig", {
+				this.monaco.languages.registerDocumentFormattingEditProvider(this.languageId, {
 					provideDocumentFormattingEdits: async (model) =>
 						this.textEdits(
 							await this.request<LspTextEdit[] | null>(
@@ -351,7 +365,7 @@ export class LspClient {
 			| undefined;
 		if (semantic?.legend && semantic.full)
 			this.disposables.push(
-				this.monaco.languages.registerDocumentSemanticTokensProvider("zig", {
+				this.monaco.languages.registerDocumentSemanticTokensProvider(this.languageId, {
 					getLegend: () => ({
 						tokenTypes: semantic.legend?.tokenTypes ?? [],
 						tokenModifiers: semantic.legend?.tokenModifiers ?? [],
@@ -375,7 +389,7 @@ export class LspClient {
 
 		if (capabilities.inlayHintProvider)
 			this.disposables.push(
-				this.monaco.languages.registerInlayHintsProvider("zig", {
+				this.monaco.languages.registerInlayHintsProvider(this.languageId, {
 					provideInlayHints: async (model, requestedRange) => {
 						const hints = await this.request<
 							| {
@@ -415,7 +429,7 @@ export class LspClient {
 
 		if (capabilities.codeActionProvider)
 			this.disposables.push(
-				this.monaco.languages.registerCodeActionProvider("zig", {
+				this.monaco.languages.registerCodeActionProvider(this.languageId, {
 					provideCodeActions: async (model, selectedRange, context) => {
 						const actions = await this.request<
 							| {
@@ -527,9 +541,14 @@ export class LspClient {
 			const pending = this.pending.get(message.id);
 			if (!pending) return;
 			this.pending.delete(message.id);
-			if (message.error)
-				pending.reject(new Error(message.error.message ?? "LSP error"));
-			else pending.resolve(message.result);
+			if (message.error) {
+				// Transient server errors (e.g. rust-analyzer before its VFS
+				// loads) resolve to null so feature requests degrade silently;
+				// only a failed initialize is worth surfacing.
+				if (pending.method === "initialize")
+					pending.reject(new Error(message.error.message ?? "LSP error"));
+				else pending.resolve(null);
+			} else pending.resolve(message.result);
 			return;
 		}
 		if (message.method === "textDocument/publishDiagnostics") {
@@ -545,14 +564,16 @@ export class LspClient {
 			const diagnostics = params.diagnostics ?? [];
 			this.monaco.editor.setModelMarkers(
 				model,
-				"zls",
+				this.languageId === "zig" ? "zls" : "rust-analyzer",
 				diagnostics.map((diagnostic) => ({
 					...range(diagnostic.range),
 					message: diagnostic.message,
 					...(diagnostic.code !== undefined
 						? { code: String(diagnostic.code) }
 						: {}),
-					source: diagnostic.source ?? "zls",
+					source:
+						diagnostic.source ??
+						(this.languageId === "zig" ? "zls" : "rust-analyzer"),
 					severity:
 						[
 							0,
@@ -567,11 +588,11 @@ export class LspClient {
 		} else if (message.method === "window/showMessage") {
 			this.onStatus(
 				String(
-					(message.params as { message?: string })?.message ?? "ZLS message",
+					(message.params as { message?: string })?.message ?? "Language server message",
 				),
 			);
-		} else if (message.method === "ziglive/zlsRestarted") {
-			this.onStatus("ZLS restarted; reconnect the page to reinitialize");
+		} else if (message.method === "ziglive/lspRestarted") {
+			this.onStatus("Language server restarted; reconnect the page to reinitialize");
 		}
 		if (message.id !== undefined && message.method)
 			this.answerServerRequest(message);
@@ -601,7 +622,11 @@ export class LspClient {
 	private request<T>(method: string, params: unknown): Promise<T> {
 		const id = this.nextId++;
 		return new Promise<T>((resolve, reject) => {
-			this.pending.set(id, { resolve: (value) => resolve(value as T), reject });
+			this.pending.set(id, {
+				method,
+				resolve: (value) => resolve(value as T),
+				reject,
+			});
 			this.socket?.send(JSON.stringify({ jsonrpc: "2.0", id, method, params }));
 		});
 	}
@@ -612,8 +637,7 @@ export class LspClient {
 		this.openedModels.clear();
 		for (const disposable of this.disposables) disposable.dispose();
 		this.socket?.close();
-		for (const pending of this.pending.values())
-			pending.reject(new Error("LSP client disposed"));
+		for (const pending of this.pending.values()) pending.resolve(null);
 		this.pending.clear();
 	}
 }

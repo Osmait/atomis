@@ -67,6 +67,25 @@ export async function runDoctor(): Promise<DoctorCheck[]> {
 		});
 	}
 
+	for (const tool of ["rustc", "cargo", "rust-analyzer"] as const) {
+		const result = await command(tool, ["--version"]);
+		const detected =
+			result.stdout.trim().split("\n")[0] ||
+			result.stderr.trim() ||
+			"not found";
+		checks.push({
+			name: `Rust ${tool}`,
+			ok: true,
+			detected:
+				result.code === 0 ? detected : `${detected} — Rust sessions disabled`,
+			expected:
+				tool === "rust-analyzer"
+					? "any (optional, enables Rust editor features)"
+					: "1.75+ (optional, enables Rust sessions)",
+			command: `${tool} --version`,
+		});
+	}
+
 	const directory = await mkdtemp(join(tmpdir(), "ziglive-doctor-"));
 	try {
 		await writeFile(join(directory, "main.zig"), "pub fn main() void {}\n");

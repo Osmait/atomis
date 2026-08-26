@@ -21,7 +21,8 @@ export class LspProxy {
 
 	public constructor(
 		private readonly session: Session,
-		private readonly zlsCommand = "zls",
+		private readonly language: "zig" | "rust" = "zig",
+		private readonly commandOverride?: string,
 	) {}
 
 	public attach(socket: WebSocket): void {
@@ -49,15 +50,16 @@ export class LspProxy {
 
 	private start(): void {
 		this.framer = new LspFramer();
-		const child = spawn(
-			this.zlsCommand,
-			["--config-path", `${this.session.root}/zls.json`],
-			{
-				cwd: this.session.root,
-				shell: false,
-				stdio: ["pipe", "pipe", "pipe"],
-			},
-		);
+		const rust = this.language === "rust";
+		const command = this.commandOverride ?? (rust ? "rust-analyzer" : "zls");
+		const args = rust
+			? []
+			: ["--config-path", `${this.session.root}/zls.json`];
+		const child = spawn(command, args, {
+			cwd: this.session.root,
+			shell: false,
+			stdio: ["pipe", "pipe", "pipe"],
+		});
 		this.process = child;
 		child.stdout.on("data", (chunk: Buffer) => {
 			try {
@@ -80,7 +82,7 @@ export class LspProxy {
 		child.stderr.setEncoding("utf8").on("data", (chunk: string) => {
 			console.error(
 				JSON.stringify({
-					component: "zls",
+					component: this.language === "rust" ? "rust-analyzer" : "zls",
 					sessionId: this.session.id,
 					message: chunk.trim(),
 				}),
@@ -91,7 +93,7 @@ export class LspProxy {
 				JSON.stringify({
 					jsonrpc: "2.0",
 					method: "window/showMessage",
-					params: { type: 1, message: `ZLS unavailable: ${error.message}` },
+					params: { type: 1, message: `Language server unavailable: ${error.message}` },
 				}),
 			);
 		});
@@ -102,7 +104,7 @@ export class LspProxy {
 				this.socket?.send(
 					JSON.stringify({
 						jsonrpc: "2.0",
-						method: "ziglive/zlsRestarted",
+						method: "ziglive/lspRestarted",
 						params: {},
 					}),
 				);
@@ -113,7 +115,7 @@ export class LspProxy {
 						method: "window/showMessage",
 						params: {
 							type: 1,
-							message: "ZLS stopped twice; editor continues in degraded mode.",
+							message: "Language server stopped twice; editor continues in degraded mode.",
 						},
 					}),
 				);
@@ -131,7 +133,7 @@ export class LspProxy {
 				diagnostics?: unknown;
 				uri?: string;
 			};
-			if (Array.isArray(params.diagnostics)) {
+			if (Array.isArray(params.diagnostics) && this.language === "zig") {
 				const file = this.session.store
 					.current()
 					.files.find((candidate) => candidate.uri === params.uri);

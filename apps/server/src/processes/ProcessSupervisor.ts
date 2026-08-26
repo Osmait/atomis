@@ -37,6 +37,7 @@ export class ProcessSupervisor {
 			limits: ProcessLimits;
 			signal?: AbortSignal;
 			probeFd?: boolean;
+			env?: Record<string, string>;
 			callbacks?: ProcessCallbacks;
 		},
 	): Promise<ProcessResult> {
@@ -46,6 +47,7 @@ export class ProcessSupervisor {
 			detached: process.platform !== "win32",
 			shell: false,
 			windowsHide: true,
+			...(options.env ? { env: { ...process.env, ...options.env } } : {}),
 			stdio: options.probeFd
 				? ["ignore", "pipe", "pipe", "pipe"]
 				: ["ignore", "pipe", "pipe"],

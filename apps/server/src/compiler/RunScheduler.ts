@@ -1,21 +1,25 @@
 import { randomUUID } from "node:crypto";
-import type { RuntimeServerEvent } from "@ziglive/protocol";
+import type { Language, RuntimeServerEvent } from "@ziglive/protocol";
 import type { Session } from "../sessions/SessionManager.js";
-import type { CompilerRunner } from "./CompilerRunner.js";
+import type { LanguageRunner } from "./CompilerRunner.js";
 
 export class RunScheduler {
 	private timer: NodeJS.Timeout | undefined;
 	private controller: AbortController | undefined;
 	private activeRunId: string | undefined;
+	private lastLanguage: Language;
 
 	public constructor(
 		private readonly session: Session,
-		private readonly runner: CompilerRunner,
+		private readonly runners: Partial<Record<Language, LanguageRunner>>,
 		private readonly send: (event: RuntimeServerEvent) => void,
-	) {}
+	) {
+		this.lastLanguage = session.language;
+	}
 
-	public documentUpdated(): void {
+	public documentUpdated(language?: Language): void {
 		this.cancel("superseded");
+		const target = language ?? this.lastLanguage;
 		const snapshot = this.session.store.current();
 		if (!this.session.settings.autoRun) {
 			this.send({
@@ -31,13 +35,24 @@ export class RunScheduler {
 			state: "debouncing",
 		});
 		this.timer = setTimeout(() => {
-			void this.run(snapshot.version);
+			void this.run(snapshot.version, target);
 		}, this.session.settings.debounceMs);
 	}
 
-	public async run(version: number): Promise<void> {
+	public async run(version: number, language?: Language): Promise<void> {
 		const snapshot = this.session.store.current();
 		if (snapshot.version !== version) return;
+		const target = language ?? this.lastLanguage;
+		const runner = this.runners[target];
+		if (!runner) {
+			this.send({
+				type: "server.error",
+				recoverable: true,
+				message: `No runner available for ${target}`,
+			});
+			return;
+		}
+		this.lastLanguage = target;
 		this.cancel("new run");
 		const runId = randomUUID();
 		const controller = new AbortController();
@@ -51,7 +66,7 @@ export class RunScheduler {
 			if (current()) this.send(event);
 		};
 		try {
-			const outcome = await this.runner.run(
+			const outcome = await runner.run(
 				this.session,
 				snapshot,
 				{
@@ -65,6 +80,22 @@ export class RunScheduler {
 						emit({ type: "run.state", documentVersion: version, runId, state }),
 					catalog: (probes) =>
 						emit({ type: "probe.catalog", documentVersion: version, probes }),
+					testCatalog: (tests) =>
+						emit({ type: "test.catalog", documentVersion: version, tests }),
+					testResult: (result) =>
+						emit({
+							type: "test.result",
+							documentVersion: version,
+							runId,
+							...result,
+						}),
+					testSummary: (summary) =>
+						emit({
+							type: "test.summary",
+							documentVersion: version,
+							runId,
+							...summary,
+						}),
 					output: (stream, chunk, category, sourceLocation) => {
 						const outputEvent = {
 							type: "output",

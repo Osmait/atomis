@@ -1,0 +1,15 @@
+[package]
+name = "ziglive_session"
+version = "0.0.0"
+edition = "2021"
+
+[[bin]]
+name = "ziglive-check"
+path = "src/main.rs"
+
+[[bin]]
+name = "ziglive-session"
+path = "generated/main.rs"
+
+[profile.dev]
+debug = 0

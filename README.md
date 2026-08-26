@@ -1,6 +1,6 @@
 # ZigLive
 
-A loopback-only Zig 0.16 playground inspired by RunJS: Monaco + real ZLS language features, cancellable native compilation/execution, and inline local values produced by AST instrumentation without changing visible code.
+A loopback-only Zig 0.16 **and Rust** playground inspired by RunJS: Monaco + real language servers (ZLS / rust-analyzer), cancellable native compilation/execution, per-test results, and inline local values produced by AST instrumentation without changing visible code.
 
 > **El código se ejecuta localmente con tus permisos.** ZigLive is not a security sandbox. Pause Auto Run before pasting untrusted code.
 
@@ -10,9 +10,10 @@ A loopback-only Zig 0.16 playground inspired by RunJS: Monaco + real ZLS languag
 - Node.js 22 (23/24 accepted for development)
 - Zig 0.16.x on `PATH`
 - ZLS 0.16.x on `PATH`
+- Optional, enables Rust sessions: Rust 1.75+ (`rustc`/`cargo`) and `rust-analyzer` on `PATH`
 - Corepack/pnpm 11.24.0
 
-ZigLive never downloads Zig or ZLS. Releases: <https://ziglang.org/download/> and <https://zigtools.org/zls/releases/0.16.0/>.
+ZigLive never downloads toolchains at runtime. Releases: <https://ziglang.org/download/>, <https://zigtools.org/zls/releases/0.16.0/> and <https://rustup.rs>. The Rust instrumenter's crates (`syn`, `proc-macro2`, `quote`, `unicode-ident`) are vendored in `rust/instrumenter/vendor/` so builds stay offline.
 
 Pinned application stack: React 19.2.8, Monaco Editor 0.56.0, Monaco Vim 0.4.4, Vite 8.2.2, Fastify 5.12.1, `ws` 8.21.3, Zod 4.4.3 and TypeScript 7.0.2. Exact resolutions are recorded in `pnpm-lock.yaml`.
 
@@ -62,17 +63,28 @@ pnpm typecheck
 
 ## Usage
 
-- Create, open, rename and delete files from the project tree. Tabs preserve Monaco models, and Zig modules can import one another with relative `@import` paths.
+The UI is a Catppuccin-Mocha workspace of floating cards: file tree, editor and a dockable terminal, with a top bar (tabs, Run, auto, zen) and a status bar (mode chip, run state, timings, cursor).
+
+Every workspace is **bilingual by extension**: when a Rust toolchain is present the session starts with both `main.zig` and `main.rs`, and the file you are editing decides everything — Run (and Auto Run after an edit) executes that file's language pipeline, ZLS and rust-analyzer run side by side routed by extension, and assets like `input.txt` are shared between both. The status bar and terminal prompt reflect the active file's language, and the last language you touched is remembered for the next session. Rust runs use `cargo build`/`cargo run` with structured `--message-format=json` diagnostics, `#[test]` functions in the tests panel, and the same inline probe values and log-source tracing via `rustlive-instrument`.
+
+Keyboard: **Ctrl/Cmd+Enter** run · **Ctrl/Cmd+S** format the document (ZLS / rust-analyzer) and return Vim to Normal mode · **Ctrl/Cmd+B** toggle tree · **Ctrl/Cmd+J** toggle terminal · **Ctrl/Cmd+K** command palette (open, or ⌘↵ open-and-run, or create a file by typing a new name) · **Ctrl/Cmd+.** zen mode. Layout (dock side, tree, zen) persists in the browser.
+
+- Create, open, rename and delete files from the project tree or the palette. Tabs preserve Monaco models and can be closed with ✕; Zig modules can import one another with relative `@import` paths.
+- `test "…"` blocks (Zig) and `#[test]` functions (Rust) in any project file run automatically after `main()`: the terminal shows a per-test panel (pass/fail/skip/leak, duration, click to jump), the editor shows an error-lens result at the end of each test line, the tree shows failing counts per file, and the last four runs appear in the history block.
 - ZLS diagnostics, completion, hover, definition, formatting, semantic tokens, inlay hints and code actions work across opened `.zig` files when advertised.
-- Auto Run debounces edits for 400 ms. **Ctrl/Cmd+Enter** runs immediately; Stop cancels the active run.
+- Auto Run debounces edits for 400 ms. **Ctrl/Cmd+Enter** runs immediately; clicking the Run button while it shows “Corriendo” cancels the active run.
 - Vim Mode is enabled by default and can be toggled in the navigator. Use `i` to insert, `Esc` for Normal mode and `:w` to run the current source. Native Ctrl/Cmd+A/C/X/V shortcuts and the editor's right-click Copy/Paste menu remain available.
 - Auto Inspect adds probes to supported local declarations in every `.zig` module under `generated/`. Click declaration glyphs for manual probes.
 - Inline values become crossed-out/stale immediately after an edit. Only matching document-version events can replace them.
-- The terminal resets at the start of every run. Program output is neutral; compiler/runtime failures are red. Hover output produced by `std.debug.print` or `std.log` to highlight its source line; click to pin the highlight and move the editor there. Repeated loop logs show their execution number, enclosing loop line, and detected loop variable/value. Diagnostics and Runtime retain owner and timing details.
+- The terminal resets at the start of every run and can dock right or bottom, maximize, or close. Runs of four or more log lines from the same statement and panic traces collapse into expandable ▸ folds. Program output is neutral; compiler/runtime failures are red. Hover output produced by `std.debug.print` or `std.log` to highlight its source line; click to pin the highlight and move the editor there. Repeated loop logs show their execution number, enclosing loop line, and detected loop variable/value. Diagnostics and Runtime retain owner and timing details.
 
 ## Workspace
 
 Each browser session gets `/tmp/ziglive/<random-id>/` with a visible multi-file `src/` project, a generated mirror, runtime/source maps, `build.zig`, a local cache and output. Text assets are mirrored so `@embedFile("input.txt")` works; execution uses `src/` as cwd so runtime reads such as `readFileAlloc(..., "input.txt", ...)` work too. Projects are capped at 64 files and 8 MiB. Session IDs and bearer tokens are random; absolute paths and traversal segments are rejected. Workspaces are removed on disconnect/shutdown and abandoned directories older than 24 hours are removed at startup.
+
+## Credits
+
+The Zig mark used for `.zig`/`.zon` file icons comes from [ziglang/logo](https://github.com/ziglang/logo) (CC-BY-SA-4.0, Zig Software Foundation). The vendored Rust crates under `rust/instrumenter/vendor/` keep their original MIT/Apache-2.0 licenses.
 
 ## Documentation
 

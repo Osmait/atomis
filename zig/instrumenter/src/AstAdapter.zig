@@ -20,10 +20,16 @@ pub const Probe = struct {
     mode: enum { auto, manual },
 };
 
+pub const ParseDiagnostic = struct {
+    message: []const u8,
+    line: usize,
+    column: usize,
+};
+
 pub const Result = struct {
     generated: ?[]u8,
     probes: []Probe,
-    parse_diagnostics: [][]const u8,
+    parse_diagnostics: []ParseDiagnostic,
 };
 
 fn position(source: []const u8, byte_offset: usize) struct { line: usize, column: usize } {
@@ -219,19 +225,26 @@ pub fn instrument(
         return .{
             .generated = try allocator.dupe(u8, source[0..source.len]),
             .probes = try allocator.alloc(Probe, 0),
-            .parse_diagnostics = try allocator.alloc([]const u8, 0),
+            .parse_diagnostics = try allocator.alloc(ParseDiagnostic, 0),
         };
     }
     var tree = try Ast.parse(allocator, source, .zig);
     defer tree.deinit(allocator);
 
     if (tree.errors.len != 0) {
-        var diagnostics: std.ArrayList([]const u8) = .empty;
+        var diagnostics: std.ArrayList(ParseDiagnostic) = .empty;
         for (tree.errors) |parse_error| {
             var buffer: [512]u8 = undefined;
             var writer: std.Io.Writer = .fixed(&buffer);
             tree.renderError(parse_error, &writer) catch {};
-            try diagnostics.append(allocator, try allocator.dupe(u8, writer.buffered()));
+            var byte_offset = tree.tokenStart(parse_error.token);
+            if (parse_error.token_is_prev) byte_offset += @intCast(tree.tokenSlice(parse_error.token).len);
+            const location = position(source, byte_offset);
+            try diagnostics.append(allocator, .{
+                .message = try allocator.dupe(u8, writer.buffered()),
+                .line = location.line,
+                .column = location.column,
+            });
         }
         return .{ .generated = null, .probes = &.{}, .parse_diagnostics = try diagnostics.toOwnedSlice(allocator) };
     }
@@ -470,11 +483,13 @@ test "parse errors do not generate source" {
     const source: [:0]const u8 = "pub fn main( {";
     const result = try instrument(std.testing.allocator, source, "file:///bad.zig", true, &.{}, 0);
     defer {
-        for (result.parse_diagnostics) |diagnostic| std.testing.allocator.free(diagnostic);
+        for (result.parse_diagnostics) |diagnostic| std.testing.allocator.free(diagnostic.message);
         std.testing.allocator.free(result.parse_diagnostics);
     }
     try std.testing.expect(result.generated == null);
     try std.testing.expect(result.parse_diagnostics.len > 0);
+    try std.testing.expect(result.parse_diagnostics[0].line >= 1);
+    try std.testing.expect(result.parse_diagnostics[0].column >= 1);
 }
 
 test "ids deterministic and Unicode position is codepoint based" {

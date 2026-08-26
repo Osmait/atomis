@@ -5,6 +5,8 @@ import fastifyStatic from "@fastify/static";
 import Fastify from "fastify";
 import { WebSocketServer, type WebSocket } from "ws";
 import {
+	createSessionRequestSchema,
+	type Language,
 	MAX_RUNTIME_MESSAGE_BYTES,
 	MAX_SOURCE_BYTES,
 	runtimeClientMessageSchema,
@@ -12,6 +14,7 @@ import {
 	type RuntimeServerEvent,
 } from "@ziglive/protocol";
 import { CompilerRunner } from "./compiler/CompilerRunner.js";
+import { RustCompilerRunner } from "./compiler/RustCompilerRunner.js";
 import { RunScheduler } from "./compiler/RunScheduler.js";
 import { runDoctor } from "./doctor.js";
 import { LspProxy } from "./lsp/LspProxy.js";
@@ -99,7 +102,10 @@ app.post("/api/sessions", async (request, reply) => {
 		typeof port === "object" && port ? port.port : requestedPort;
 	if (!validOrigin(request.raw, actualPort))
 		return await reply.code(403).send({ error: "Origin is not allowed" });
-	return await sessions.create();
+	const parsed = createSessionRequestSchema.safeParse(request.body ?? {});
+	if (!parsed.success)
+		return await reply.code(400).send({ error: "Invalid session request" });
+	return await sessions.create(parsed.data.language);
 });
 
 const webDist = resolve(
@@ -138,14 +144,22 @@ app.server.on("upgrade", (request, socket, head) => {
 			handleRuntime(webSocket, session),
 		);
 	} else if (url.pathname === "/ws/lsp") {
+		const language: Language =
+			url.searchParams.get("lang") === "rust" ? "rust" : "zig";
 		lspWss.handleUpgrade(request, socket, head, (webSocket) =>
-			handleLsp(webSocket, session),
+			handleLsp(webSocket, session, language),
 		);
 	} else {
 		socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
 		socket.destroy();
 	}
 });
+
+function languageForPath(path: string): Language | undefined {
+	if (path.endsWith(".rs")) return "rust";
+	if (path.endsWith(".zig")) return "zig";
+	return undefined;
+}
 
 function handleRuntime(socket: WebSocket, session: Session): void {
 	if (runtimeSockets.has(session.id)) {
@@ -154,8 +168,18 @@ function handleRuntime(socket: WebSocket, session: Session): void {
 	}
 	runtimeSockets.set(session.id, socket);
 	session.runtimeConnections++;
-	const runner = new CompilerRunner(supervisor, sessions.instrumenterPath());
-	const scheduler = new RunScheduler(session, runner, (event) =>
+	const runners = {
+		zig: new CompilerRunner(supervisor, sessions.instrumenterPath("zig")),
+		...(session.support.rust.present
+			? {
+					rust: new RustCompilerRunner(
+						supervisor,
+						sessions.instrumenterPath("rust"),
+					),
+				}
+			: {}),
+	};
+	const scheduler = new RunScheduler(session, runners, (event) =>
 		send(socket, event),
 	);
 	schedulers.set(session.id, scheduler);
@@ -230,7 +254,10 @@ function handleRuntime(socket: WebSocket, session: Session): void {
 						documentVersion: snapshot.version,
 						files: snapshot.files,
 					});
-					if (session.zigCompatible) scheduler.documentUpdated();
+					const language =
+						languageForPath(message.path) ?? session.language;
+					if (session.support[language].run)
+						scheduler.documentUpdated(language);
 					else
 						send(socket, {
 							type: "run.state",
@@ -238,13 +265,16 @@ function handleRuntime(socket: WebSocket, session: Session): void {
 							state: "idle",
 						});
 				} else if (message.type === "run.request") {
-					if (!session.zigCompatible)
+					const language = message.language ?? session.language;
+					if (!session.support[language].run)
 						throw new Error(
-							"Run is disabled: Zig 0.16.x is required. Run pnpm run doctor.",
+							language === "rust"
+								? "Run is disabled: Rust 1.75+ is required. Run pnpm run doctor."
+								: "Run is disabled: Zig 0.16.x is required. Run pnpm run doctor.",
 						);
 					if (message.version !== session.store.current().version)
 						throw new Error("Run version is not current");
-					await scheduler.run(message.version);
+					await scheduler.run(message.version, language);
 				} else if (message.type === "run.cancel") {
 					scheduler.cancel("user");
 					send(socket, {
@@ -275,34 +305,48 @@ function handleRuntime(socket: WebSocket, session: Session): void {
 		session.runtimeConnections--;
 		scheduler.close();
 		schedulers.delete(session.id);
-		const proxy = proxies.get(session.id);
-		if (proxy) void proxy.close();
-		proxies.delete(session.id);
+		for (const language of ["zig", "rust"] as const) {
+			const proxy = proxies.get(`${session.id}:${language}`);
+			if (proxy) void proxy.close();
+			proxies.delete(`${session.id}:${language}`);
+		}
 		setTimeout(() => {
 			void sessions.destroy(session.id);
 		}, 500).unref();
 	});
-	if (session.zigCompatible)
-		void scheduler.run(session.store.current().version);
+	if (session.support[session.language].run)
+		void scheduler.run(session.store.current().version, session.language);
 	else
 		send(socket, {
 			type: "server.error",
 			recoverable: true,
 			message:
-				"Zig 0.16.x is unavailable; Run is disabled. Run pnpm run doctor.",
+				session.language === "rust"
+					? "Rust 1.75+ is unavailable; Run is disabled. Run pnpm run doctor."
+					: "Zig 0.16.x is unavailable; Run is disabled. Run pnpm run doctor.",
 		});
 }
 
-function handleLsp(socket: WebSocket, session: Session): void {
-	if (!session.zlsCompatible) {
-		socket.close(1011, "ZLS 0.16.x is required");
+function handleLsp(
+	socket: WebSocket,
+	session: Session,
+	language: Language,
+): void {
+	if (!session.support[language].lsp) {
+		socket.close(
+			1011,
+			language === "rust"
+				? "rust-analyzer is required"
+				: "ZLS 0.16.x is required",
+		);
 		return;
 	}
 	session.lspConnections++;
-	let proxy = proxies.get(session.id);
+	const key = `${session.id}:${language}`;
+	let proxy = proxies.get(key);
 	if (!proxy) {
-		proxy = new LspProxy(session);
-		proxies.set(session.id, proxy);
+		proxy = new LspProxy(session, language);
+		proxies.set(key, proxy);
 	}
 	proxy.attach(socket);
 	socket.once("close", () => {

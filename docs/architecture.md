@@ -8,8 +8,9 @@ React + Monaco
   └─ /ws/runtime validated events ─ RunScheduler
                                     ├─ DocumentStore (atomic multi-file src/)
                                     ├─ runzig-instrument (every .zig module)
-                                    ├─ zig build instrumented
-                                    └─ ProcessSupervisor ─ stdout / stderr / fd 3
+                                    ├─ zig build instrumented tests
+                                    ├─ ProcessSupervisor ─ stdout / stderr / fd 3
+                                    └─ ziglive-tests ─ custom runner ─ fd 3 NDJSON
 ```
 
 ## Components
@@ -20,6 +21,11 @@ React + Monaco
 - Monaco's stable provider APIs are the LSP client layer. This is the current lightweight alternative to `monaco-languageclient`; providers are registered only for ZLS-advertised capabilities.
 - `RunScheduler` is the explicit state machine boundary. A new version clears debounce and aborts the previous pipeline.
 - `CompilerRunner` mirrors assets, instruments every Zig module, compiles from generated `main.zig`, executes with `src/` as cwd, maps diagnostics and enriches probe/log events with their source path.
+- `TestDiscovery` finds `test` blocks in the visible sources and maps runner-qualified names back to files; `CompilerRunner` generates `test_root.zig`, builds `ziglive-tests` with the custom `runzig_test_runner.zig` (mode `simple`), executes it after the program run and streams per-test results from fd 3 through `TestEventReader`.
 - `ProcessSupervisor` starts detached process groups, enforces time/output limits, sends TERM then KILL, and closes stdin.
+
+## Bilingual workspaces
+
+`POST /api/sessions` accepts `{ "language": "zig" | "rust" }`, which only selects the initial entry file. Every workspace carries the Zig scaffold and, when cargo 1.75+ is present, the Rust scaffold too (`main.zig` and `main.rs` are both protected entries). `RunScheduler` holds one runner per language and dispatches by the edited/active file's extension (`run.request` carries an optional `language`; auto-run derives it from the updated path). `/ws/lsp?lang=zig|rust` multiplexes one `LspProxy` per language so ZLS and rust-analyzer serve the same workspace side by side, and `resetGenerated` preserves both language runtimes when either pipeline rebuilds the mirror. The Rust half of the workspace is a two-target cargo package: `ziglive-check` compiles the visible `src/main.rs` (what rust-analyzer and the test build see) and `ziglive-session` compiles the instrumented `generated/` mirror. `RustCompilerRunner` drives the same `RunnerCallbacks` contract: `rustlive-instrument` (a vendored-`syn` binary mirroring the `runzig-instrument` CLI/JSON) splices `ziglive_probe!`/`ziglive_log!` calls, `cargo build --message-format=json --offline` produces structured diagnostics (`CargoDiagnostics`), the binary runs supervised with fd 3 probes, and `cargo test --no-run` plus a supervised libtest run (`--test-threads=1`, parsed by `RustTestOutput`) feeds the shared test events. `RuntimeOutputParser` strips the `\x1eZIGLIVE_LOG` markers per stream for both languages (Rust `println!` marks stdout, `eprintln!`/`dbg!` mark stderr). `LspProxy` spawns `rust-analyzer` instead of ZLS.
 
 The server defaults to `127.0.0.1:4317`; Vite at `127.0.0.1:5173` proxies both same-origin transports in development.

@@ -23,8 +23,13 @@ export class DocumentStore {
 	public constructor(
 		initial: DocumentSnapshot,
 		private readonly sourceRoot: string,
+		private readonly entryPaths: readonly string[] = ["main.zig"],
 	) {
 		this.snapshot = initial;
+	}
+
+	private get primaryEntry(): string {
+		return this.entryPaths[0] ?? "main.zig";
 	}
 
 	public current(): DocumentSnapshot {
@@ -71,7 +76,8 @@ export class DocumentStore {
 		newPath: string,
 	): Promise<DocumentSnapshot> {
 		this.assertVersion(version);
-		if (path === "main.zig") throw new Error("main.zig cannot be renamed");
+		if (this.entryPaths.includes(path))
+			throw new Error(`${path} cannot be renamed`);
 		const current = this.snapshot.files.find((file) => file.path === path);
 		if (!current) throw new Error(`File does not exist: ${path}`);
 		if (this.snapshot.files.some((file) => file.path === newPath))
@@ -92,7 +98,8 @@ export class DocumentStore {
 		path: string,
 	): Promise<DocumentSnapshot> {
 		this.assertVersion(version);
-		if (path === "main.zig") throw new Error("main.zig cannot be deleted");
+		if (this.entryPaths.includes(path))
+			throw new Error(`${path} cannot be deleted`);
 		if (!this.snapshot.files.some((file) => file.path === path))
 			throw new Error(`File does not exist: ${path}`);
 		await rm(join(this.sourceRoot, path), { force: true });
@@ -130,8 +137,9 @@ export class DocumentStore {
 		const sorted = [...files].sort((left, right) =>
 			left.path.localeCompare(right.path),
 		);
-		const main = sorted.find((file) => file.path === "main.zig");
-		if (!main) throw new Error("Project entry point main.zig is missing");
+		const main = sorted.find((file) => file.path === this.primaryEntry);
+		if (!main)
+			throw new Error(`Project entry point ${this.primaryEntry} is missing`);
 		this.snapshot = {
 			...this.snapshot,
 			version,

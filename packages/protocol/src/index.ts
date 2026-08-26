@@ -1,6 +1,12 @@
 import { z } from "zod";
 
 export const PROTOCOL_VERSION = 1 as const;
+export const languages = ["zig", "rust"] as const;
+export type Language = (typeof languages)[number];
+
+export function entryFileFor(language: Language): string {
+	return language === "rust" ? "main.rs" : "main.zig";
+}
 export const MAX_SOURCE_BYTES = 1024 * 1024;
 export const MAX_PROJECT_FILES = 64;
 export const MAX_PROJECT_BYTES = 8 * 1024 * 1024;
@@ -12,6 +18,7 @@ export const runStates = [
 	"instrumenting",
 	"compiling",
 	"running",
+	"testing",
 	"succeeded",
 	"compile_error",
 	"runtime_error",
@@ -38,6 +45,45 @@ export interface ProbeDescriptor {
 	originalRange: SourceRange;
 	insertionByte?: number;
 	mode: "auto" | "manual";
+}
+
+export interface TestCase {
+	testId: string;
+	path: string;
+	name: string;
+	line: number;
+	column: number;
+}
+
+export const testStatuses = [
+	"passed",
+	"failed",
+	"skipped",
+	"leaked",
+	"timed_out",
+] as const;
+export type TestStatus = (typeof testStatuses)[number];
+
+export interface TestResultEvent {
+	type: "test.result";
+	documentVersion: number;
+	runId: string;
+	testId?: string;
+	name: string;
+	status: TestStatus;
+	durationMs: number;
+	message?: string;
+}
+
+export interface TestSummaryEvent {
+	type: "test.summary";
+	documentVersion: number;
+	runId: string;
+	passed: number;
+	failed: number;
+	skipped: number;
+	leaked: number;
+	durationMs: number;
 }
 
 export interface AppDiagnostic {
@@ -70,13 +116,21 @@ export interface DocumentSnapshot {
 export interface CreateSessionResponse {
 	sessionId: string;
 	authToken: string;
+	language: Language;
 	documentUri: string;
 	zigVersion: string;
 	zlsVersion: string;
+	rustcVersion?: string;
+	cargoVersion?: string;
+	rustAnalyzerVersion?: string;
 	initialSource: string;
 	files: ProjectFile[];
-	degraded: { zig?: string; zls?: string };
+	degraded: { zig?: string; zls?: string; rust?: string; rustAnalyzer?: string };
 }
+
+export const createSessionRequestSchema = z
+	.object({ language: z.enum(languages).default("zig") })
+	.strict();
 
 export interface ProbeValueEvent {
 	protocolVersion: 1;
@@ -189,6 +243,7 @@ export const runtimeClientMessageSchema = z.discriminatedUnion("type", [
 			sessionId,
 			version: z.number().int().positive(),
 			reason: z.enum(["manual", "auto"]),
+			language: z.enum(languages).optional(),
 		})
 		.strict(),
 	z.object({ type: z.literal("run.cancel"), sessionId }).strict(),
@@ -216,6 +271,13 @@ export type RuntimeServerEvent =
 			documentVersion: number;
 			probes: ProbeDescriptor[];
 	  }
+	| {
+			type: "test.catalog";
+			documentVersion: number;
+			tests: TestCase[];
+	  }
+	| TestResultEvent
+	| TestSummaryEvent
 	| ProbeValueEvent
 	| {
 			type: "output";
@@ -246,6 +308,31 @@ export type RuntimeServerEvent =
 			details?: string;
 	  };
 
+export const defaultRustSource = `fn main() {
+    let price: i32 = 40;
+    let tax: i32 = 3;
+    let total = apply_tax(price, tax);
+    let values = [price, tax, total];
+
+    let _ = values;
+}
+
+fn apply_tax(price: i32, tax: i32) -> i32 {
+    price + tax
+}
+
+// Los bloques #[test] corren tras main(): mira el panel de tests →
+#[test]
+fn apply_tax_suma_el_impuesto() {
+    assert_eq!(43, apply_tax(40, 3));
+}
+
+#[test]
+fn apply_tax_con_tasa_cero() {
+    assert_eq!(40, apply_tax(40, 0));
+}
+`;
+
 export const defaultSource = `const std = @import("std");
 
 pub fn main() void {
@@ -255,5 +342,18 @@ pub fn main() void {
     const values = [_]i32{ price, tax, total };
 
     _ = values;
+}
+
+fn applyTax(price: i32, tax: i32) i32 {
+    return price + tax;
+}
+
+// Los bloques test se ejecutan tras main(): mira el panel de tests →
+test "applyTax suma el impuesto" {
+    try std.testing.expectEqual(@as(i32, 43), applyTax(40, 3));
+}
+
+test "applyTax con tasa cero" {
+    try std.testing.expectEqual(@as(i32, 40), applyTax(40, 0));
 }
 `;

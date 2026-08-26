@@ -9,4 +9,7 @@
 - ZLS is restarted once after failure, but the browser asks for reload to reinitialize the restarted protocol session.
 - Process time/output caps are resource controls, not isolation. CPU/memory beyond the execution timeout are not controlled by cgroups or containers.
 - Manual probe IDs are session/URI-specific and are not restored across a new temporary session.
+- Tests run sequentially in one process after the program run. A panic inside a test aborts the remaining tests (they are reported from the interruption), and failure messages are correlated from stderr heuristically, so a message can occasionally attach to the neighbouring test.
+- Test discovery is regex-based over `test "…"`/`test decl {` lines; exotic formatting (a `test` keyword mid-line) is executed by the runner but may miss catalog mapping.
+- Rust: per-test durations are wall-clock arrival deltas (libtest exposes no stable timing) and failure messages come from the captured `---- name stdout ----` blocks; probes cover simple `let` bindings only (no destructuring), and rust-analyzer needs a few seconds of indexing after a session starts before completions appear.
 - Node 22 is the deployment baseline; Node 23/24 are accepted for development to support current host environments.

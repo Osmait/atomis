@@ -11,3 +11,11 @@ Zig 0.16 reports a later `_ = value;` as pointless once the active probe is a re
 The runtime reflects the value without replacing it. Scalars and aggregates use bounded formatting; slices cap elements, strings are escaped, non-slice pointers show only addresses, and unavailable categories produce an explicit placeholder. Event writes are mutex-protected and write failures on fd 3 are ignored.
 
 ZLS unused diagnostics are filtered only for an active supported probe, an exact probe range, and either a known diagnostic code or an explicit known message. All other diagnostics remain.
+
+## Tests
+
+The test binary compiles the **visible** sources under `src/`, never the instrumented mirror, so probes cannot alter test semantics and the probe channel stays free for the runner. A generated `test_root.zig` imports every project `.zig` file; `runzig_test_runner.zig` runs each collected test sequentially, resets `std.testing.allocator_instance` around it to detect leaks, times it with the monotonic clock, and reports `test_start`/`test_result`/`test_summary` NDJSON on fd 3. Failure details rely on the stderr the test wrote between its start and result records, falling back to the Zig error name.
+
+## Rust
+
+`rustlive-instrument` (`rust/instrumenter/`, `syn` + `proc-macro2` vendored for offline builds) mirrors the Zig contract. Simple `let ident = …;` bindings in function bodies get a same-line `crate::ziglive_probe!(id, line, column, "name", &name);` call after the semicolon; destructuring patterns and `let` without initializer are reported as unsupported, and locals inside `#[test]` items are omitted. Direct `println!`/`print!`/`eprintln!`/`eprint!`/`dbg!` statements get a marker call on their own stream, with the innermost `for`/`while` loop line and variable when available. Probe previews use autoref specialization: `Debug` types render `{:?}`, everything else reports `<sin Debug: Type>` with `std::any::type_name`. The runtime module is appended at the end of the generated entry file, so every existing line keeps its number, and NDJSON probe records flow over the same fd 3 protocol. Probe IDs are FNV-1a-derived from URI, byte range and identifier.

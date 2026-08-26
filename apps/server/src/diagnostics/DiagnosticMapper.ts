@@ -19,6 +19,11 @@ function generatedProjectPath(
 	const root = dirname(generatedPath).replaceAll("\\", "/");
 	if (normalized.startsWith(`${root}/`))
 		return `src/${normalized.slice(root.length + 1)}`;
+	const sourceRoot = `${dirname(root)}/src`;
+	if (normalized.startsWith(`${sourceRoot}/`))
+		return `src/${normalized.slice(sourceRoot.length + 1)}`;
+	if (normalized.startsWith("src/") && !normalized.includes(".."))
+		return normalized;
 	const marker = "generated/";
 	const markerIndex = normalized.lastIndexOf(marker);
 	if (markerIndex >= 0)
@@ -95,7 +100,13 @@ export function parseCompilerDiagnostics(
 			source: "zig",
 		});
 	}
-	return diagnostics;
+	const seen = new Set<string>();
+	return diagnostics.filter((diagnostic) => {
+		const key = `${diagnostic.path ?? ""}:${diagnostic.line}:${diagnostic.column}:${diagnostic.severity}:${diagnostic.message}`;
+		if (seen.has(key)) return false;
+		seen.add(key);
+		return true;
+	});
 }
 
 const EXACT_UNUSED_MESSAGES = new Set([
