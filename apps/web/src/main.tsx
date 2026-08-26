@@ -3,6 +3,7 @@ import * as monaco from "monaco-editor/editor/editor.api";
 import EditorWorker from "monaco-editor/editor/editor.worker.js?worker";
 // The API-only Monaco entry does not register UI contributions. Keep the
 // bundle Zig-focused while enabling the controls used by our LSP providers.
+import "monaco-editor/editor/contrib/clipboard/browser/clipboard";
 import "monaco-editor/editor/contrib/codeAction/browser/codeActionContributions";
 import "monaco-editor/editor/contrib/format/browser/formatActions";
 import "monaco-editor/editor/contrib/gotoSymbol/browser/link/goToDefinitionAtPosition";

@@ -152,6 +152,7 @@ export type RuntimeServerEvent =
 			stream: "stdout" | "stderr";
 			category: "program" | "error";
 			chunk: string;
+			sourceLocation?: { line: number; column: number };
 	  }
 	| {
 			type: "diagnostics";

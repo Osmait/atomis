@@ -401,6 +401,7 @@ button:disabled {
 }
 
 .output-entry {
+	position: relative;
 	display: grid;
 	grid-template-columns: 10px minmax(0, 1fr) 45px;
 	align-items: start;
@@ -433,6 +434,31 @@ button:disabled {
 
 .output-entry pre.error {
 	color: #ff858a;
+}
+
+.output-entry.has-source:hover {
+	background: rgb(87 217 139 / 5%);
+}
+
+.log-origin-tooltip {
+	position: absolute;
+	right: 48px;
+	bottom: calc(100% + 3px);
+	z-index: 20;
+	display: none;
+	border: 1px solid #2f4937;
+	border-radius: 2px;
+	padding: 3px 7px;
+	background: #0c130e;
+	box-shadow: 0 4px 16px rgb(0 0 0 / 45%);
+	color: var(--green);
+	font-size: 9px;
+	white-space: nowrap;
+	pointer-events: none;
+}
+
+.output-entry.has-source:hover .log-origin-tooltip {
+	display: block;
 }
 
 .empty-state {
@@ -639,6 +665,31 @@ button:disabled {
 .command-line span:first-child {
 	overflow: hidden;
 	text-overflow: ellipsis;
+}
+
+.editor-context-menu {
+	position: fixed;
+	z-index: 1000;
+	display: grid;
+	width: 160px;
+	border: 1px solid #303831;
+	border-radius: 3px;
+	padding: 4px;
+	background: #0c0f0c;
+	box-shadow: 0 8px 24px rgb(0 0 0 / 55%);
+}
+
+.editor-context-menu button {
+	border: 0;
+	padding: 6px 9px;
+	background: transparent;
+	color: #d0d7d1;
+	text-align: left;
+}
+
+.editor-context-menu button:hover {
+	background: #1a281e;
+	color: #fff;
 }
 
 .startup {

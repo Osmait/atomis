@@ -133,6 +133,7 @@ export function App(): React.JSX.Element {
 			category: "program" | "error";
 			chunk: string;
 			receivedAt: number;
+			sourceLocation?: { line: number; column: number };
 		}[]
 	>([]);
 	const [diagnostics, setDiagnostics] = useState<
@@ -145,6 +146,10 @@ export function App(): React.JSX.Element {
 	const [vimEnabled, setVimEnabled] = useState(
 		() => localStorage.getItem(VIM_MODE_KEY) !== "false",
 	);
+	const [editorContextMenu, setEditorContextMenu] = useState<{
+		x: number;
+		y: number;
+	}>();
 	const editorRef = useRef<MonacoApi.editor.IStandaloneCodeEditor | undefined>(
 		undefined,
 	);
@@ -176,6 +181,27 @@ export function App(): React.JSX.Element {
 			}),
 		);
 	}, [diagnostics]);
+
+	useEffect(() => {
+		if (!editorContextMenu) return;
+		const closeOnPointer = (event: PointerEvent): void => {
+			if (
+				event.target instanceof Element &&
+				event.target.closest(".editor-context-menu")
+			)
+				return;
+			setEditorContextMenu(undefined);
+		};
+		const closeOnEscape = (event: KeyboardEvent): void => {
+			if (event.key === "Escape") setEditorContextMenu(undefined);
+		};
+		window.addEventListener("pointerdown", closeOnPointer);
+		window.addEventListener("keydown", closeOnEscape);
+		return () => {
+			window.removeEventListener("pointerdown", closeOnPointer);
+			window.removeEventListener("keydown", closeOnEscape);
+		};
+	}, [editorContextMenu]);
 
 	useEffect(() => {
 		void fetch("/api/sessions", {
@@ -246,6 +272,45 @@ export function App(): React.JSX.Element {
 		editorRef.current?.focus();
 	}, []);
 
+	const copyFromEditor = useCallback(async (): Promise<void> => {
+		setEditorContextMenu(undefined);
+		const editor = editorRef.current;
+		const model = editor?.getModel();
+		const selection = editor?.getSelection();
+		if (!editor || !model || !selection) return;
+		const text = selection.isEmpty()
+			? model.getLineContent(selection.startLineNumber)
+			: model.getValueInRange(selection);
+		try {
+			await navigator.clipboard.writeText(text);
+		} catch (error) {
+			setStatus(
+				`Copy failed: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
+		editor.focus();
+	}, []);
+
+	const pasteIntoEditor = useCallback(async (): Promise<void> => {
+		setEditorContextMenu(undefined);
+		const editor = editorRef.current;
+		if (!editor) return;
+		editor.focus();
+		const selection = editor.getSelection();
+		if (!selection) return;
+		try {
+			const text = await navigator.clipboard.readText();
+			editor.executeEdits("ziglive.clipboard", [
+				{ range: selection, text, forceMoveMarkers: true },
+			]);
+		} catch (error) {
+			setStatus(
+				`Paste failed: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
+		editor.focus();
+	}, []);
+
 	const handleRuntimeEvent = useCallback((event: RuntimeServerEvent): void => {
 		if (
 			"documentVersion" in event &&
@@ -279,19 +344,25 @@ export function App(): React.JSX.Element {
 		} else if (event.type === "probe_value") {
 			setValues((previous) => updateInlineValue(previous, event));
 			setStale(false);
-		} else if (event.type === "output")
+		} else if (event.type === "output") {
+			const outputEvent = event as typeof event & {
+				sourceLocation?: { line: number; column: number };
+			};
 			setOutput((previous) =>
 				[
 					...previous,
 					{
-						stream: event.stream,
-						category: event.category,
-						chunk: event.chunk,
+						stream: outputEvent.stream,
+						category: outputEvent.category,
+						chunk: outputEvent.chunk,
 						receivedAt: performance.now(),
+						...(outputEvent.sourceLocation
+							? { sourceLocation: outputEvent.sourceLocation }
+							: {}),
 					},
 				].slice(-500),
 			);
-		else if (event.type === "diagnostics") {
+		} else if (event.type === "diagnostics") {
 			setDiagnostics((previous) => ({
 				...previous,
 				[event.owner]: event.diagnostics,
@@ -416,6 +487,19 @@ export function App(): React.JSX.Element {
 					run();
 				}
 			});
+			const editorNode = editor.getContainerDomNode();
+			const showContextMenu = (event: MouseEvent): void => {
+				event.preventDefault();
+				event.stopPropagation();
+				setEditorContextMenu({
+					x: Math.min(event.clientX, window.innerWidth - 170),
+					y: Math.min(event.clientY, window.innerHeight - 90),
+				});
+			};
+			editorNode.addEventListener("contextmenu", showContextMenu, true);
+			editor.onDidDispose(() =>
+				editorNode.removeEventListener("contextmenu", showContextMenu, true),
+			);
 			const vimCommands = VimMode as unknown as VimModeWithCommands;
 			for (const shortcut of ["<C-a>", "<C-c>", "<C-v>", "<C-x>"])
 				vimCommands.Vim.unmap(shortcut);
@@ -805,7 +889,15 @@ export function App(): React.JSX.Element {
 								</div>
 								{output.length ? (
 									output.map((entry, index) => (
-										<div className="output-entry" key={index}>
+										<div
+											className={`output-entry${entry.sourceLocation ? " has-source" : ""}`}
+											key={index}
+											title={
+												entry.sourceLocation
+													? `Generado por src/main.zig:${entry.sourceLocation.line}:${entry.sourceLocation.column}`
+													: undefined
+											}
+										>
 											<time>
 												{(
 													(entry.receivedAt -
@@ -816,6 +908,12 @@ export function App(): React.JSX.Element {
 											</time>
 											<span className="output-chevron">›</span>
 											<pre className={entry.category}>{entry.chunk}</pre>
+											{entry.sourceLocation && (
+												<span className="log-origin-tooltip">
+													↳ src/main.zig:{entry.sourceLocation.line}:
+													{entry.sourceLocation.column}
+												</span>
+											)}
 										</div>
 									))
 								) : (
@@ -909,6 +1007,25 @@ export function App(): React.JSX.Element {
 					</nav>
 				</section>
 			</div>
+
+			{editorContextMenu && (
+				<div
+					className="editor-context-menu"
+					ref={(menu) => {
+						if (!menu) return;
+						menu.style.left = `${editorContextMenu.x}px`;
+						menu.style.top = `${editorContextMenu.y}px`;
+					}}
+					role="menu"
+				>
+					<button role="menuitem" onClick={() => void copyFromEditor()}>
+						Copy
+					</button>
+					<button role="menuitem" onClick={() => void pasteIntoEditor()}>
+						Paste
+					</button>
+				</div>
+			)}
 
 			<footer className="global-status">
 				<div className="vim-mode-slot">

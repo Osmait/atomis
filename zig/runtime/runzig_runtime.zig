@@ -6,6 +6,11 @@ pub const ProbeMeta = struct {
     name: []const u8,
 };
 
+pub const LogMeta = struct {
+    line: u32,
+    column: u32,
+};
+
 const MAX_PREVIEW = 4096;
 const MAX_EVENT = 64 * 1024;
 var lock: std.atomic.Mutex = .unlocked;
@@ -13,13 +18,24 @@ var sequence: std.atomic.Value(u64) = .init(0);
 
 extern "c" fn write(fd: c_int, buffer: [*]const u8, count: usize) isize;
 
-fn writeAllFd3(bytes: []const u8) void {
+fn writeAllFd(fd: c_int, bytes: []const u8) void {
     var offset: usize = 0;
     while (offset < bytes.len) {
-        const result = write(3, bytes.ptr + offset, bytes.len - offset);
+        const result = write(fd, bytes.ptr + offset, bytes.len - offset);
         if (result <= 0) return;
         offset += @intCast(result);
     }
+}
+
+fn writeAllFd3(bytes: []const u8) void {
+    writeAllFd(3, bytes);
+}
+
+pub inline fn logSource(comptime meta: LogMeta) void {
+    var marker_buffer: [96]u8 = undefined;
+    var marker_writer: std.Io.Writer = .fixed(&marker_buffer);
+    marker_writer.print("\x1eZIGLIVE_LOG:{d}:{d}\x1f", .{ meta.line, meta.column }) catch return;
+    writeAllFd(2, marker_writer.buffered());
 }
 
 fn appendJsonString(writer: *std.Io.Writer, value: []const u8) !void {

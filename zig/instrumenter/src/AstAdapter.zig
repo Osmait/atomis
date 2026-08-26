@@ -65,6 +65,25 @@ fn inComptime(tree: Ast, node: Ast.Node.Index) bool {
     return false;
 }
 
+fn isLogCallee(name: []const u8) bool {
+    if (std.mem.eql(u8, name, "std.debug.print")) return true;
+    inline for (.{ "std.log.debug", "std.log.info", "std.log.warn", "std.log.err" }) |candidate| {
+        if (std.mem.eql(u8, name, candidate)) return true;
+    }
+    return false;
+}
+
+fn isDirectBlockStatement(tree: Ast, node: Ast.Node.Index) bool {
+    var block_buffer: [2]Ast.Node.Index = undefined;
+    var index: usize = 1;
+    while (index < tree.nodes.len) : (index += 1) {
+        const candidate: Ast.Node.Index = @enumFromInt(index);
+        const statements = tree.blockStatements(&block_buffer, candidate) orelse continue;
+        for (statements) |statement| if (statement == node) return true;
+    }
+    return false;
+}
+
 fn unsupportedInitializer(tree: Ast, init_node: Ast.Node.Index) bool {
     return switch (tree.nodeTag(init_node)) {
         .fn_decl,
@@ -111,7 +130,9 @@ pub fn instrument(
     auto_inspect: bool,
     manual_ids: []const []const u8,
 ) !Result {
-    if (std.mem.indexOf(u8, source, "@import(\"runzig_runtime.zig\").probe(") != null) {
+    if (std.mem.indexOf(u8, source, "@import(\"runzig_runtime.zig\").probe(") != null or
+        std.mem.indexOf(u8, source, "@import(\"runzig_runtime.zig\").logSource(") != null)
+    {
         return .{
             .generated = try allocator.dupe(u8, source[0..source.len]),
             .probes = try allocator.alloc(Probe, 0),
@@ -190,13 +211,36 @@ pub fn instrument(
 
     const Insertion = struct {
         offset: usize,
-        kind: enum { probe, comment_open },
+        kind: enum { probe, comment_open, log_marker },
         probe_index: usize = 0,
+        line: usize = 0,
+        column: usize = 0,
     };
     var insertions: std.ArrayList(Insertion) = .empty;
     defer insertions.deinit(allocator);
     for (probes.items, 0..) |probe, index| {
         if (probe.insertion_byte) |offset| try insertions.append(allocator, .{ .offset = offset, .kind = .probe, .probe_index = index });
+    }
+
+    // Append a private marker after direct std.debug.print/std.log statements in the
+    // generated copy, allowing Node to attach emitted text to the original
+    // source position without changing the visible document or call columns.
+    node_index = 1;
+    while (node_index < tree.nodes.len) : (node_index += 1) {
+        const node: Ast.Node.Index = @enumFromInt(node_index);
+        var call_buffer: [1]Ast.Node.Index = undefined;
+        const call = tree.fullCall(&call_buffer, node) orelse continue;
+        const fn_first = tree.tokenStart(tree.firstToken(call.ast.fn_expr));
+        const fn_last_token = tree.lastToken(call.ast.fn_expr);
+        const fn_last = tree.tokenStart(fn_last_token) + tree.tokenSlice(fn_last_token).len;
+        if (!isLogCallee(source[fn_first..fn_last])) continue;
+        if (inComptime(tree, node) or !isDirectBlockStatement(tree, node)) continue;
+        const call_last_token = tree.lastToken(node);
+        const semicolon = call_last_token + 1;
+        if (tree.tokenTag(semicolon) != .semicolon) continue;
+        const marker_offset = tree.tokenStart(semicolon) + tree.tokenSlice(semicolon).len;
+        const call_pos = position(source, fn_first);
+        try insertions.append(allocator, .{ .offset = marker_offset, .kind = .log_marker, .line = call_pos.line, .column = call_pos.column });
     }
 
     // Zig 0.16 diagnoses `_ = value;` as a pointless discard once a probe also
@@ -233,6 +277,11 @@ pub fn instrument(
     try generated.appendSlice(allocator, source[0..source.len]);
     for (insertions.items) |insertion| switch (insertion.kind) {
         .comment_open => try generated.insertSlice(allocator, insertion.offset, "// ziglive: observed discard "),
+        .log_marker => {
+            var snippet: [192]u8 = undefined;
+            const text = try std.fmt.bufPrint(&snippet, " @import(\"runzig_runtime.zig\").logSource(.{{ .line = {d}, .column = {d} }});", .{ insertion.line, insertion.column });
+            try generated.insertSlice(allocator, insertion.offset, text);
+        },
         .probe => {
             const probe = probes.items[insertion.probe_index];
             var snippet: [512]u8 = undefined;
@@ -266,6 +315,19 @@ test "instruments local declarations and preserves lines" {
     try std.testing.expect(!result.probes[0].supported);
     try std.testing.expectEqual(std.mem.count(u8, source, "\n"), std.mem.count(u8, result.generated.?, "\n"));
     try std.testing.expect(std.mem.indexOf(u8, result.generated.?, "probe(") != null);
+}
+
+test "marks log statements with original source locations" {
+    const source: [:0]const u8 = "const std = @import(\"std\");\npub fn main() void {\n    std.debug.print(\"hello\\n\", .{});\n    std.log.info(\"world\", .{});\n}\n";
+    const result = try instrument(std.testing.allocator, source, "file:///logs.zig", false, &.{});
+    defer {
+        std.testing.allocator.free(result.generated.?);
+        for (result.probes) |probe| std.testing.allocator.free(probe.name);
+        std.testing.allocator.free(result.probes);
+    }
+    try std.testing.expect(std.mem.indexOf(u8, result.generated.?, "std.debug.print(\"hello\\n\", .{}); @import(\"runzig_runtime.zig\").logSource(.{ .line = 3, .column = 5 });") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.generated.?, "std.log.info(\"world\", .{}); @import(\"runzig_runtime.zig\").logSource(.{ .line = 4, .column = 5 });") != null);
+    try std.testing.expectEqual(std.mem.count(u8, source, "\n"), std.mem.count(u8, result.generated.?, "\n"));
 }
 
 test "parse errors do not generate source" {

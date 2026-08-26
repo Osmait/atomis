@@ -27,6 +27,7 @@ export interface RunnerCallbacks {
 		stream: "stdout" | "stderr",
 		chunk: string,
 		category: "program" | "error",
+		sourceLocation?: { line: number; column: number },
 	) => void;
 	diagnostic: (owner: string, diagnostics: AppDiagnostic[]) => void;
 	probe: (
@@ -231,26 +232,40 @@ export class CompilerRunner {
 		let probeError: string | undefined;
 		let runtimeStderrIsError = false;
 		let runtimeStderrBuffer = "";
-		const emitRuntimeStderrLine = (line: string): void => {
-			if (/(?:^|\s)(?:thread \d+ )?(?:panic|error):/i.test(line))
-				runtimeStderrIsError = true;
-			callbacks.output(
-				"stderr",
-				line,
-				runtimeStderrIsError ? "error" : "program",
-			);
+		const logMarker = /\x1eZIGLIVE_LOG:(\d+):(\d+)\x1f/;
+		const emitRuntimeStderrText = (
+			text: string,
+			sourceLocation?: { line: number; column: number },
+		): void => {
+			for (const line of text.match(/[^\n]*\n|[^\n]+/g) ?? []) {
+				if (/(?:^|\s)(?:thread \d+ )?panic:/i.test(line))
+					runtimeStderrIsError = true;
+				const lineIsError =
+					runtimeStderrIsError || /(?:^|\s)error:/i.test(line);
+				callbacks.output(
+					"stderr",
+					line,
+					lineIsError ? "error" : "program",
+					runtimeStderrIsError ? undefined : sourceLocation,
+				);
+			}
 		};
 		const emitRuntimeStderr = (chunk: string): void => {
 			runtimeStderrBuffer += chunk;
-			let newline = runtimeStderrBuffer.indexOf("\n");
-			while (newline >= 0) {
-				emitRuntimeStderrLine(runtimeStderrBuffer.slice(0, newline + 1));
-				runtimeStderrBuffer = runtimeStderrBuffer.slice(newline + 1);
-				newline = runtimeStderrBuffer.indexOf("\n");
+			let marker = logMarker.exec(runtimeStderrBuffer);
+			while (marker?.[1] && marker[2]) {
+				emitRuntimeStderrText(runtimeStderrBuffer.slice(0, marker.index), {
+					line: Number(marker[1]),
+					column: Number(marker[2]),
+				});
+				runtimeStderrBuffer = runtimeStderrBuffer.slice(
+					marker.index + marker[0].length,
+				);
+				marker = logMarker.exec(runtimeStderrBuffer);
 			}
 		};
 		const flushRuntimeStderr = (): void => {
-			if (runtimeStderrBuffer) emitRuntimeStderrLine(runtimeStderrBuffer);
+			emitRuntimeStderrText(runtimeStderrBuffer);
 			runtimeStderrBuffer = "";
 		};
 		const reader = new ProbeEventReader((event) => {

@@ -65,6 +65,14 @@ test("Vim mode keeps native clipboard shortcuts", async ({ page, context }) => {
 	await openClean(page);
 	await page.getByLabel("Vim Mode").check();
 	const editorInput = page.getByRole("textbox", { name: "Editor content" });
+	await page.locator(".view-lines").click({ button: "right" });
+	await expect(
+		page.getByRole("menuitem", { name: "Copy", exact: true }),
+	).toBeVisible();
+	await expect(
+		page.getByRole("menuitem", { name: "Paste", exact: true }),
+	).toBeVisible();
+	await page.keyboard.press("Escape");
 	await editorInput.focus();
 	await page.keyboard.press("i");
 	await expect(page.locator(".vim-status")).toContainText(/INSERT/i);
@@ -85,6 +93,15 @@ test("Vim mode keeps native clipboard shortcuts", async ({ page, context }) => {
 	await expect
 		.poll(() => page.evaluate(() => navigator.clipboard.readText()))
 		.toContain("// clipboard");
+	await page.locator(".view-lines").click({ button: "right" });
+	await page.getByRole("menuitem", { name: "Copy", exact: true }).click();
+	await expect
+		.poll(() => page.evaluate(() => navigator.clipboard.readText()))
+		.toContain("// clipboard");
+	await page.evaluate(() => navigator.clipboard.writeText("// menu paste"));
+	await page.locator(".view-lines").click({ button: "right" });
+	await page.getByRole("menuitem", { name: "Paste", exact: true }).click();
+	await expect(page.locator(".view-lines")).toContainText("// menu paste");
 	expect(pageErrors).toEqual([]);
 });
 
@@ -149,6 +166,17 @@ test("each run clears the terminal and colors only failures red", async ({
 		"hello from ZigLive",
 	);
 	await expect(terminal.locator("pre.error")).toHaveCount(0);
+	const sourcedLog = terminal
+		.locator(".output-entry.has-source")
+		.filter({ hasText: "hello from ZigLive" });
+	await expect(sourcedLog).toHaveAttribute(
+		"title",
+		/Generado por src\/main\.zig:3:/,
+	);
+	await sourcedLog.hover();
+	await expect(sourcedLog.locator(".log-origin-tooltip")).toContainText(
+		/src\/main\.zig:3:/,
+	);
 });
 
 test("Auto Inspect can be replaced by a gutter manual probe", async ({
