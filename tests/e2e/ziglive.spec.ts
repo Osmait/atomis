@@ -393,10 +393,11 @@ test("command palette opens files and zen mode hides the chrome", async ({
 	await expect(page.locator(".editor-header")).toContainText("src/main.zig");
 
 	await page.keyboard.press("ControlOrMeta+.");
-	await expect(page.locator(".top-chrome")).toBeHidden();
+	await expect(page.locator(".editor-chrome")).toHaveCount(0);
+	await expect(page.locator(".global-status")).toBeHidden();
 	await expect(page.locator(".zen-pill")).toBeVisible();
 	await page.locator(".zen-exit").click();
-	await expect(page.locator(".top-chrome")).toBeVisible();
+	await expect(page.locator(".editor-chrome")).toBeVisible();
 
 	await page.keyboard.press("ControlOrMeta+J");
 	await expect(page.locator(".side-panel")).toHaveCount(0);

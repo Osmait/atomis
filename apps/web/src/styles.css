@@ -27,7 +27,7 @@
 	--teal: #94e2d5;
 	--sky: #89dceb;
 	--zig-orange: #f7a41d;
-	--rust-orange: #f74c00;
+	--rust-orange: #dea584;
 	--go-cyan: #00add8;
 	--ts-blue: #3178c6;
 	--js-yellow: #f0db4f;
@@ -101,9 +101,9 @@ input:focus-visible,
 .app-shell {
 	display: flex;
 	flex-direction: column;
-	gap: 16px;
+	gap: 9px;
 	height: 100%;
-	padding: 22px;
+	padding: 14px;
 	background: var(--base);
 	font-size: 13px;
 	transition: background 0.18s ease;
@@ -114,32 +114,20 @@ input:focus-visible,
 	padding: 40px 0 0;
 }
 
-.zen .top-chrome,
 .zen .global-status {
 	display: none;
 }
 
-/* ── Top chrome ────────────────────────────────────────── */
+/* ── Editor chrome (tabs + run, first row of the editor card) ── */
 
-.top-chrome {
+.editor-chrome {
 	display: flex;
 	align-items: center;
-	gap: 14px;
+	gap: 10px;
+	padding: 7px 10px;
+	border-bottom: 1px solid var(--surface0);
 	flex-shrink: 0;
 	min-width: 0;
-}
-
-.brand-chip {
-	display: flex;
-	align-items: center;
-	gap: 9px;
-	background: var(--surface);
-	border: 1px solid var(--surface0);
-	border-radius: 10px;
-	padding: 7px 13px;
-	box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
-	white-space: nowrap;
-	flex-shrink: 0;
 }
 
 .brand-glyph {
@@ -163,12 +151,7 @@ input:focus-visible,
 .tab-pill {
 	display: flex;
 	align-items: center;
-	gap: 6px;
-	background: var(--surface);
-	border: 1px solid var(--surface0);
-	border-radius: 10px;
-	padding: 5px;
-	box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
+	gap: 4px;
 	min-width: 0;
 	overflow-x: auto;
 	scrollbar-width: none;
@@ -236,11 +219,11 @@ input:focus-visible,
 .run-button {
 	display: flex;
 	align-items: center;
-	gap: 9px;
+	gap: 8px;
 	background: var(--mauve);
 	color: var(--base);
-	border-radius: 10px;
-	padding: 8px 15px;
+	border-radius: 8px;
+	padding: 5px 12px;
 	font-weight: 600;
 	box-shadow: 0 8px 20px rgba(203, 166, 247, 0.24);
 }
@@ -268,13 +251,12 @@ input:focus-visible,
 	}
 }
 
-.auto-chip,
-.zen-chip {
+.auto-chip {
 	border: 1px solid var(--surface0);
 	background: var(--surface);
 	color: var(--overlay);
-	border-radius: 10px;
-	padding: 8px 12px;
+	border-radius: 8px;
+	padding: 4px 10px;
 }
 
 .auto-chip.on {
@@ -283,12 +265,7 @@ input:focus-visible,
 	color: var(--mauve);
 }
 
-.zen-chip {
-	color: var(--subtext);
-}
-
-.auto-chip:hover:not(:disabled),
-.zen-chip:hover {
+.auto-chip:hover:not(:disabled) {
 	border-color: var(--surface1);
 }
 
@@ -297,7 +274,7 @@ input:focus-visible,
 .workspace {
 	flex: 1;
 	display: flex;
-	gap: 16px;
+	gap: 9px;
 	min-height: 0;
 }
 
@@ -310,7 +287,7 @@ input:focus-visible,
 	min-width: 0;
 	min-height: 0;
 	display: flex;
-	gap: 16px;
+	gap: 9px;
 }
 
 .dock-bottom .inner {
@@ -335,14 +312,25 @@ input:focus-visible,
 .tree-header {
 	display: flex;
 	align-items: center;
-	justify-content: space-between;
-	padding: 11px 14px;
+	gap: 8px;
+	padding: 10px 12px 10px 14px;
 	border-bottom: 1px solid var(--surface0);
-	font-size: 11px;
-	letter-spacing: 0.14em;
-	text-transform: uppercase;
 	color: var(--overlay);
 	flex-shrink: 0;
+	white-space: nowrap;
+}
+
+.tree-header .brand-name {
+	color: var(--text);
+	font-weight: 500;
+}
+
+.tree-header .brand-dim {
+	color: var(--overlay-dim);
+}
+
+.tree-header .tree-tools {
+	margin-left: auto;
 }
 
 .tree-tools {
@@ -385,6 +373,10 @@ input:focus-visible,
 
 .tree-root .chev {
 	color: var(--mauve);
+}
+
+.root-tools {
+	margin-left: auto;
 }
 
 .folder-glyph {
@@ -713,6 +705,33 @@ input:focus-visible,
 .editor-footer b {
 	color: var(--subtext);
 	font-weight: 500;
+}
+
+.fmt-switch {
+	display: flex;
+	align-items: center;
+	gap: 3px;
+	white-space: nowrap;
+}
+
+.fmt-name {
+	color: var(--dim);
+	margin-right: 3px;
+}
+
+.fmt-switch button {
+	color: var(--overlay-dim);
+	border-radius: 5px;
+	padding: 0 5px;
+}
+
+.fmt-switch button:hover {
+	color: var(--subtext);
+}
+
+.fmt-switch button.active {
+	color: var(--mauve);
+	background: var(--mauve-dim);
 }
 
 .diag-label {
@@ -1308,8 +1327,9 @@ input:focus-visible,
 
 .zen-pill {
 	position: fixed;
-	right: 24px;
-	bottom: 24px;
+	left: 50%;
+	transform: translateX(-50%);
+	bottom: 18px;
 	display: flex;
 	align-items: center;
 	gap: 12px;
@@ -1642,11 +1662,7 @@ input:focus-visible,
 
 @media (max-width: 780px) {
 	.app-shell {
-		padding: 12px;
-		gap: 10px;
-	}
-
-	.brand-chip {
-		display: none;
+		padding: 10px;
+		gap: 8px;
 	}
 }

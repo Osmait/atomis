@@ -9,3 +9,5 @@ zig-out/
 .env
 rust/instrumenter/target/
 go/instrumenter/bin/
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/

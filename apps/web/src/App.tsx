@@ -21,6 +21,7 @@ import {
 } from "monaco-vim";
 import { CommandPalette } from "./components/CommandPalette.js";
 import { FileIcon, FolderIcon, ZigMark } from "./components/FileIcon.js";
+import { VALUE_FMTS, type ValueFmt } from "./lowlevel.js";
 import {
 	ENTRY_FILES,
 	languageForPath,
@@ -169,6 +170,7 @@ const DEFAULT_SETTINGS: Settings = {
 	manualProbeIds: [],
 };
 const SETTINGS_KEY = "ziglive.settings.v1";
+const VALUE_FMT_KEY = "ziglive.value-fmt.v1";
 const SOURCE_KEY = "ziglive.source.v1";
 const VIM_MODE_KEY = "ziglive.vim-mode.v1";
 const LANGUAGE_KEY = "ziglive.language.v1";
@@ -176,6 +178,11 @@ const LANGUAGE_KEY = "ziglive.language.v1";
 function loadLanguage(): Language {
 	const stored = localStorage.getItem(LANGUAGE_KEY);
 	return stored && stored in WEB_LANGUAGE_PACKS ? (stored as Language) : "zig";
+}
+
+function loadValueFmt(): ValueFmt {
+	const stored = localStorage.getItem(VALUE_FMT_KEY);
+	return VALUE_FMTS.includes(stored as ValueFmt) ? (stored as ValueFmt) : "dec";
 }
 
 function loadSettings(): Settings {
@@ -226,6 +233,7 @@ export function App(): React.JSX.Element {
 	const [openTabs, setOpenTabs] = useState([entryRef.current]);
 	const [startupError, setStartupError] = useState<string>();
 	const [settings, setSettings] = useState<Settings>(loadSettings);
+	const [valueFmt, setValueFmt] = useState<ValueFmt>(loadValueFmt);
 	const [runState, setRunState] = useState<RunState>("idle");
 	const [status, setStatus] = useState("Starting…");
 	const [catalog, setCatalog] = useState<ProbeDescriptor[]>([]);
@@ -1640,114 +1648,28 @@ export function App(): React.JSX.Element {
 		<main
 			className={`app-shell${zen ? " zen" : ""} dock-${dockEffective}${layout.termMax ? " term-max" : ""}`}
 		>
-			<header className="top-chrome">
-				<div className="brand-chip" title={`zig ${session.zigVersion}`}>
-					<i className="brand-glyph">
-						<ZigMark />
-					</i>{" "}
-					ziglive{" "}
-					<span className="brand-dim">/ src</span>
-				</div>
-				<div className="tab-pill" role="tablist">
-					{openTabs.map((path) => {
-						return (
-							<div
-								className={`buffer-tab${path === activePath ? " active" : ""}`}
-								key={path}
-								onClick={() => selectFile(path)}
-								onKeyDown={(event) => {
-									if (event.key === "Enter") selectFile(path);
-								}}
-								role="tab"
-								aria-selected={path === activePath}
-								tabIndex={0}
-							>
-								<FileIcon path={path} />
-								<span>{path}</span>
-								{stale && path === activePath && <em className="stale-dot" />}
-								<span
-									className="tab-close"
-									onClick={(event) => {
-										event.stopPropagation();
-										closeTab(path);
-									}}
-									role="button"
-									tabIndex={-1}
-									title="Cerrar tab"
-								>
-									✕
-								</span>
-							</div>
-						);
-					})}
-					<button
-						className="tab-add"
-						onClick={() => setPaletteOpen(true)}
-						title="Buscar archivo (⌘K)"
-					>
-						+
-					</button>
-				</div>
-				<div className="chrome-right">
-					<button
-						className="run-button"
-						disabled={runDisabled}
-						onClick={active ? stop : run}
-					>
-						{active ? (
-							<>
-								<span className="spin">⟳</span> Corriendo
-							</>
-						) : (
-							<>▶ Run</>
-						)}
-						<span className="kbd-chip">⌘↵</span>
-					</button>
-					<button
-						className={`auto-chip${settings.autoRun ? " on" : ""}`}
-						disabled={runDisabled}
-						onClick={toggleAutoRun}
-					>
-						auto {settings.autoRun ? "✓" : "✕"}
-					</button>
-					<button className="zen-chip" onClick={toggleZen}>
-						zen ⌘.
-					</button>
-				</div>
-			</header>
-
 			<div className="workspace">
 				{treeVisible && (
 					<aside className="tree-card">
-						<header className="tree-header">
-							<span className="tree-title">Árbol</span>
+						<header className="tree-header brand-chip">
+							<i className="brand-glyph" title={`zig ${session.zigVersion}`}>
+								<ZigMark />
+							</i>
+							<span className="brand-name">ziglive</span>
+							<span className="brand-dim">scratch</span>
 							<span className="tree-tools">
-								<button onClick={() => createFile()} title="Crear archivo">
-									＋
-								</button>
-								<button onClick={createFolder} title="Crear carpeta">
-									＋/
-								</button>
 								<button
-									disabled={ENTRY_FILES.has(activePath)}
-									onClick={renameActiveFile}
-									title="Renombrar archivo"
+									onClick={() => setPaletteOpen(true)}
+									title="Buscar archivo (⌘K)"
 								>
-									✎
-								</button>
-								<button
-									disabled={ENTRY_FILES.has(activePath)}
-									onClick={deleteActiveFile}
-									title="Eliminar archivo"
-								>
-									×
+									⌕
 								</button>
 								<button
 									className="tree-hide"
 									onClick={() => updateLayout({ treeOpen: false })}
 									title="Ocultar árbol (⌘B)"
 								>
-									✕ ⌘B
+									✕
 								</button>
 							</span>
 						</header>
@@ -1755,6 +1677,28 @@ export function App(): React.JSX.Element {
 							<div className="tree-root">
 								<span className="chev">▾</span>
 								<FolderIcon open /> src
+								<span className="tree-tools root-tools">
+									<button onClick={() => createFile()} title="Crear archivo">
+										＋
+									</button>
+									<button onClick={createFolder} title="Crear carpeta">
+										＋/
+									</button>
+									<button
+										disabled={ENTRY_FILES.has(activePath)}
+										onClick={renameActiveFile}
+										title="Renombrar archivo"
+									>
+										✎
+									</button>
+									<button
+										disabled={ENTRY_FILES.has(activePath)}
+										onClick={deleteActiveFile}
+										title="Eliminar archivo"
+									>
+										×
+									</button>
+								</span>
 							</div>
 							{treeRows.map((row) => {
 								if (row.kind === "folder")
@@ -1867,16 +1811,85 @@ export function App(): React.JSX.Element {
 
 				<div className="inner">
 					<section className="editor-card">
+						{!zen && (
+							<div className="editor-chrome">
+								{!treeVisible && !tight && (
+									<button
+										className="tree-restore"
+										onClick={() => updateLayout({ treeOpen: true })}
+										title="Mostrar árbol (⌘B)"
+									>
+										▤
+									</button>
+								)}
+								<div className="tab-pill" role="tablist">
+									{openTabs.map((path) => {
+										return (
+											<div
+												className={`buffer-tab${path === activePath ? " active" : ""}`}
+												key={path}
+												onClick={() => selectFile(path)}
+												onKeyDown={(event) => {
+													if (event.key === "Enter") selectFile(path);
+												}}
+												role="tab"
+												aria-selected={path === activePath}
+												tabIndex={0}
+											>
+												<FileIcon path={path} />
+												<span>{path}</span>
+												{stale && path === activePath && (
+													<em className="stale-dot" />
+												)}
+												<span
+													className="tab-close"
+													onClick={(event) => {
+														event.stopPropagation();
+														closeTab(path);
+													}}
+													role="button"
+													tabIndex={-1}
+													title="Cerrar tab"
+												>
+													✕
+												</span>
+											</div>
+										);
+									})}
+									<button
+										className="tab-add"
+										onClick={() => setPaletteOpen(true)}
+										title="Buscar archivo (⌘K)"
+									>
+										+
+									</button>
+								</div>
+								<div className="chrome-right">
+									<button
+										className={`auto-chip${settings.autoRun ? " on" : ""}`}
+										disabled={runDisabled}
+										onClick={toggleAutoRun}
+									>
+										auto {settings.autoRun ? "✓" : "✕"}
+									</button>
+									<button
+										className="run-button"
+										disabled={runDisabled}
+										onClick={active ? stop : run}
+									>
+										{active ? (
+											<>
+												<span className="spin">⟳</span> Corriendo
+											</>
+										) : (
+											<>▶ Run</>
+										)}
+										<span className="kbd-chip">⌘↵</span>
+									</button>
+								</div>
+							</div>
+						)}
 						<header className="pane-header editor-header">
-							{!treeVisible && !zen && !tight && (
-								<button
-									className="tree-restore"
-									onClick={() => updateLayout({ treeOpen: true })}
-									title="Mostrar árbol (⌘B)"
-								>
-									▤ árbol
-								</button>
-							)}
 							<span className="file-badge">
 								<FileIcon path={activePath} />
 								<b>src/{activePath}</b>
@@ -1931,6 +1944,21 @@ export function App(): React.JSX.Element {
 							<button onClick={formatAndNormal}>
 								<b>⌘S</b> formato
 							</button>
+							<span className="fmt-switch">
+								<span className="fmt-name">valores</span>
+								{VALUE_FMTS.map((fmt) => (
+									<button
+										className={valueFmt === fmt ? "active" : ""}
+										key={fmt}
+										onClick={() => {
+											setValueFmt(fmt);
+											localStorage.setItem(VALUE_FMT_KEY, fmt);
+										}}
+									>
+										{fmt}
+									</button>
+								))}
+							</span>
 							<span
 								className={`diag-label${diagOk ? " ok" : active ? "" : " err"}`}
 							>
