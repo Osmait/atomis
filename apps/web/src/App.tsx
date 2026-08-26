@@ -9,6 +9,12 @@ import type {
 	RuntimeServerEvent,
 } from "@ziglive/protocol";
 import type * as MonacoApi from "monaco-editor";
+import {
+	initVimMode,
+	StatusBar as VimStatusBar,
+	VimMode,
+	type VimAdapterInstance,
+} from "monaco-vim";
 import { registerZig } from "./editor/zigLanguage.js";
 import { LspClient } from "./lsp/LspClient.js";
 import {
@@ -28,6 +34,26 @@ interface Settings {
 
 interface OwnedDiagnostic extends AppDiagnostic {
 	owner: string;
+}
+
+interface VimModeWithCommands {
+	Vim: {
+		defineEx: (
+			name: string,
+			prefix: string,
+			callback: () => void,
+		) => void;
+	};
+}
+
+class NvimStatusBar extends VimStatusBar {
+	override setMode(event: { mode: string; subMode?: string }): void {
+		const suffix =
+			event.mode === "visual" && event.subMode
+				? ` ${event.subMode.replace("wise", "").toUpperCase()}`
+				: "";
+		this.setText(`${event.mode.toUpperCase()}${suffix}`);
+	}
 }
 
 const RUN_STATE_LABELS: Record<RunState, string> = {
@@ -59,6 +85,7 @@ const DEFAULT_SETTINGS: Settings = {
 };
 const SETTINGS_KEY = "ziglive.settings.v1";
 const SOURCE_KEY = "ziglive.source.v1";
+const VIM_MODE_KEY = "ziglive.vim-mode.v1";
 
 function loadSettings(): Settings {
 	try {
@@ -113,12 +140,18 @@ export function App(): React.JSX.Element {
 	const [tab, setTab] = useState<"output" | "problems" | "runtime">("output");
 	const [capabilities, setCapabilities] = useState<Record<string, unknown>>({});
 	const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 });
+	const [vimEnabled, setVimEnabled] = useState(
+		() => localStorage.getItem(VIM_MODE_KEY) !== "false",
+	);
 	const editorRef = useRef<MonacoApi.editor.IStandaloneCodeEditor | undefined>(
 		undefined,
 	);
 	const monacoRef = useRef<Monaco | undefined>(undefined);
 	const runtimeRef = useRef<WebSocket | undefined>(undefined);
 	const lspRef = useRef<LspClient | undefined>(undefined);
+	const vimRef = useRef<VimAdapterInstance | null>(null);
+	const vimStatusRef = useRef<HTMLDivElement | null>(null);
+	const vimEnabledRef = useRef(vimEnabled);
 	const decorationsRef = useRef<
 		MonacoApi.editor.IEditorDecorationsCollection | undefined
 	>(undefined);
@@ -195,6 +228,21 @@ export function App(): React.JSX.Element {
 		if (session)
 			sendRuntime({ type: "run.cancel", sessionId: session.sessionId });
 	}, [sendRuntime, session]);
+
+	const changeVimMode = useCallback((enabled: boolean): void => {
+		vimEnabledRef.current = enabled;
+		setVimEnabled(enabled);
+		localStorage.setItem(VIM_MODE_KEY, String(enabled));
+		vimRef.current?.dispose();
+		vimRef.current = null;
+		if (enabled && editorRef.current && vimStatusRef.current)
+			vimRef.current = initVimMode(
+				editorRef.current,
+				vimStatusRef.current,
+				NvimStatusBar,
+			);
+		editorRef.current?.focus();
+	}, []);
 
 	const handleRuntimeEvent = useCallback((event: RuntimeServerEvent): void => {
 		if (
@@ -335,8 +383,24 @@ export function App(): React.JSX.Element {
 			lspRef.current = lsp;
 			lsp.connect(websocketUrl("/ws/lsp", session), versionRef.current);
 
-			editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, run);
-			editor.addCommand(monaco.KeyCode.Escape, stop);
+			editor.onKeyDown((event) => {
+				if (
+					(event.ctrlKey || event.metaKey) &&
+					event.keyCode === monaco.KeyCode.Enter
+				) {
+					event.preventDefault();
+					event.stopPropagation();
+					run();
+				}
+			});
+			const vimCommands = VimMode as unknown as VimModeWithCommands;
+			vimCommands.Vim.defineEx("write", "w", run);
+			if (vimEnabledRef.current && vimStatusRef.current)
+				vimRef.current = initVimMode(
+					editor,
+					vimStatusRef.current,
+					NvimStatusBar,
+				);
 			editor.onMouseDown((mouse) => {
 				if (
 					mouse.target.type !==
@@ -362,7 +426,7 @@ export function App(): React.JSX.Element {
 				setTimeout(run, 0);
 			});
 		},
-		[handleRuntimeEvent, run, sendRuntime, sendSettings, session, stop],
+		[handleRuntimeEvent, run, sendRuntime, sendSettings, session],
 	);
 
 	useEffect(() => {
@@ -516,6 +580,7 @@ export function App(): React.JSX.Element {
 
 	useEffect(
 		() => () => {
+			vimRef.current?.dispose();
 			lspRef.current?.dispose();
 			runtimeRef.current?.close();
 		},
@@ -570,70 +635,90 @@ export function App(): React.JSX.Element {
 
 	return (
 		<main className="app-shell">
-			<header className="toolbar">
-				<div className="brand">
-					<span className="brand-mark">Z</span>
-					<strong>ZigLive</strong>
+			<header className="buffer-tabs">
+				<div className="buffer-tab active">
+					<i /> main.zig <b>{stale ? "[+]" : ""}</b>
 				</div>
-				<button
-					className="run-button"
-					onClick={run}
-					disabled={Boolean(session.degraded.zig)}
-					title="Ejecutar (Ctrl/Cmd + Enter)"
-				>
-					<span>▶</span> Run <kbd>⌘↵</kbd>
-				</button>
-				<button className="stop-button" onClick={stop} disabled={!busy}>
-					<span>■</span> Stop
-				</button>
-				<span className="toolbar-divider" />
-				<label className="toggle-control">
-					<input
-						type="checkbox"
-						checked={settings.autoRun}
-						disabled={Boolean(session.degraded.zig)}
-						onChange={(event) =>
-							sendSettings({ ...settings, autoRun: event.target.checked })
-						}
-					/>
-					Auto Run
-				</label>
-				<label className="toggle-control">
-					<input
-						type="checkbox"
-						checked={settings.autoInspect}
-						onChange={(event) => {
-							sendSettings({ ...settings, autoInspect: event.target.checked });
-							setTimeout(run, 0);
-						}}
-					/>
-					Auto Inspect
-				</label>
-				<div className="toolbar-spacer" />
-				<span className={`state state-${runState}`}>
-					<i /> {RUN_STATE_LABELS[runState]}
-				</span>
-				<div className="metrics">
-					<span>
-						compile {result ? `${result.compilationMs.toFixed(0)}ms` : "—"}
-					</span>
-					<b>/</b>
-					<span>run {result ? `${result.executionMs.toFixed(0)}ms` : "—"}</span>
-					<b>·</b>
-					<span>zig {session.zigVersion}</span>
-				</div>
+				<div className="buffer-tab muted">runtime.zig</div>
+				<div className="buffer-spacer" />
+				<span>zig {session.zigVersion}</span>
+				<span>zls</span>
+				<strong>⏻ local</strong>
 			</header>
 
 			<div className="workspace">
+				<aside className="navigator">
+					<header>
+						<strong>ZigLive</strong>
+						<span>NVIM-TREE</span>
+					</header>
+					<div className="file-tree">
+						<div className="tree-root">⌄ ziglive-session</div>
+						<div className="tree-folder">⌄ src</div>
+						<div className="tree-file active">◆ main.zig</div>
+						<div className="tree-file generated">◇ generated/main.zig</div>
+					</div>
+					<div className="navigator-actions">
+						<div>
+							<button
+								className="run-button"
+								onClick={run}
+								disabled={Boolean(session.degraded.zig)}
+							>
+								▶ Run
+							</button>
+							<button onClick={stop} disabled={!busy}>
+								■
+							</button>
+						</div>
+						<label>
+							<input
+								type="checkbox"
+								checked={settings.autoRun}
+								disabled={Boolean(session.degraded.zig)}
+								onChange={(event) =>
+									sendSettings({
+										...settings,
+										autoRun: event.target.checked,
+									})
+								}
+							/>
+							Auto Run
+						</label>
+						<label>
+							<input
+								type="checkbox"
+								checked={settings.autoInspect}
+								onChange={(event) => {
+									sendSettings({
+										...settings,
+										autoInspect: event.target.checked,
+									});
+									setTimeout(run, 0);
+								}}
+							/>
+							Auto Inspect
+						</label>
+						<label className="vim-toggle">
+							<input
+								type="checkbox"
+								checked={vimEnabled}
+								onChange={(event) => changeVimMode(event.target.checked)}
+							/>
+							Vim Mode
+						</label>
+					</div>
+					<div className={vimEnabled ? "shortcut-help" : "shortcut-help dim"}>
+						<span><b>i</b> insert</span>
+						<span><b>:w</b> compilar</span>
+						<span><b>Esc</b> normal</span>
+						<span><b>⌘↵</b> ejecutar</span>
+					</div>
+				</aside>
+
 				<section className="editor-pane">
 					<header className="pane-header editor-header">
-						<span className="file-name">
-							<i>◆</i> main.zig{" "}
-							<b className={stale ? "dirty active" : "dirty"} />
-						</span>
-						<span>
-							Ln {cursorPosition.line}, Col {cursorPosition.column}
-						</span>
+						<span><b>src/main.zig</b> › main()</span>
 					</header>
 					<div className="editor-wrap">
 						<Editor
@@ -665,39 +750,21 @@ export function App(): React.JSX.Element {
 				</section>
 
 				<section className="side-panel">
-					<nav className="pane-header panel-tabs">
-						<div>
-							<button
-								aria-label="Output"
-								className={tab === "output" ? "active" : ""}
-								onClick={() => setTab("output")}
-							>
-								Salida
-							</button>
-							<button
-								aria-label={`Problems (${allProblems.length})`}
-								className={tab === "problems" ? "active" : ""}
-								onClick={() => setTab("problems")}
-							>
-								Problemas ({allProblems.length})
-							</button>
-							<button
-								className={tab === "runtime" ? "active" : ""}
-								onClick={() => setTab("runtime")}
-							>
-								Runtime
-							</button>
-						</div>
-						{tab === "output" && (
-							<button className="clear-button" onClick={() => setOutput([])}>
-								Limpiar
-							</button>
-						)}
-					</nav>
+					<header className="pane-header terminal-header">
+						<span><b>[Terminal]</b> term://zig-run</span>
+						<strong>
+							{result?.exitCode === null || result?.exitCode === undefined
+								? RUN_STATE_LABELS[runState]
+								: `exit ${result.exitCode}`}
+						</strong>
+					</header>
 
 					<div className="panel-content">
 						{tab === "output" && (
 							<div className="output-list">
+								<div className="terminal-command">
+									<b>$</b> zig run src/main.zig
+								</div>
 								{output.length ? (
 									output.map((entry, index) => (
 										<div className="output-entry" key={index}>
@@ -745,7 +812,7 @@ export function App(): React.JSX.Element {
 										</li>
 									))
 								) : (
-									<li className="empty-state">Sin problemas.</li>
+									<li className="empty-state">No diagnostics.</li>
 								)}
 							</ul>
 						)}
@@ -773,17 +840,66 @@ export function App(): React.JSX.Element {
 						)}
 					</div>
 
-					<footer className="status-bar">
-						<span>
-							Auto Run {settings.autoRun ? "activo" : "pausado"} · se ejecuta
-							localmente
-							{Object.keys(session.degraded).length
-								? ` · ${Object.values(session.degraded).join(" · ")}`
-								: ""}
-						</span>
-						<span>local · zls {session.zlsVersion}</span>
-					</footer>
+					<nav className="pane-header panel-tabs">
+						<div>
+							<button
+								aria-label="Output"
+								className={tab === "output" ? "active" : ""}
+								onClick={() => setTab("output")}
+							>
+								Terminal
+							</button>
+							<button
+								aria-label={`Problems (${allProblems.length})`}
+								className={tab === "problems" ? "active" : ""}
+								onClick={() => setTab("problems")}
+							>
+								Diagnostics
+							</button>
+							<button
+								className={tab === "runtime" ? "active" : ""}
+								onClick={() => setTab("runtime")}
+							>
+								Runtime
+							</button>
+						</div>
+						{tab === "output" && (
+							<button className="clear-button" onClick={() => setOutput([])}>
+								:clear
+							</button>
+						)}
+					</nav>
 				</section>
+			</div>
+
+			<footer className="global-status">
+				<div className="vim-mode-slot">
+					<div className="vim-status" ref={vimStatusRef} />
+					{!vimEnabled && <span className="vim-disabled">VIM OFF</span>}
+				</div>
+				<span className="branch-status">
+					⌁ main <b>+{values.size}</b> <i>-{allProblems.length}</i>
+				</span>
+				<span className={`run-state state-${runState}`}>
+					{RUN_STATE_LABELS[runState]}
+				</span>
+				<span className="status-path">src/main.zig</span>
+				<span className="status-spacer" />
+				<span>
+					{result ? `${result.compilationMs.toFixed(0)}ms · ${result.executionMs.toFixed(0)}ms` : "—"}
+				</span>
+				<span className="encoding">zig · utf-8 · unix</span>
+				<strong className="cursor-status">
+					{cursorPosition.line}:{cursorPosition.column}
+				</strong>
+			</footer>
+			<div className="command-line">
+				<span>› pulsa i para insertar · :w ejecutar · Ctrl+Enter ejecutar</span>
+				<span>
+					{Object.keys(session.degraded).length
+						? Object.values(session.degraded).join(" · ")
+						: `src/main.zig ${sourceRef.current.split("\n").length}L`}
+				</span>
 			</div>
 		</main>
 	);

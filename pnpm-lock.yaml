@@ -69,6 +69,9 @@ importers:
       monaco-editor:
         specifier: 0.56.0
         version: 0.56.0
+      monaco-vim:
+        specifier: 0.4.4
+        version: 0.4.4(monaco-editor@0.56.0)
       react:
         specifier: 19.2.8
         version: 19.2.8
@@ -906,6 +909,11 @@ packages:
 
   monaco-editor@0.56.0:
     resolution: {integrity: sha512-sXboRm3BeBeLm938eaiyLMe0OxzfXIlZvbv4ir/jVgQy1zDhWjgmny0WoN45fuDKhCCQsYMbBJrv/A6jd8aCUg==}
+
+  monaco-vim@0.4.4:
+    resolution: {integrity: sha512-LNChAb//WEm/W+eyeHG/0+pdVEHotk2hLTN+M3sQZx5E8cAlSWSgqcxpcRuQnxDybSln7pfHF9i63HmbIQvrWw==}
+    peerDependencies:
+      monaco-editor: '*'
 
   nanoid@3.3.18:
     resolution: {integrity: sha512-DTg4MJbGMWkfi6VZFdNt2/caMbQy4Ou+Op/hJQvGEWcnVfoA1QA+xzRKAzw9jD6+GVOOeYr/mIcuDSdug6F6+w==}
@@ -1848,6 +1856,10 @@ snapshots:
     dependencies:
       dompurify: 3.4.8
       marked: 14.0.0
+
+  monaco-vim@0.4.4(monaco-editor@0.56.0):
+    dependencies:
+      monaco-editor: 0.56.0
 
   nanoid@3.3.18: {}
 

@@ -14,7 +14,7 @@ A loopback-only Zig 0.16 playground inspired by RunJS: Monaco + real ZLS languag
 
 ZigLive never downloads Zig or ZLS. Releases: <https://ziglang.org/download/> and <https://zigtools.org/zls/releases/0.16.0/>.
 
-Pinned application stack: React 19.2.8, Monaco Editor 0.56.0, Vite 8.2.2, Fastify 5.12.1, `ws` 8.21.3, Zod 4.4.3 and TypeScript 7.0.2. Exact resolutions are recorded in `pnpm-lock.yaml`.
+Pinned application stack: React 19.2.8, Monaco Editor 0.56.0, Monaco Vim 0.4.4, Vite 8.2.2, Fastify 5.12.1, `ws` 8.21.3, Zod 4.4.3 and TypeScript 7.0.2. Exact resolutions are recorded in `pnpm-lock.yaml`.
 
 ## Install and verify
 
@@ -63,7 +63,8 @@ pnpm typecheck
 ## Usage
 
 - Edit Zig; ZLS diagnostics, completion, hover, definition, formatting, semantic tokens, inlay hints and code actions are enabled only when advertised.
-- Auto Run debounces edits for 400 ms. **Ctrl/Cmd+Enter** runs immediately; **Escape** or Stop cancels.
+- Auto Run debounces edits for 400 ms. **Ctrl/Cmd+Enter** runs immediately; Stop cancels the active run.
+- Vim Mode is enabled by default and can be toggled in the navigator. Use `i` to insert, `Esc` for Normal mode and `:w` to run the current source.
 - Auto Inspect adds probes to supported local declarations in `generated/main.zig`. Click declaration glyphs for manual probes.
 - Inline values become crossed-out/stale immediately after an edit. Only matching document-version events can replace them.
 - Output, Problems and Runtime preserve separate stdout, stderr/panics, diagnostic owners and run metrics.

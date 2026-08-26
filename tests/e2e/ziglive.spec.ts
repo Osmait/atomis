@@ -6,6 +6,8 @@ async function openClean(page: import("@playwright/test").Page): Promise<void> {
 	await page.reload();
 	await expect(page.getByText("ZigLive", { exact: true })).toBeVisible();
 	await expect(page.locator(".monaco-editor")).toBeVisible();
+	const vimMode = page.getByLabel("Vim Mode");
+	if (await vimMode.isChecked()) await vimMode.uncheck();
 }
 
 async function replaceEditor(
@@ -52,6 +54,17 @@ pub fn main() void {
 	await expect(
 		page.locator(".inline-value").filter({ hasText: "{ 50, 3, 53 }" }),
 	).toBeVisible();
+});
+
+test("Vim mode switches between normal and insert modes", async ({ page }) => {
+	await openClean(page);
+	await page.getByLabel("Vim Mode").check();
+	const editorInput = page.getByRole("textbox", { name: "Editor content" });
+	await editorInput.focus();
+	await page.keyboard.press("i");
+	await expect(page.locator(".vim-status")).toContainText(/INSERT/i);
+	await page.keyboard.press("Escape");
+	await expect(page.locator(".vim-status")).toContainText(/NORMAL/i);
 });
 
 test("ZLS completion opens Monaco suggestions with real std symbols", async ({
