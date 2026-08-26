@@ -84,6 +84,19 @@ fn isDirectBlockStatement(tree: Ast, node: Ast.Node.Index) bool {
     return false;
 }
 
+fn isDirectLoopBody(tree: Ast, node: Ast.Node.Index) bool {
+    var index: usize = 1;
+    while (index < tree.nodes.len) : (index += 1) {
+        const candidate: Ast.Node.Index = @enumFromInt(index);
+        if (tree.fullFor(candidate)) |loop| {
+            if (loop.ast.then_expr == node) return true;
+        } else if (tree.fullWhile(candidate)) |loop| {
+            if (loop.ast.then_expr == node) return true;
+        }
+    }
+    return false;
+}
+
 const LoopContext = struct {
     line: usize,
     column: usize,
@@ -280,11 +293,12 @@ pub fn instrument(
 
     const Insertion = struct {
         offset: usize,
-        kind: enum { probe, comment_open, log_marker },
+        kind: enum { probe, comment_open, log_block_open, log_marker },
         probe_index: usize = 0,
         line: usize = 0,
         column: usize = 0,
         loop: ?LoopContext = null,
+        closes_loop_block: bool = false,
     };
     var insertions: std.ArrayList(Insertion) = .empty;
     defer insertions.deinit(allocator);
@@ -293,8 +307,8 @@ pub fn instrument(
     }
 
     // Append a private marker after direct std.debug.print/std.log statements in the
-    // generated copy, allowing Node to attach emitted text to the original
-    // source position without changing the visible document or call columns.
+    // generated copy. Compact loop bodies are wrapped in a generated block so the
+    // marker remains inside the loop; the visible document is never changed.
     node_index = 1;
     while (node_index < tree.nodes.len) : (node_index += 1) {
         const node: Ast.Node.Index = @enumFromInt(node_index);
@@ -304,18 +318,24 @@ pub fn instrument(
         const fn_last_token = tree.lastToken(call.ast.fn_expr);
         const fn_last = tree.tokenStart(fn_last_token) + tree.tokenSlice(fn_last_token).len;
         if (!isLogCallee(source[fn_first..fn_last])) continue;
-        if (inComptime(tree, node) or !isDirectBlockStatement(tree, node)) continue;
+        const wraps_loop_body = isDirectLoopBody(tree, node);
+        if (inComptime(tree, node) or (!isDirectBlockStatement(tree, node) and !wraps_loop_body)) continue;
         const call_last_token = tree.lastToken(node);
         const semicolon = call_last_token + 1;
         if (tree.tokenTag(semicolon) != .semicolon) continue;
         const marker_offset = tree.tokenStart(semicolon) + tree.tokenSlice(semicolon).len;
         const call_pos = position(source, fn_first);
+        if (wraps_loop_body) try insertions.append(allocator, .{
+            .offset = tree.tokenStart(tree.firstToken(node)),
+            .kind = .log_block_open,
+        });
         try insertions.append(allocator, .{
             .offset = marker_offset,
             .kind = .log_marker,
             .line = call_pos.line,
             .column = call_pos.column,
             .loop = enclosingLoop(tree, source, node),
+            .closes_loop_block = wraps_loop_body,
         });
     }
 
@@ -353,12 +373,14 @@ pub fn instrument(
     try generated.appendSlice(allocator, source[0..source.len]);
     for (insertions.items) |insertion| switch (insertion.kind) {
         .comment_open => try generated.insertSlice(allocator, insertion.offset, "// ziglive: observed discard "),
+        .log_block_open => try generated.insertSlice(allocator, insertion.offset, "{ "),
         .log_marker => {
             var snippet: [384]u8 = undefined;
+            const suffix: []const u8 = if (insertion.closes_loop_block) " }" else "";
             const text = if (insertion.loop) |loop|
-                try std.fmt.bufPrint(&snippet, " @import(\"runzig_runtime.zig\").logSourceLoop(.{{ .line = {d}, .column = {d}, .loop_line = {d}, .loop_column = {d}, .loop_name = \"{s}\" }}, {s});", .{ insertion.line, insertion.column, loop.line, loop.column, loop.variable, loop.variable })
+                try std.fmt.bufPrint(&snippet, " @import(\"runzig_runtime.zig\").logSourceLoop(.{{ .line = {d}, .column = {d}, .loop_line = {d}, .loop_column = {d}, .loop_name = \"{s}\" }}, {s});{s}", .{ insertion.line, insertion.column, loop.line, loop.column, loop.variable, loop.variable, suffix })
             else
-                try std.fmt.bufPrint(&snippet, " @import(\"runzig_runtime.zig\").logSource(.{{ .line = {d}, .column = {d} }});", .{ insertion.line, insertion.column });
+                try std.fmt.bufPrint(&snippet, " @import(\"runzig_runtime.zig\").logSource(.{{ .line = {d}, .column = {d} }});{s}", .{ insertion.line, insertion.column, suffix });
             try generated.insertSlice(allocator, insertion.offset, text);
         },
         .probe => {
@@ -418,6 +440,18 @@ test "captures the innermost loop variable for logs" {
         std.testing.allocator.free(result.probes);
     }
     try std.testing.expect(std.mem.indexOf(u8, result.generated.?, "logSourceLoop(.{ .line = 4, .column = 9, .loop_line = 3, .loop_column = 5, .loop_name = \"i\" }, i)") != null);
+}
+
+test "wraps compact loop log bodies without changing visible source positions" {
+    const source: [:0]const u8 = "const std = @import(\"std\");\npub fn main() void {\n    for (0..10) |i| std.debug.print(\"{}\\n\", .{i});\n}\n";
+    const result = try instrument(std.testing.allocator, source, "file:///compact-loop.zig", false, &.{});
+    defer {
+        std.testing.allocator.free(result.generated.?);
+        for (result.probes) |probe| std.testing.allocator.free(probe.name);
+        std.testing.allocator.free(result.probes);
+    }
+    try std.testing.expect(std.mem.indexOf(u8, result.generated.?, "|i| { std.debug.print(\"{}\\n\", .{i}); @import(\"runzig_runtime.zig\").logSourceLoop(.{ .line = 3, .column = 21, .loop_line = 3, .loop_column = 5, .loop_name = \"i\" }, i); }") != null);
+    try std.testing.expectEqual(std.mem.count(u8, source, "\n"), std.mem.count(u8, result.generated.?, "\n"));
 }
 
 test "captures a while continuation variable for logs" {

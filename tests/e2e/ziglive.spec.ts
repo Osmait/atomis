@@ -174,9 +174,9 @@ test("each run clears the terminal and colors only failures red", async ({
 		/Generado por src\/main\.zig:4:13 · ejecución #2/,
 	);
 	await secondIteration.hover();
-	await expect(
-		secondIteration.locator(".log-origin-tooltip"),
-	).toContainText("src/main.zig:4:13 · ejecución #2 · bucle 3:5 · i=1");
+	await expect(secondIteration.locator(".log-origin-tooltip")).toContainText(
+		"src/main.zig:4:13 · ejecución #2 · bucle 3:5 · i=1",
+	);
 	await expect(page.locator(".log-source-line")).toBeVisible();
 	await expect(page.locator(".log-loop-line")).toBeVisible();
 	await page.locator(".terminal-header").hover();
@@ -186,6 +186,22 @@ test("each run clears the terminal and colors only failures red", async ({
 	await expect(page.locator(".cursor-status")).toHaveText("4:13");
 	await expect(page.locator(".log-source-line")).toBeVisible();
 	await expect(page.locator(".log-loop-line")).toBeVisible();
+
+	await replaceEditor(
+		page,
+		'const std = @import("std");\npub fn main() void {\n    for (0..2) |i| std.debug.print("compact {d}\\n", .{i});\n}\n',
+	);
+	await expect(page.locator(".state-succeeded")).toBeVisible();
+	const compactLogs = terminal
+		.locator(".output-entry.has-source")
+		.filter({ hasText: "compact" });
+	await expect(compactLogs).toHaveCount(2);
+	const compactFirst = compactLogs.filter({ hasText: "compact 0" });
+	await compactFirst.hover();
+	await expect(compactFirst.locator(".log-origin-tooltip")).toContainText(
+		/src\/main\.zig:3:\d+ · ejecución #1 · bucle 3:5 · i=0/,
+	);
+	await expect(page.locator(".log-source-line")).toBeVisible();
 });
 
 test("Auto Inspect can be replaced by a gutter manual probe", async ({
