@@ -5,6 +5,8 @@ import type { Language } from "@ziglive/protocol";
 import {
 	defaultGoSource,
 	defaultGoTestSource,
+	defaultPySource,
+	defaultPyTestSource,
 	defaultRustSource,
 	defaultSource,
 	defaultTsSource,
@@ -13,6 +15,7 @@ import {
 import type { LanguageRunner } from "../compiler/CompilerRunner.js";
 import { CompilerRunner } from "../compiler/CompilerRunner.js";
 import { GoCompilerRunner } from "../compiler/GoCompilerRunner.js";
+import { PyCompilerRunner } from "../compiler/PyCompilerRunner.js";
 import { TsCompilerRunner } from "../compiler/TsCompilerRunner.js";
 import { RustCompilerRunner } from "../compiler/RustCompilerRunner.js";
 import type { ProcessSupervisor } from "../processes/ProcessSupervisor.js";
@@ -270,11 +273,49 @@ const tsPack: LanguagePack = {
 	},
 };
 
+const pyPack: LanguagePack = {
+	id: "py",
+	extensions: [".py"],
+	entryFile: "main.py",
+	defaultSource: defaultPySource,
+	extraFiles: { "main_test.py": defaultPyTestSource },
+	scaffoldAlways: false,
+	async scaffold(root) {
+		await cp(
+			join(PROJECT_ROOT, "python/runtime/sitecustomize.py"),
+			join(root, "generated/sitecustomize.py"),
+		);
+	},
+	instrumenterPath: () =>
+		join(PROJECT_ROOT, "python", "instrumenter", "pylive_instrument.py"),
+	createRunner: (supervisor, instrumenter) =>
+		new PyCompilerRunner(supervisor, instrumenter),
+	lsp: { command: "pyright-langserver", args: () => ["--stdio"] },
+	toolchain: {
+		run: {
+			command: "python3",
+			args: ["--version"],
+			compatible: (version) => {
+				const match = /Python 3\.(\d+)/.exec(version);
+				return Boolean(match && Number(match[1]) >= 9);
+			},
+			expected: "Python 3.9+",
+		},
+		lsp: {
+			command: "pyright-langserver",
+			args: ["--version"],
+			compatible: (version) => /\d/.test(version),
+			expected: "pyright-langserver",
+		},
+	},
+};
+
 export const LANGUAGE_PACKS: Record<Language, LanguagePack> = {
 	zig: zigPack,
 	rust: rustPack,
 	go: goPack,
 	ts: tsPack,
+	py: pyPack,
 };
 
 export function packForPath(path: string): LanguagePack | undefined {

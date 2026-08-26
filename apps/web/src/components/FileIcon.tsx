@@ -5,6 +5,7 @@ export type FileKind =
 	| "go"
 	| "ts"
 	| "js"
+	| "py"
 	| "toml"
 	| "txt"
 	| "md"
@@ -19,6 +20,7 @@ export function fileKind(path: string): FileKind {
 	if (path.endsWith(".ts")) return "ts";
 	if (path.endsWith(".js") || path.endsWith(".mjs") || path.endsWith(".cjs"))
 		return "js";
+	if (path.endsWith(".py")) return "py";
 	if (path.endsWith(".mod") || path.endsWith(".sum")) return "toml";
 	if (path.endsWith(".toml")) return "toml";
 	if (path.endsWith(".txt")) return "txt";
@@ -198,6 +200,8 @@ export function FileIcon({ path }: { path: string }): React.JSX.Element {
 				<LangBadge label="TS" />
 			) : kind === "js" ? (
 				<LangBadge label="JS" />
+			) : kind === "py" ? (
+				<LangBadge label="Py" />
 			) : (
 				<DocumentIcon braces={kind === "json" || kind === "toml"} />
 			)}

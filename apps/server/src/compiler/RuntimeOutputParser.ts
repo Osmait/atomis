@@ -26,7 +26,8 @@ export interface MarkerParser {
 const LOG_MARKER =
 	// eslint-disable-next-line no-control-regex
 	/\x1eZIGLIVE_LOG:(\d+):(\d+):(\d+)(?::(\d+):(\d+):([A-Za-z_][A-Za-z0-9_]*):([\s\S]*?))?\x1f/;
-const PANIC_PATTERN = /(?:^|\s)(?:thread \d+ )?panic:|panicked at/i;
+const PANIC_PATTERN =
+	/(?:^|\s)(?:thread \d+ )?panic:|panicked at|Traceback \(most recent call last\)/i;
 
 /**
  * Streams one OS pipe, strips `\x1eZIGLIVE_LOG:…\x1f` source markers emitted

@@ -1,13 +1,14 @@
 import { z } from "zod";
 
 export const PROTOCOL_VERSION = 1 as const;
-export const languages = ["zig", "rust", "go", "ts"] as const;
+export const languages = ["zig", "rust", "go", "ts", "py"] as const;
 export type Language = (typeof languages)[number];
 
 export function entryFileFor(language: Language): string {
 	if (language === "rust") return "main.rs";
 	if (language === "go") return "main.go";
 	if (language === "ts") return "main.ts";
+	if (language === "py") return "main.py";
 	return "main.zig";
 }
 export const MAX_SOURCE_BYTES = 1024 * 1024;
@@ -311,6 +312,30 @@ export type RuntimeServerEvent =
 			message: string;
 			details?: string;
 	  };
+
+export const defaultPySource = `def apply_tax(price, tax):
+    return price + tax
+
+
+price = 40
+tax = 3
+total = apply_tax(price, tax)
+values = [price, tax, total]
+
+print("total:", values[2])
+`;
+
+export const defaultPyTestSource = `from main import apply_tax
+
+
+# Las funciones test_* corren tras el programa: mira el panel →
+def test_apply_tax_suma_el_impuesto():
+    assert apply_tax(40, 3) == 43
+
+
+def test_apply_tax_con_tasa_cero():
+    assert apply_tax(40, 0) == 40
+`;
 
 export const defaultTsSource = `export function applyTax(price: number, tax: number): number {
 	return price + tax;

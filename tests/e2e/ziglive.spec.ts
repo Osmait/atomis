@@ -722,3 +722,67 @@ test("ts sessions run with inline values, tests and non-blocking type errors", a
 			.first(),
 	).toBeVisible();
 });
+
+test("python sessions run with inline values, tests and tracebacks", async ({
+	page,
+}) => {
+	await page.goto("/");
+	const available = await page.evaluate(async () => {
+		const response = await fetch("/api/doctor");
+		const body = (await response.json()) as {
+			checks: { name: string; detected: string }[];
+		};
+		return body.checks.some(
+			(check) =>
+				check.name === "Python python3" &&
+				!check.detected.includes("degraded"),
+		);
+	});
+	test.skip(!available, "python3 not available");
+	await page.evaluate(() => {
+		localStorage.clear();
+		localStorage.setItem("ziglive.language.v1", "py");
+	});
+	await page.reload();
+	await expect(page.locator(".brand-chip")).toBeVisible();
+	const vimMode = page.getByLabel("Vim Mode");
+	if (await vimMode.isChecked()) await vimMode.uncheck();
+	await expect(page.locator(".state-succeeded")).toBeVisible({
+		timeout: 60_000,
+	});
+	await expect(page.locator(".editor-header")).toContainText("src/main.py");
+	await expect(page.getByText("40 : int", { exact: true })).toBeVisible();
+	await expect(
+		page.locator(".inline-value").filter({ hasText: "[40, 3, 43] : list" }),
+	).toBeVisible();
+	await expect(page.locator(".cases-card")).toContainText("2 tests");
+	await expect(page.locator(".cases-card")).toContainText("todos ok");
+	await expect(page.locator(".panel-content")).toContainText("python3 main.py");
+
+	// Syntax errors come from the instrumenter's ast.parse with positions.
+	await replaceEditor(page, "x = (\n");
+	await expect(page.locator(".state-compile_error")).toBeVisible({
+		timeout: 60_000,
+	});
+	await expect(page.locator(".error-lens-message-error").first()).toBeVisible();
+
+	// An uncaught raise paints the traceback red and maps the location.
+	await replaceEditor(
+		page,
+		'print("antes")\nraise ValueError("boom esperado")\n',
+	);
+	await expect(page.locator(".state-runtime_error")).toBeVisible({
+		timeout: 60_000,
+	});
+	const terminal = page.locator(".panel-content");
+	await expect(
+		terminal.locator("pre.error").filter({ hasText: /boom esperado/ }).first(),
+	).toBeVisible();
+	await expect(
+		terminal.locator("pre.error").filter({ hasText: /Traceback/ }).first(),
+	).toBeVisible();
+	await page.getByRole("button", { name: /Problems/ }).click();
+	await expect(
+		page.getByText(/src\/main\.py · runtime · Ln 2/).first(),
+	).toBeVisible();
+});

@@ -82,6 +82,12 @@ export async function runDoctor(): Promise<DoctorCheck[]> {
 			"typescript-language-server",
 			"any (optional, enables TS/JS editor features)",
 		],
+		["Python", "python3", "3.9+ (optional, enables Python sessions)"],
+		[
+			"Python",
+			"pyright-langserver",
+			"any (optional, enables Python editor features)",
+		],
 	] as const) {
 		const args = tool === "go" ? ["version"] : ["--version"];
 		const result = await command(tool, [...args]);
