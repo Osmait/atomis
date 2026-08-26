@@ -5,7 +5,13 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { CreateSessionResponse, ProbeDescriptor } from "@ziglive/protocol";
 import { defaultSource } from "@ziglive/protocol";
-import { DocumentStore } from "./DocumentStore.js";
+import {
+	DocumentStore,
+	type ProjectDocumentSnapshot,
+	type ProjectFile,
+} from "./DocumentStore.js";
+
+type ProjectSessionResponse = CreateSessionResponse & { files: ProjectFile[] };
 
 export interface SessionSettings {
 	autoRun: boolean;
@@ -69,12 +75,13 @@ export class SessionManager {
 		}
 	}
 
-	public async create(): Promise<CreateSessionResponse> {
+	public async create(): Promise<ProjectSessionResponse> {
 		const id = randomBytes(16).toString("hex");
 		const token = randomBytes(32).toString("base64url");
 		const root = join(SESSION_ROOT, id);
-		const sourcePath = join(root, "src", "main.zig");
-		await mkdir(join(root, "src"), { recursive: true, mode: 0o700 });
+		const sourceRoot = join(root, "src");
+		const sourcePath = join(sourceRoot, "main.zig");
+		await mkdir(sourceRoot, { recursive: true, mode: 0o700 });
 		await mkdir(join(root, "generated"), { recursive: true, mode: 0o700 });
 		await mkdir(join(root, ".zig-cache"), { recursive: true, mode: 0o700 });
 		await cp(
@@ -102,27 +109,29 @@ export class SessionManager {
 			mode: 0o600,
 		});
 		const documentUri = pathToFileURL(sourcePath).href;
+		const initialFiles = [
+			{ path: "main.zig", uri: documentUri, source: defaultSource },
+		];
 		const [zigVersion, zlsVersion] = await Promise.all([
 			commandVersion("zig"),
 			commandVersion("zls"),
 		]);
 		const zigCompatible = /^0\.16\./.test(zigVersion);
 		const zlsCompatible = /^0\.16\./.test(zlsVersion);
+		const initialSnapshot: ProjectDocumentSnapshot = {
+			sessionId: id,
+			version: 1,
+			uri: documentUri,
+			source: defaultSource,
+			files: initialFiles,
+			updatedAt: Date.now(),
+		};
 		const session: Session = {
 			id,
 			token,
 			root,
 			documentUri,
-			store: new DocumentStore(
-				{
-					sessionId: id,
-					version: 1,
-					uri: documentUri,
-					source: defaultSource,
-					updatedAt: Date.now(),
-				},
-				sourcePath,
-			),
+			store: new DocumentStore(initialSnapshot, sourceRoot),
 			settings: {
 				autoRun: true,
 				autoInspect: true,
@@ -149,6 +158,7 @@ export class SessionManager {
 			zigVersion,
 			zlsVersion,
 			initialSource: defaultSource,
+			files: initialFiles,
 			degraded,
 		};
 	}

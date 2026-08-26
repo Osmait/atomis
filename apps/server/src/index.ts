@@ -8,6 +8,7 @@ import {
 	MAX_RUNTIME_MESSAGE_BYTES,
 	MAX_SOURCE_BYTES,
 	runtimeClientMessageSchema,
+	type RuntimeClientMessage,
 	type RuntimeServerEvent,
 } from "@ziglive/protocol";
 import { CompilerRunner } from "./compiler/CompilerRunner.js";
@@ -17,6 +18,34 @@ import { LspProxy } from "./lsp/LspProxy.js";
 import { ProcessSupervisor } from "./processes/ProcessSupervisor.js";
 import { validOrigin } from "./security/origin.js";
 import { SessionManager, type Session } from "./sessions/SessionManager.js";
+
+type ProjectRuntimeClientMessage = Exclude<
+	RuntimeClientMessage,
+	{ type: "document.update" }
+> & { sessionId: string } | {
+	type: "document.update";
+	sessionId: string;
+	version: number;
+	path: string;
+	source: string;
+} | {
+	type: "file.create";
+	sessionId: string;
+	version: number;
+	path: string;
+	source: string;
+} | {
+	type: "file.rename";
+	sessionId: string;
+	version: number;
+	path: string;
+	newPath: string;
+} | {
+	type: "file.delete";
+	sessionId: string;
+	version: number;
+	path: string;
+};
 
 const host = "127.0.0.1";
 const requestedPort = Number(process.env.ZIGLIVE_PORT ?? 4317);
@@ -45,7 +74,16 @@ const lspWss = new WebSocketServer({
 	maxPayload: 8 * 1024 * 1024,
 });
 
-function send(socket: WebSocket, event: RuntimeServerEvent): void {
+type ProjectFilesEvent = {
+	type: "project.files";
+	documentVersion: number;
+	files: { path: string; uri: string; source: string }[];
+};
+
+function send(
+	socket: WebSocket,
+	event: RuntimeServerEvent | ProjectFilesEvent,
+): void {
 	if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(event));
 }
 
@@ -144,17 +182,47 @@ function handleRuntime(socket: WebSocket, session: Session): void {
 			});
 			return;
 		}
-		const message = validation.data;
+		const message = validation.data as ProjectRuntimeClientMessage;
 		if (message.sessionId !== session.id) {
 			socket.close(1008, "Session mismatch");
 			return;
 		}
 		void (async () => {
 			try {
-				if (message.type === "document.update") {
-					if (Buffer.byteLength(message.source, "utf8") > MAX_SOURCE_BYTES)
-						throw new Error("Source exceeds 1 MiB");
-					await session.store.update(message.version, message.source);
+				if (
+					message.type === "document.update" ||
+					message.type === "file.create" ||
+					message.type === "file.rename" ||
+					message.type === "file.delete"
+				) {
+					let snapshot;
+					if (message.type === "document.update") {
+						if (Buffer.byteLength(message.source, "utf8") > MAX_SOURCE_BYTES)
+							throw new Error("Source exceeds 1 MiB");
+						snapshot = await session.store.update(
+							message.version,
+							message.path,
+							message.source,
+						);
+					} else if (message.type === "file.create")
+						snapshot = await session.store.create(
+							message.version,
+							message.path,
+							message.source,
+						);
+					else if (message.type === "file.rename")
+						snapshot = await session.store.rename(
+							message.version,
+							message.path,
+							message.newPath,
+						);
+					else
+						snapshot = await session.store.delete(message.version, message.path);
+					send(socket, {
+						type: "project.files",
+						documentVersion: snapshot.version,
+						files: snapshot.files,
+					});
 					if (session.zigCompatible) scheduler.documentUpdated();
 					else
 						send(socket, {

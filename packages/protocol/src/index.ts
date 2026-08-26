@@ -2,6 +2,8 @@ import { z } from "zod";
 
 export const PROTOCOL_VERSION = 1 as const;
 export const MAX_SOURCE_BYTES = 1024 * 1024;
+export const MAX_PROJECT_FILES = 64;
+export const MAX_PROJECT_BYTES = 8 * 1024 * 1024;
 export const MAX_RUNTIME_MESSAGE_BYTES = MAX_SOURCE_BYTES + 64 * 1024;
 
 export const runStates = [
@@ -29,6 +31,7 @@ export interface SourceRange {
 
 export interface ProbeDescriptor {
 	probeId: string;
+	path?: string;
 	name: string;
 	supported: boolean;
 	reason?: string;
@@ -39,6 +42,7 @@ export interface ProbeDescriptor {
 
 export interface AppDiagnostic {
 	message: string;
+	path?: string;
 	severity: "error" | "warning" | "information" | "hint";
 	line: number;
 	column: number;
@@ -48,11 +52,18 @@ export interface AppDiagnostic {
 	source?: string;
 }
 
+export interface ProjectFile {
+	path: string;
+	uri: string;
+	source: string;
+}
+
 export interface DocumentSnapshot {
 	sessionId: string;
 	version: number;
 	uri: string;
 	source: string;
+	files: ProjectFile[];
 	updatedAt: number;
 }
 
@@ -63,6 +74,7 @@ export interface CreateSessionResponse {
 	zigVersion: string;
 	zlsVersion: string;
 	initialSource: string;
+	files: ProjectFile[];
 	degraded: { zig?: string; zls?: string };
 }
 
@@ -74,6 +86,7 @@ export interface ProbeValueEvent {
 	runId: string;
 	documentVersion: number;
 	probeId: string;
+	path?: string;
 	name: string;
 	line: number;
 	column: number;
@@ -86,6 +99,7 @@ export interface ProbeValueEvent {
 }
 
 export interface LogSourceLocation {
+	path?: string;
 	line: number;
 	column: number;
 	executionIndex: number;
@@ -109,6 +123,18 @@ export interface RunResult {
 }
 
 const sessionId = z.string().regex(/^[a-f0-9]{32}$/);
+export const projectPathSchema = z
+	.string()
+	.min(1)
+	.max(240)
+	.refine(
+		(value) =>
+			!value.startsWith("/") &&
+			!value.includes("\\") &&
+			!/[\u0000-\u001f]/.test(value) &&
+			value.split("/").every((part) => part.length > 0 && part !== "." && part !== ".."),
+		"Invalid project-relative path",
+	);
 const settings = z
 	.object({
 		autoRun: z.boolean(),
@@ -125,7 +151,34 @@ export const runtimeClientMessageSchema = z.discriminatedUnion("type", [
 			type: z.literal("document.update"),
 			sessionId,
 			version: z.number().int().positive(),
+			path: projectPathSchema,
 			source: z.string().max(MAX_SOURCE_BYTES),
+		})
+		.strict(),
+	z
+		.object({
+			type: z.literal("file.create"),
+			sessionId,
+			version: z.number().int().positive(),
+			path: projectPathSchema,
+			source: z.string().max(MAX_SOURCE_BYTES),
+		})
+		.strict(),
+	z
+		.object({
+			type: z.literal("file.rename"),
+			sessionId,
+			version: z.number().int().positive(),
+			path: projectPathSchema,
+			newPath: projectPathSchema,
+		})
+		.strict(),
+	z
+		.object({
+			type: z.literal("file.delete"),
+			sessionId,
+			version: z.number().int().positive(),
+			path: projectPathSchema,
 		})
 		.strict(),
 	z
@@ -150,6 +203,11 @@ export type RuntimeServerEvent =
 			documentVersion: number;
 			runId?: string;
 			state: RunState;
+	  }
+	| {
+			type: "project.files";
+			documentVersion: number;
+			files: ProjectFile[];
 	  }
 	| {
 			type: "probe.catalog";
