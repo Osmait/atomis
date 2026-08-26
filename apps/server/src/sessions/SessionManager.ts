@@ -145,7 +145,9 @@ export class SessionManager {
 					`Expected ${pack.toolchain.run.expected}, detected ${runVersion}`;
 			else if (pack.toolchain.lsp && !lsp)
 				degraded[`${pack.id}-lsp`] =
-					`${pack.toolchain.lsp.expected} unavailable (${lspVersion})`;
+					lspVersion === "unavailable"
+						? `${pack.toolchain.lsp.expected} no instalado · editor sin autocompletado (opcional)`
+						: `${pack.toolchain.lsp.expected} no compatible (${lspVersion})`;
 		}
 
 		// Bilingual-by-extension workspace: scaffold and create the entry file
