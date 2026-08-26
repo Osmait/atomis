@@ -4,6 +4,7 @@ import {
 	bitArray,
 	bitsForType,
 	bytesLE,
+	displayPreview,
 	flipBit,
 	formatInt,
 	parseBitopLine,
@@ -132,5 +133,41 @@ describe("applyBitop", () => {
 		expect(applyBitop(43n, { operator: "<<", operand: 1n }, 8)).toBe(86n);
 		expect(applyBitop(86n, { operator: "&", operand: 240n }, 8)).toBe(80n);
 		expect(applyBitop(200n, { operator: "<<", operand: 1n }, 8)).toBe(144n);
+	});
+});
+
+describe("displayPreview", () => {
+	it("re-formats integers using type width", () => {
+		const value = { preview: "43", typeName: "u8" };
+		expect(displayPreview(value, "dec")).toBe("43");
+		expect(displayPreview(value, "hex")).toBe("0x2B");
+		expect(displayPreview(value, "bin")).toBe("0b0010_1011");
+	});
+
+	it("normalizes go hex previews in dec", () => {
+		expect(displayPreview({ preview: "0x2b", typeName: "uint8" }, "dec")).toBe(
+			"43",
+		);
+	});
+
+	it("summarizes structs by layout", () => {
+		expect(
+			displayPreview(
+				{
+					preview: "Pixel{ .r = 255 }",
+					typeName: "Pixel",
+					sizeBytes: 4,
+					alignBytes: 1,
+					fields: [{}],
+				},
+				"hex",
+			),
+		).toBe("Pixel · 4 B · align 1");
+	});
+
+	it("keeps non-integer previews untouched", () => {
+		expect(displayPreview({ preview: '"hola"', typeName: "char*" }, "hex")).toBe(
+			'"hola"',
+		);
 	});
 });

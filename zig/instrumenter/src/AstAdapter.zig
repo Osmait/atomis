@@ -305,6 +305,49 @@ pub fn instrument(
         });
     }
 
+    // Assignments to plain identifiers (`x = …`, `x <<= …`) re-probe the
+    // variable so bit operations expose their intermediate values; the peek
+    // panel derives its A · op · B rows from this history. Statement position
+    // only (mirrors log markers) so the appended probe stays in the block.
+    node_index = 1;
+    while (node_index < tree.nodes.len) : (node_index += 1) {
+        const node: Ast.Node.Index = @enumFromInt(node_index);
+        switch (tree.nodeTag(node)) {
+            .assign, .assign_mul, .assign_div, .assign_mod, .assign_add, .assign_sub, .assign_shl, .assign_shl_sat, .assign_shr, .assign_bit_and, .assign_bit_xor, .assign_bit_or, .assign_mul_wrap, .assign_add_wrap, .assign_sub_wrap, .assign_mul_sat, .assign_add_sat, .assign_sub_sat => {},
+            else => continue,
+        }
+        const lhs, _ = tree.nodeData(node).node_and_node;
+        if (tree.nodeTag(lhs) != .identifier) continue;
+        const name = tree.tokenSlice(tree.nodeMainToken(lhs));
+        if (std.mem.eql(u8, name, "_")) continue;
+        if (inComptime(tree, node) or !isDirectBlockStatement(tree, node)) continue;
+        const first_byte = tree.tokenStart(tree.firstToken(node));
+        var last_token = tree.lastToken(node);
+        if (tree.tokenTag(last_token + 1) != .semicolon) continue;
+        last_token += 1;
+        const end_byte = tree.tokenStart(last_token) + tree.tokenSlice(last_token).len;
+        const start_pos = position(source, first_byte);
+        const end_pos = position(source, end_byte);
+        const id = probeId(uri, first_byte, end_byte, name);
+        const is_manual = selected(&id, manual_ids);
+        try probes.append(allocator, .{
+            .probe_id = id,
+            .name = try allocator.dupe(u8, name),
+            .supported = true,
+            .reason = null,
+            .range = .{
+                .start_line = start_pos.line,
+                .start_column = start_pos.column,
+                .end_line = end_pos.line,
+                .end_column = end_pos.column,
+                .start_byte = first_byte,
+                .end_byte = end_byte,
+            },
+            .insertion_byte = if (auto_inspect or is_manual) end_byte else null,
+            .mode = if (is_manual) .manual else .auto,
+        });
+    }
+
     const Insertion = struct {
         offset: usize,
         kind: enum { probe, comment_open, log_block_open, log_marker },
@@ -432,6 +475,27 @@ test "instruments local declarations and preserves lines" {
     try std.testing.expect(std.mem.indexOf(u8, result.generated.?, "probe(") != null);
 }
 
+test "assignments to identifiers are re-probed after the statement" {
+    const source =
+        "pub fn main() void {\n" ++
+        "    var flags: u8 = 43;\n" ++
+        "    flags = flags << 1;\n" ++
+        "    flags &= 240;\n" ++
+        "}\n";
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const result = try instrument(arena.allocator(), source, "file:///t.zig", true, &.{}, 1);
+    const generated = result.generated.?;
+    try std.testing.expectEqual(@as(usize, 3), result.probes.len);
+    try std.testing.expectEqualStrings("flags", result.probes[1].name);
+    try std.testing.expectEqual(@as(usize, 3), result.probes[1].range.start_line);
+    try std.testing.expectEqual(@as(usize, 4), result.probes[2].range.start_line);
+    const line_count = std.mem.count(u8, generated, "\n");
+    try std.testing.expectEqual(@as(usize, 5), line_count);
+    try std.testing.expect(std.mem.indexOf(u8, generated, "flags = flags << 1; @import(\"runzig_runtime.zig\").probe(") != null);
+    try std.testing.expect(std.mem.indexOf(u8, generated, "flags &= 240; @import(\"runzig_runtime.zig\").probe(") != null);
+}
+
 test "marks log statements with original source locations" {
     const source: [:0]const u8 = "const std = @import(\"std\");\npub fn main() void {\n    std.debug.print(\"hello\\n\", .{});\n    std.log.info(\"world\", .{});\n}\n";
     const result = try instrument(std.testing.allocator, source, "file:///logs.zig", false, &.{}, 0);
@@ -524,7 +588,8 @@ test "nested blocks branches loops and other functions are discovered" {
     }
     var supported: usize = 0;
     for (result.probes) |probe| supported += @intFromBool(probe.supported);
-    try std.testing.expectEqual(@as(usize, 4), supported);
+    // Four declarations plus the `branch += 1;` assignment re-probe.
+    try std.testing.expectEqual(@as(usize, 5), supported);
     try std.testing.expectEqual(std.mem.count(u8, source, "\n"), std.mem.count(u8, result.generated.?, "\n"));
 }
 

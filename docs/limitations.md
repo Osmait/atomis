@@ -18,3 +18,16 @@
 - Python: probes cover simple `name = …` / `name: T = …` assignments (reassignments re-emit with an execution count); test files import the visible modules, so the program's top level runs again during the test phase.
 - C/C++: previews cover arithmetic types and `char*` in C (`_Generic`) and anything with `operator<<` in C++; the instrumenter parses with empty stub headers, so declarations of template-heavy unknown types can be missed (they run fine, just without a probe); a failing `assert()` aborts the test binary, so later tests stay unreported for that run.
 - Node 22 is the deployment baseline; Node 23/24 are accepted for development to support current host environments.
+
+## Low-level peek panel
+
+- Bit flips in the peek grid are local what-ifs: they re-render the panel's
+  derived values but never patch or re-run the program (reset restores).
+- Struct field tables (offset/size per field) come from the Zig runtime only;
+  Rust/Go/C/C++ report overall size/align (plus bit width for integers).
+- The `A · op · B` rows appear only when the line is a bit operation with a
+  literal operand and a previous value of the same variable is known.
+- Heap timelines, leak/peak accounting per allocation and freed-pointer
+  tracking from the design mock require allocator hooks and are not built.
+- Addresses (`dirección`) are not reported: probes observe copies, so the
+  copy's address would be misleading rather than informative.

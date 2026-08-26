@@ -1,5 +1,6 @@
 import Editor, { type Monaco, type OnMount } from "@monaco-editor/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type {
 	AppDiagnostic,
 	CreateSessionResponse,
@@ -21,7 +22,13 @@ import {
 } from "monaco-vim";
 import { CommandPalette } from "./components/CommandPalette.js";
 import { FileIcon, FolderIcon, ZigMark } from "./components/FileIcon.js";
-import { VALUE_FMTS, type ValueFmt } from "./lowlevel.js";
+import {
+	displayPreview,
+	parseIntegerPreview,
+	VALUE_FMTS,
+	type ValueFmt,
+} from "./lowlevel.js";
+import { PeekPanel } from "./components/PeekPanel.js";
 import {
 	ENTRY_FILES,
 	languageForPath,
@@ -234,10 +241,19 @@ export function App(): React.JSX.Element {
 	const [startupError, setStartupError] = useState<string>();
 	const [settings, setSettings] = useState<Settings>(loadSettings);
 	const [valueFmt, setValueFmt] = useState<ValueFmt>(loadValueFmt);
+	const [peek, setPeek] = useState<{ path: string; probeId: string } | null>(
+		null,
+	);
+	const [peekOverride, setPeekOverride] = useState<bigint | undefined>(
+		undefined,
+	);
+	const [peekNode, setPeekNode] = useState<HTMLDivElement | null>(null);
 	const [runState, setRunState] = useState<RunState>("idle");
 	const [status, setStatus] = useState("Starting…");
 	const [catalog, setCatalog] = useState<ProbeDescriptor[]>([]);
 	const [values, setValues] = useState<Map<string, InlineValue>>(new Map());
+	const valuesRef = useRef(values);
+	valuesRef.current = values;
 	const [stale, setStale] = useState(false);
 	const [output, setOutput] = useState<
 		{
@@ -831,6 +847,29 @@ export function App(): React.JSX.Element {
 					NvimStatusBar,
 				);
 			editor.onMouseDown((mouse) => {
+				const element = mouse.target.element as HTMLElement | null;
+				if (
+					element?.classList?.contains("inline-value") &&
+					mouse.target.position
+				) {
+					const line = mouse.target.position.lineNumber;
+					const clicked = catalogRef.current.find(
+						(candidate) =>
+							candidate.supported &&
+							candidate.originalRange.startLine === line &&
+							((candidate as ProbeDescriptor & { path?: string }).path ??
+								`src/${entryRef.current}`) ===
+								`src/${activePathRef.current}`,
+					);
+					if (clicked) {
+						setPeek((previous) =>
+							previous?.probeId === clicked.probeId
+								? null
+								: { path: activePathRef.current, probeId: clicked.probeId },
+						);
+						return;
+					}
+				}
 				if (
 					mouse.target.type !==
 						monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN ||
@@ -879,7 +918,7 @@ export function App(): React.JSX.Element {
 						? values.get(probe.probeId)
 						: undefined;
 				const content = value
-					? `  ${value.preview} : ${value.typeName}${value.count > 1 ? ` ×${value.count}` : ""}`
+					? `  ${displayPreview(value, valueFmt, languageForPath(activePath))} : ${value.typeName}${value.count > 1 ? ` ×${value.count}` : ""}`
 					: "";
 				const endColumn =
 					model?.getLineMaxColumn(probe.originalRange.startLine) ??
@@ -918,7 +957,73 @@ export function App(): React.JSX.Element {
 				};
 			});
 		decorations.set(descriptors);
-	}, [activePath, catalog, settings.manualProbeIds, stale, values]);
+	}, [activePath, catalog, settings.manualProbeIds, stale, values, valueFmt]);
+
+	// ── Peek panel: Monaco view zone + overlay under the probed line ──
+	useEffect(() => {
+		setPeekOverride(undefined);
+		const editor = editorRef.current;
+		if (!editor || !peek || peek.path !== activePath) {
+			setPeekNode(null);
+			return;
+		}
+		const value = valuesRef.current.get(peek.probeId);
+		const model = editor.getModel();
+		if (!value || !model || value.line > model.getLineCount()) {
+			setPeekNode(null);
+			return;
+		}
+		const overlayNode = document.createElement("div");
+		overlayNode.className = "peek-overlay";
+		let zoneId = "";
+		const zone = {
+			afterLineNumber: value.line,
+			heightInPx: 120,
+			domNode: document.createElement("div"),
+			onDomNodeTop: (top: number) => {
+				overlayNode.style.top = `${top}px`;
+			},
+		};
+		editor.changeViewZones((accessor) => {
+			zoneId = accessor.addZone(zone);
+		});
+		const layoutOverlay = (): void => {
+			const layout = editor.getLayoutInfo();
+			overlayNode.style.left = `${layout.contentLeft}px`;
+			overlayNode.style.width = `${Math.max(280, layout.contentWidth - 30)}px`;
+		};
+		layoutOverlay();
+		const overlay = {
+			getId: () => "ziglive.peek",
+			getDomNode: () => overlayNode,
+			getPosition: () => null,
+		};
+		editor.addOverlayWidget(overlay);
+		const layoutListener = editor.onDidLayoutChange(layoutOverlay);
+		const observer = new ResizeObserver(() => {
+			const height = overlayNode.scrollHeight;
+			if (height > 0 && height + 10 !== zone.heightInPx) {
+				zone.heightInPx = height + 10;
+				editor.changeViewZones((accessor) => accessor.layoutZone(zoneId));
+			}
+		});
+		observer.observe(overlayNode);
+		setPeekNode(overlayNode);
+		editor.revealLineInCenterIfOutsideViewport(value.line);
+		return () => {
+			observer.disconnect();
+			layoutListener.dispose();
+			editor.removeOverlayWidget(overlay);
+			editor.changeViewZones((accessor) => accessor.removeZone(zoneId));
+			setPeekNode(null);
+		};
+	}, [peek, activePath]);
+
+	// The peek follows the run: close it when its probe stops reporting or
+	// the buffer goes stale (lines may have shifted under the zone).
+	useEffect(() => {
+		if (peek && (stale || !values.has(peek.probeId))) setPeek(null);
+	}, [peek, stale, values]);
 
 	useEffect(() => {
 		const editor = editorRef.current;
@@ -2370,6 +2475,53 @@ export function App(): React.JSX.Element {
 				</div>
 			)}
 
+			{peekNode &&
+				peek &&
+				(() => {
+					const peekValue = values.get(peek.probeId);
+					const peekModel = editorRef.current?.getModel();
+					if (!peekValue || peek.path !== activePath || !peekModel)
+						return null;
+					const lineText =
+						peekValue.line <= peekModel.getLineCount()
+							? peekModel.getLineContent(peekValue.line)
+							: "";
+					// Previous value of the same variable: same-probe history in
+					// loops, otherwise the closest earlier probe by sequence.
+					let previousValue: bigint | undefined;
+					if (peekValue.history.length >= 2)
+						previousValue = parseIntegerPreview(
+							peekValue.history[peekValue.history.length - 2] ?? "",
+						);
+					else {
+						let best: InlineValue | undefined;
+						for (const candidate of values.values())
+							if (
+								candidate.name === peekValue.name &&
+								candidate.probeId !== peekValue.probeId &&
+								candidate.sequence < peekValue.sequence &&
+								(!best || candidate.sequence > best.sequence)
+							)
+								best = candidate;
+						previousValue = best
+							? parseIntegerPreview(best.preview)
+							: undefined;
+					}
+					return createPortal(
+						<PeekPanel
+							fmt={valueFmt}
+							previousValue={previousValue}
+							language={activeLanguage}
+							lineText={lineText}
+							onClose={() => setPeek(null)}
+							onFlip={setPeekOverride}
+							onReset={() => setPeekOverride(undefined)}
+							override={peekOverride}
+							value={peekValue}
+						/>,
+						peekNode,
+					);
+				})()}
 			{paletteOpen && (
 				<CommandPalette
 					activePath={activePath}

@@ -6,6 +6,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -62,6 +63,25 @@ func __zigliveIsBoundary(value string, index int) bool {
 	return value[index]&0xC0 != 0x80
 }
 
+// __zigliveLayout reports size/align (all sized types) plus bit width for
+// integer kinds, so the editor's peek panel can show real memory layout.
+func __zigliveLayout(value any) string {
+	if value == nil {
+		return ""
+	}
+	kind := reflect.TypeOf(value)
+	layout := fmt.Sprintf(`,"sizeBytes":%d,"alignBytes":%d`, kind.Size(), kind.Align())
+	switch kind.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+		reflect.Uintptr:
+		layout += fmt.Sprintf(`,"bits":%d`, kind.Size()*8)
+	case reflect.Bool:
+		layout += `,"bits":1`
+	}
+	return layout
+}
+
 func __ziglive_probe(probeID string, line int, column int, name string, value any) {
 	sequence := __zigliveSequence.Add(1) - 1
 	preview, truncated := __zigliveTruncate(fmt.Sprintf("%#v", value))
@@ -75,7 +95,9 @@ func __ziglive_probe(probeID string, line int, column int, name string, value an
 	__zigliveEscape(&record, typeName)
 	record.WriteString(`","preview":"`)
 	__zigliveEscape(&record, preview)
-	fmt.Fprintf(&record, `","truncated":%t,"sequence":%d}`, truncated, sequence)
+	record.WriteString(`"`)
+	record.WriteString(__zigliveLayout(value))
+	fmt.Fprintf(&record, `,"truncated":%t,"sequence":%d}`, truncated, sequence)
 	record.WriteString("\n")
 	__zigliveLock.Lock()
 	defer __zigliveLock.Unlock()

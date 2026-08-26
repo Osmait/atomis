@@ -139,6 +139,15 @@ export const createSessionRequestSchema = z
 	.object({ language: z.enum(languages).default("zig") })
 	.strict();
 
+/** Byte-accurate layout of one struct field, for the low-level peek panel. */
+export interface ProbeFieldLayout {
+	name: string;
+	typeName: string;
+	offset: number;
+	size: number;
+	preview: string;
+}
+
 export interface ProbeValueEvent {
 	protocolVersion: 1;
 	type: "probe_value";
@@ -157,6 +166,14 @@ export interface ProbeValueEvent {
 	sequence: number;
 	timestamp: number;
 	count: number;
+	/** Bit width of integer/bool values (low-level languages only). */
+	bits?: number;
+	/** @sizeOf / sizeof of the value's type, when the runtime knows it. */
+	sizeBytes?: number;
+	/** @alignOf / alignof of the value's type, when the runtime knows it. */
+	alignBytes?: number;
+	/** Struct field layout with per-field previews (Zig runtime only). */
+	fields?: ProbeFieldLayout[];
 }
 
 export interface LogSourceLocation {

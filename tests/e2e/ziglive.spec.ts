@@ -447,6 +447,16 @@ test("rust sessions run with inline values and tests", async ({ page }) => {
 	await expect(page.locator(".cases-card")).toContainText("2 tests");
 	await expect(page.locator(".cases-card")).toContainText("todos ok");
 	await expect(page.locator(".panel-content")).toContainText("cargo run");
+
+	// size_of_val layout reaches the peek panel
+	await page.getByText("40 : i32", { exact: true }).click();
+	await expect(page.locator(".peek-kv", { hasText: "tamaño" })).toContainText(
+		"4 B",
+	);
+	await expect(page.locator(".peek-kv", { hasText: "hex" })).toContainText(
+		"0x00000028",
+	);
+	await page.locator(".peek-actions button", { hasText: "esc" }).click();
 });
 
 test("rust compile errors, panics and failing tests map to visible lines", async ({
@@ -516,6 +526,68 @@ test("Ctrl+S formats the document and returns vim to normal mode", async ({
 	await expect(page.locator(".view-lines")).toContainText(
 		"const answer: i32 = 9;",
 	);
+});
+
+test("low-level peek: bits, bitops, struct layout and value formats", async ({
+	page,
+}) => {
+	await page.goto("/");
+	await expect(page.locator(".inline-value").first()).toBeVisible({
+		timeout: 60_000,
+	});
+
+	// Global value format switcher re-renders integer hints.
+	await page.locator(".fmt-switch button", { hasText: "hex" }).click();
+	await expect(page.getByText("0x00000028 : i32", { exact: true })).toBeVisible();
+	await page.locator(".fmt-switch button", { hasText: "bin" }).click();
+	await expect(
+		page
+			.getByText("0b0000_0000_0000_0000_0000_0000_0010_1000 : i32", {
+				exact: true,
+			})
+			.first(),
+	).toBeVisible();
+	await page.locator(".fmt-switch button", { hasText: "dec" }).click();
+	await expect(page.getByText("40 : i32", { exact: true })).toBeVisible();
+
+	await replaceEditor(
+		page,
+		'const std = @import("std");\n\nconst Pixel = extern struct { r: u8, g: u8, b: u8, a: u8 };\n\npub fn main() !void {\n    var flags: u8 = 0b0010_1011;\n    flags = flags << 1;\n    const px = Pixel{ .r = 255, .g = 128, .b = 64, .a = 255 };\n    std.debug.print("{x} {any}\\n", .{ flags, px.r });\n}\n',
+	);
+	await expect(page.getByText("86 : u8", { exact: true })).toBeVisible({
+		timeout: 60_000,
+	});
+
+	// Assignment re-probe + peek anchored under the line.
+	await page.getByText("86 : u8", { exact: true }).click();
+	await expect(page.locator(".peek-panel")).toBeVisible();
+	await expect(page.locator(".peek-bit")).toHaveCount(8);
+	await expect(page.locator(".peek-bitop-row")).toHaveCount(3);
+	await expect(page.locator(".peek-kv", { hasText: "tamaño" })).toContainText(
+		"1 B",
+	);
+	await expect(page.locator(".peek-kv", { hasText: "hex" })).toContainText(
+		"0x56",
+	);
+
+	// Bit flips are local what-ifs: value changes, reset restores.
+	await page.locator(".peek-bit").first().click();
+	await expect(page.locator(".peek-kv", { hasText: "dec" })).toContainText(
+		"214",
+	);
+	await page.locator(".peek-actions button", { hasText: "reset" }).click();
+	await expect(page.locator(".peek-kv", { hasText: "dec" })).toContainText(
+		"86",
+	);
+	await page.locator(".peek-actions button", { hasText: "esc" }).click();
+	await expect(page.locator(".peek-panel")).toHaveCount(0);
+
+	// Struct peek shows compiler-real field offsets.
+	await page.getByText("Pixel · 4 B · align 1", { exact: false }).click();
+	await expect(page.locator(".peek-field-row")).toHaveCount(5);
+	await expect(page.locator(".peek-field-row").nth(2)).toContainText("+1");
+	await page.locator(".peek-actions button", { hasText: "esc" }).click();
+	await expect(page.locator(".peek-panel")).toHaveCount(0);
 });
 
 test("one workspace runs both languages by extension", async ({ page }) => {
@@ -623,6 +695,14 @@ test("go sessions run with inline values, tests and mapped diagnostics", async (
 	await expect(
 		page.locator(".inline-value").filter({ hasText: "[]int{40, 3, 43} : []int" }),
 	).toBeVisible();
+
+	// reflect-derived layout reaches the peek panel (go int = 8 B / 64 bits)
+	await page.getByText("40 : int", { exact: true }).click();
+	await expect(page.locator(".peek-kv", { hasText: "tamaño" })).toContainText(
+		"8 B",
+	);
+	await expect(page.locator(".peek-bit")).toHaveCount(64);
+	await page.locator(".peek-actions button", { hasText: "esc" }).click();
 	await expect(page.locator(".cases-card")).toContainText("2 tests");
 	await expect(page.locator(".cases-card")).toContainText("todos ok");
 	await expect(page.locator(".panel-content")).toContainText("go run");
@@ -823,7 +903,7 @@ test("c sessions run with typed probes, tests and mapped diagnostics", async ({
 		timeout: 60_000,
 	});
 	await expect(page.locator(".editor-header")).toContainText("src/main.c");
-	await expect(page.getByText("40 : long", { exact: true })).toBeVisible();
+	await expect(page.getByText("40 : int", { exact: true })).toBeVisible();
 	await expect(page.locator(".cases-card")).toContainText("2 tests");
 	await expect(page.locator(".cases-card")).toContainText("todos ok");
 

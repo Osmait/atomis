@@ -19,3 +19,15 @@ The test binary compiles the **visible** sources under `src/`, never the instrum
 ## Rust
 
 `rustlive-instrument` (`rust/instrumenter/`, `syn` + `proc-macro2` vendored for offline builds) mirrors the Zig contract. Simple `let ident = …;` bindings in function bodies get a same-line `crate::ziglive_probe!(id, line, column, "name", &name);` call after the semicolon; destructuring patterns and `let` without initializer are reported as unsupported, and locals inside `#[test]` items are omitted. Direct `println!`/`print!`/`eprintln!`/`eprint!`/`dbg!` statements get a marker call on their own stream, with the innermost `for`/`while` loop line and variable when available. Probe previews use autoref specialization: `Debug` types render `{:?}`, everything else reports `<sin Debug: Type>` with `std::any::type_name`. The runtime module is appended at the end of the generated entry file, so every existing line keeps its number, and NDJSON probe records flow over the same fd 3 protocol. Probe IDs are FNV-1a-derived from URI, byte range and identifier.
+
+## Low-level assignment re-probes (Zig)
+
+Besides `const`/`var` declarations, the Zig instrumenter re-probes assignments
+to plain identifiers (`x = …` and every compound form: `<<=`, `&=`, `+%=` …)
+when the assignment is a direct block statement outside comptime. The probe is
+appended after the statement's semicolon, so it reports the value *after* the
+mutation without changing line counts. This is what powers the peek panel's
+`A · op · B = result` rows: the previous value comes from the same probe's
+history (loops) or from the closest earlier probe of the same variable by
+runtime sequence, and the operator/operand are parsed lexically from the line
+(literal operands only). Other languages currently probe declarations only.

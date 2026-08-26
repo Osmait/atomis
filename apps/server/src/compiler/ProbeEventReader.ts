@@ -1,3 +1,11 @@
+interface RawProbeField {
+	name: string;
+	typeName: string;
+	offset: number;
+	size: number;
+	preview: string;
+}
+
 interface RawProbeEvent {
 	protocolVersion: 1;
 	kind: "probe_value";
@@ -9,6 +17,22 @@ interface RawProbeEvent {
 	preview: string;
 	truncated: boolean;
 	sequence: number;
+	bits?: number;
+	sizeBytes?: number;
+	alignBytes?: number;
+	fields?: RawProbeField[];
+}
+
+function validField(value: unknown): value is RawProbeField {
+	if (!value || typeof value !== "object") return false;
+	const field = value as Partial<RawProbeField>;
+	return (
+		typeof field.name === "string" &&
+		typeof field.typeName === "string" &&
+		typeof field.offset === "number" &&
+		typeof field.size === "number" &&
+		typeof field.preview === "string"
+	);
 }
 
 export class ProbeEventReader {
@@ -60,6 +84,14 @@ export class ProbeEventReader {
 			typeof event.preview !== "string" ||
 			typeof event.truncated !== "boolean" ||
 			typeof event.sequence !== "number"
+		)
+			throw new Error("Invalid probe event schema");
+		for (const key of ["bits", "sizeBytes", "alignBytes"] as const)
+			if (event[key] !== undefined && typeof event[key] !== "number")
+				throw new Error("Invalid probe event schema");
+		if (
+			event.fields !== undefined &&
+			!(Array.isArray(event.fields) && event.fields.every(validField))
 		)
 			throw new Error("Invalid probe event schema");
 		this.onEvent(event as RawProbeEvent);

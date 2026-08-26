@@ -8,6 +8,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <unistd.h>
 
 namespace __ziglive {
@@ -49,7 +50,7 @@ inline void json_escape(std::string &out, std::string_view in) {
 
 inline void emit(const char *id, int line, int col, const char *name,
                  std::string_view type, std::string_view preview,
-                 bool truncated) {
+                 bool truncated, int size, int align, int bits) {
 	static int sequence = 0;
 	std::string record = "{\"protocolVersion\":1,\"kind\":\"probe_value\","
 	                     "\"probeId\":\"";
@@ -62,7 +63,12 @@ inline void emit(const char *id, int line, int col, const char *name,
 	json_escape(record, type);
 	record += "\",\"preview\":\"";
 	json_escape(record, preview);
-	record += "\",\"truncated\":";
+	if (size > 0) {
+		record += "\",\"sizeBytes\":" + std::to_string(size);
+		record += ",\"alignBytes\":" + std::to_string(align);
+		if (bits > 0) record += ",\"bits\":" + std::to_string(bits);
+		record += ",\"truncated\":";
+	} else record += "\",\"truncated\":";
 	record += truncated ? "true" : "false";
 	record += ",\"sequence\":" + std::to_string(sequence++) + "}\n";
 	const auto written = write(3, record.data(), record.size());
@@ -71,7 +77,11 @@ inline void emit(const char *id, int line, int col, const char *name,
 
 template <class T> std::string preview_of(const T &value, bool &truncated) {
 	std::ostringstream out;
-	if constexpr (requires(std::ostream &os) { os << value; }) out << value;
+	// Chars stream as digits (+value promotes) so the editor can re-format
+	// them as hex/bin; bool keeps its 1/0 rendering via the generic branch.
+	if constexpr (std::is_integral_v<T> && !std::is_same_v<T, bool>)
+		out << +value;
+	else if constexpr (requires(std::ostream &os) { os << value; }) out << value;
 	else out << "<sin operator<<>";
 	std::string text = out.str();
 	if (text.size() > max_preview) {
@@ -89,8 +99,10 @@ void __ziglive_probe(const char *id, int line, int col, const char *name,
                      const T &value) {
 	bool truncated = false;
 	const std::string preview = __ziglive::preview_of(value, truncated);
+	constexpr int bits =
+	    (std::is_integral_v<T> || std::is_enum_v<T>) ? int(sizeof(T)) * 8 : 0;
 	__ziglive::emit(id, line, col, name, __ziglive::type_name<T>(), preview,
-	                truncated);
+	                truncated, int(sizeof(T)), int(alignof(T)), bits);
 }
 
 inline void __ziglive_log(int fd, int file_id, int line, int col) {

@@ -14,14 +14,19 @@ export const VALUE_FMTS: readonly ValueFmt[] = [
 	"chr",
 ];
 
-const INTEGER_PREVIEW = /^-?\d+$/;
+const INTEGER_PREVIEW = /^-?(\d+|0[xX][0-9a-fA-F]+|0[bB][01]+|0[oO][0-7]+)$/;
 
-/** Parses a probe preview into an integer, or undefined for non-integers. */
+/**
+ * Parses a probe preview into an integer, or undefined for non-integers.
+ * Accepts 0x/0b/0o literals (Go's %#v prints byte values as 0x2b).
+ */
 export function parseIntegerPreview(preview: string): bigint | undefined {
 	const trimmed = preview.trim();
 	if (!INTEGER_PREVIEW.test(trimmed)) return undefined;
 	try {
-		return BigInt(trimmed);
+		return trimmed.startsWith("-")
+			? -BigInt(trimmed.slice(1))
+			: BigInt(trimmed);
 	} catch {
 		return undefined;
 	}
@@ -199,4 +204,39 @@ export function applyBitop(
 	if (info.operator === "&") return ua & info.operand & mask;
 	if (info.operator === "|") return (ua | info.operand) & mask;
 	return (ua ^ info.operand) & mask;
+}
+
+export interface PreviewSource {
+	preview: string;
+	typeName: string;
+	bits?: number;
+	sizeBytes?: number;
+	alignBytes?: number;
+	fields?: readonly unknown[];
+}
+
+/**
+ * Inline-hint text for a probe value under the active value format: structs
+ * render as `Type · N B · align A`, integers re-format in the chosen base,
+ * anything else keeps the runtime preview.
+ */
+export function displayPreview(
+	value: PreviewSource,
+	fmt: ValueFmt,
+	language?: string,
+): string {
+	if (
+		value.fields &&
+		value.fields.length > 0 &&
+		value.sizeBytes !== undefined
+	) {
+		const shortName = value.typeName.split(".").pop() ?? value.typeName;
+		return `${shortName} · ${value.sizeBytes} B · align ${value.alignBytes ?? 1}`;
+	}
+	const parsed = parseIntegerPreview(value.preview);
+	if (parsed === undefined) return value.preview;
+	const width = value.bits ?? bitsForType(value.typeName, language);
+	if (width === undefined)
+		return fmt === "dec" ? parsed.toString() : value.preview;
+	return formatInt(parsed, width, fmt);
 }

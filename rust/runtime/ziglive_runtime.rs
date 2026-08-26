@@ -91,6 +91,8 @@ pub fn emit_probe(
     column: u32,
     preview: String,
     type_name: &str,
+    size: usize,
+    align: usize,
 ) {
     let sequence = SEQUENCE.fetch_add(1, Ordering::Relaxed);
     let (preview, truncated) = truncate_preview(preview);
@@ -103,7 +105,9 @@ pub fn emit_probe(
     push_json_escaped(&mut record, type_name);
     record.push_str("\",\"preview\":\"");
     push_json_escaped(&mut record, &preview);
-    record.push_str(&format!("\",\"truncated\":{truncated},\"sequence\":{sequence}}}\n"));
+    record.push_str(&format!(
+        "\",\"sizeBytes\":{size},\"alignBytes\":{align},\"truncated\":{truncated},\"sequence\":{sequence}}}\n"
+    ));
     let guard = LOCK.lock();
     write_fd(3, record.as_bytes());
     drop(guard);
@@ -142,7 +146,16 @@ macro_rules! ziglive_probe {
         use $crate::__ziglive_runtime::{DebugProbe as _, FallbackProbe as _};
         let (preview, type_name) =
             (&$crate::__ziglive_runtime::Wrap($val)).ziglive_preview();
-        $crate::__ziglive_runtime::emit_probe($id, $name, $line, $col, preview, &type_name);
+        $crate::__ziglive_runtime::emit_probe(
+            $id,
+            $name,
+            $line,
+            $col,
+            preview,
+            &type_name,
+            ::std::mem::size_of_val($val),
+            ::std::mem::align_of_val($val),
+        );
     }};
 }
 

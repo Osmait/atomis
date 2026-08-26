@@ -1,4 +1,4 @@
-import type { ProbeValueEvent } from "@ziglive/protocol";
+import type { ProbeFieldLayout, ProbeValueEvent } from "@ziglive/protocol";
 
 export interface InlineValue {
 	probeId: string;
@@ -8,7 +8,12 @@ export interface InlineValue {
 	typeName: string;
 	preview: string;
 	count: number;
+	sequence: number;
 	history: string[];
+	bits?: number;
+	sizeBytes?: number;
+	alignBytes?: number;
+	fields?: ProbeFieldLayout[];
 }
 
 export function acceptsVersion(
@@ -32,7 +37,14 @@ export function updateInlineValue(
 		typeName: event.typeName,
 		preview: event.preview,
 		count: event.count,
+		sequence: event.sequence,
 		history: [...(old?.history ?? []), event.preview].slice(-20),
+		...(event.bits !== undefined ? { bits: event.bits } : {}),
+		...(event.sizeBytes !== undefined ? { sizeBytes: event.sizeBytes } : {}),
+		...(event.alignBytes !== undefined
+			? { alignBytes: event.alignBytes }
+			: {}),
+		...(event.fields !== undefined ? { fields: event.fields } : {}),
 	});
 	return next;
 }

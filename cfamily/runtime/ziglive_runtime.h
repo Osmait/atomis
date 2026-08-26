@@ -37,17 +37,30 @@ static void __ziglive_json_escape(char *out, size_t cap, const char *in) {
 	out[used] = '\0';
 }
 
+/* size/align describe the declared type at the probe site (the macro passes
+ * sizeof/_Alignof before _Generic widens the value); bits > 0 marks integer
+ * probes so the editor can re-format them in hex/bin/oct. */
 static void __ziglive_emit(const char *id, int line, int col, const char *name,
-                           const char *type, const char *preview) {
+                           const char *type, const char *preview,
+                           int size, int align, int bits) {
 	static int sequence;
 	char escaped[__ZIGLIVE_MAX_PREVIEW * 2];
 	char record[__ZIGLIVE_MAX_PREVIEW * 2 + 256];
+	char layout[96];
 	__ziglive_json_escape(escaped, sizeof escaped, preview);
+	layout[0] = '\0';
+	if (size > 0) {
+		int used = snprintf(layout, sizeof layout,
+			",\"sizeBytes\":%d,\"alignBytes\":%d", size, align);
+		if (bits > 0 && used > 0)
+			snprintf(layout + used, sizeof layout - (size_t)used,
+				",\"bits\":%d", bits);
+	}
 	int n = snprintf(record, sizeof record,
 		"{\"protocolVersion\":1,\"kind\":\"probe_value\",\"probeId\":\"%s\","
 		"\"name\":\"%s\",\"line\":%d,\"column\":%d,\"typeName\":\"%s\","
-		"\"preview\":\"%s\",\"truncated\":false,\"sequence\":%d}\n",
-		id, name, line, col, type, escaped, sequence++);
+		"\"preview\":\"%s\"%s,\"truncated\":false,\"sequence\":%d}\n",
+		id, name, line, col, type, escaped, layout, sequence++);
 	if (n > 0) {
 		ssize_t written = write(3, record, (size_t)n);
 		(void)written;
@@ -55,48 +68,68 @@ static void __ziglive_emit(const char *id, int line, int col, const char *name,
 }
 
 static void __ziglive_probe_long(const char *id, int line, int col,
-                                 const char *name, long value) {
+                                 const char *name, const char *type,
+                                 int size, int align, long value) {
 	char preview[32];
 	snprintf(preview, sizeof preview, "%ld", value);
-	__ziglive_emit(id, line, col, name, "long", preview);
+	__ziglive_emit(id, line, col, name, type, preview, size, align, size * 8);
 }
 
 static void __ziglive_probe_ulong(const char *id, int line, int col,
-                                  const char *name, unsigned long value) {
+                                  const char *name, const char *type,
+                                  int size, int align, unsigned long value) {
 	char preview[32];
 	snprintf(preview, sizeof preview, "%lu", value);
-	__ziglive_emit(id, line, col, name, "unsigned long", preview);
+	__ziglive_emit(id, line, col, name, type, preview, size, align, size * 8);
 }
 
 static void __ziglive_probe_double(const char *id, int line, int col,
-                                   const char *name, double value) {
+                                   const char *name, const char *type,
+                                   int size, int align, double value) {
 	char preview[48];
 	snprintf(preview, sizeof preview, "%g", value);
-	__ziglive_emit(id, line, col, name, "double", preview);
+	__ziglive_emit(id, line, col, name, type, preview, size, align, 0);
 }
 
 static void __ziglive_probe_str(const char *id, int line, int col,
-                                const char *name, const char *value) {
+                                const char *name, const char *type,
+                                int size, int align, const char *value) {
 	char preview[__ZIGLIVE_MAX_PREVIEW];
 	if (value == NULL) {
-		__ziglive_emit(id, line, col, name, "char*", "NULL");
+		__ziglive_emit(id, line, col, name, type, "NULL", size, align, 0);
 		return;
 	}
 	snprintf(preview, sizeof preview, "\"%.500s\"", value);
-	__ziglive_emit(id, line, col, name, "char*", preview);
+	__ziglive_emit(id, line, col, name, type, preview, size, align, 0);
 }
 
 static void __ziglive_probe_ptr(const char *id, int line, int col,
-                                const char *name, const void *value) {
+                                const char *name, const char *type,
+                                int size, int align, const void *value) {
 	char preview[32];
 	snprintf(preview, sizeof preview, "%p", value);
-	__ziglive_emit(id, line, col, name, "void*", preview);
+	__ziglive_emit(id, line, col, name, type, preview, size, align, 0);
 }
 
 static void __ziglive_probe_any(const char *id, int line, int col,
-                                const char *name, ...) {
-	__ziglive_emit(id, line, col, name, "?", "<sin preview>");
+                                const char *name, const char *type,
+                                int size, int align, ...) {
+	__ziglive_emit(id, line, col, name, "?", "<sin preview>", size, align, 0);
+	(void)type;
 }
+
+#define __ziglive_typename(v) _Generic((v), \
+	_Bool: "bool", \
+	char: "char", signed char: "signed char", \
+	short: "short", int: "int", \
+	long: "long", long long: "long long", \
+	unsigned char: "unsigned char", unsigned short: "unsigned short", \
+	unsigned int: "unsigned int", unsigned long: "unsigned long", \
+	unsigned long long: "unsigned long long", \
+	float: "float", double: "double", \
+	char *: "char*", const char *: "char*", \
+	void *: "void*", \
+	default: "?")
 
 #define __ziglive_probe(id, line, col, name, v) _Generic((v), \
 	_Bool: __ziglive_probe_long, \
@@ -109,7 +142,9 @@ static void __ziglive_probe_any(const char *id, int line, int col,
 	float: __ziglive_probe_double, double: __ziglive_probe_double, \
 	char *: __ziglive_probe_str, const char *: __ziglive_probe_str, \
 	void *: __ziglive_probe_ptr, \
-	default: __ziglive_probe_any)(id, line, col, name, (v))
+	default: __ziglive_probe_any)(id, line, col, name, \
+		__ziglive_typename(v), (int)sizeof(v), \
+		(int)_Alignof(__typeof__(v)), (v))
 
 static void __ziglive_log(int fd, int file_id, int line, int col) {
 	fprintf(fd == 1 ? stdout : stderr, "\x1eZIGLIVE_LOG:%d:%d:%d\x1f",

@@ -150,6 +150,48 @@ pub inline fn probe(comptime probe_id: []const u8, value: anytype, comptime meta
     }
 }
 
+/// Appends the optional low-level layout fields (bits/sizeBytes/alignBytes
+/// and struct field offsets) that power the editor's peek panel. All type
+/// facts are comptime; only the field previews render at runtime.
+fn appendLayout(event_writer: *std.Io.Writer, value_ptr: anytype) !void {
+    const T = @TypeOf(value_ptr.*);
+    switch (@typeInfo(T)) {
+        .int => try event_writer.print(",\"bits\":{d}", .{@bitSizeOf(T)}),
+        .bool => try event_writer.writeAll(",\"bits\":1"),
+        else => {},
+    }
+    switch (@typeInfo(T)) {
+        .int, .float, .bool, .@"struct", .array, .@"enum", .optional, .pointer, .vector, .@"union" => {
+            try event_writer.print(",\"sizeBytes\":{d},\"alignBytes\":{d}", .{ @sizeOf(T), @alignOf(T) });
+        },
+        else => {},
+    }
+    switch (@typeInfo(T)) {
+        .@"struct" => |structure| if (structure.layout != .@"packed" and !structure.is_tuple and structure.fields.len > 0 and structure.fields.len <= 12) {
+            try event_writer.writeAll(",\"fields\":[");
+            comptime var first = true;
+            inline for (structure.fields) |field| {
+                if (!field.is_comptime) {
+                    if (!first) try event_writer.writeByte(',');
+                    first = false;
+                    try event_writer.writeAll("{\"name\":");
+                    try appendJsonString(event_writer, field.name);
+                    try event_writer.writeAll(",\"typeName\":");
+                    try appendJsonString(event_writer, @typeName(field.type));
+                    try event_writer.print(",\"offset\":{d},\"size\":{d},\"preview\":", .{ @offsetOf(T, field.name), @sizeOf(field.type) });
+                    var field_buffer: [256]u8 = undefined;
+                    var field_writer: std.Io.Writer = .fixed(field_buffer[0 .. field_buffer.len - 8]);
+                    renderPreview(&field_writer, &@field(value_ptr.*, field.name)) catch {};
+                    try appendJsonString(event_writer, field_writer.buffered());
+                    try event_writer.writeByte('}');
+                }
+            }
+            try event_writer.writeAll("]");
+        },
+        else => {},
+    }
+}
+
 inline fn emit(comptime probe_id: []const u8, value_ptr: anytype, comptime meta: ProbeMeta) void {
     var preview_buffer: [MAX_PREVIEW]u8 = undefined;
     var preview_writer: std.Io.Writer = .fixed(preview_buffer[0 .. MAX_PREVIEW - 8]);
@@ -169,6 +211,7 @@ inline fn emit(comptime probe_id: []const u8, value_ptr: anytype, comptime meta:
     appendJsonString(&event_writer, @typeName(@TypeOf(value_ptr.*))) catch return;
     event_writer.writeAll(",\"preview\":") catch return;
     appendJsonString(&event_writer, preview) catch return;
+    appendLayout(&event_writer, value_ptr) catch return;
     event_writer.print(",\"truncated\":{s},\"sequence\":{d}}}\n", .{
         if (truncated) "true" else "false",
         sequence.fetchAdd(1, .monotonic) + 1,
@@ -222,6 +265,28 @@ test "preview values" {
         try renderPreview(&writer, value);
         try std.testing.expect(writer.buffered().len > 0);
     }
+}
+
+test "layout metadata for ints and structs" {
+    var flags: u8 = 43;
+    var buffer: [512]u8 = undefined;
+    var writer: std.Io.Writer = .fixed(&buffer);
+    try appendLayout(&writer, &flags);
+    try std.testing.expectEqualStrings(",\"bits\":8,\"sizeBytes\":1,\"alignBytes\":1", writer.buffered());
+
+    const Pixel = extern struct { r: u8, g: u8, b: u8, a: u8 };
+    var px: Pixel = .{ .r = 255, .g = 128, .b = 64, .a = 255 };
+    var struct_buffer: [1024]u8 = undefined;
+    var struct_writer: std.Io.Writer = .fixed(&struct_buffer);
+    try appendLayout(&struct_writer, &px);
+    const rendered = struct_writer.buffered();
+    try std.testing.expect(std.mem.indexOf(u8, rendered, "\"sizeBytes\":4") != null);
+    try std.testing.expect(std.mem.indexOf(u8, rendered, "{\"name\":\"g\",\"typeName\":\"u8\",\"offset\":1,\"size\":1,\"preview\":\"128\"}") != null);
+
+    var tuple = .{ @as(i32, 2), true };
+    var tuple_writer: std.Io.Writer = .fixed(&struct_buffer);
+    try appendLayout(&tuple_writer, &tuple);
+    try std.testing.expect(std.mem.indexOf(u8, tuple_writer.buffered(), "fields") == null);
 }
 
 test "preview truncates through bounded writer" {
