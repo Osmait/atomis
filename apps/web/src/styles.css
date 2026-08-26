@@ -1,0 +1,164 @@
+:root {
+	color-scheme: dark;
+	font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+	background: #111318;
+	color: #e8eaf0;
+}
+* {
+	box-sizing: border-box;
+}
+html,
+body,
+#root {
+	margin: 0;
+	width: 100%;
+	height: 100%;
+	overflow: hidden;
+}
+button {
+	border: 1px solid #3d4350;
+	border-radius: 5px;
+	background: #252a33;
+	color: #f3f4f6;
+	padding: 5px 10px;
+	cursor: pointer;
+}
+button:hover:not(:disabled),
+button.active {
+	background: #3b4760;
+}
+button:disabled {
+	opacity: 0.45;
+	cursor: default;
+}
+.app-shell {
+	display: grid;
+	grid-template-rows: 46px 28px minmax(280px, 1fr) 220px;
+	height: 100%;
+}
+.toolbar {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 7px 12px;
+	background: #181b22;
+	border-bottom: 1px solid #333844;
+	font-size: 12px;
+	white-space: nowrap;
+}
+.toolbar strong {
+	font-size: 18px;
+	color: #f7a41d;
+	margin-right: 5px;
+}
+.toolbar label {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+.state {
+	margin-left: auto;
+	border-radius: 10px;
+	padding: 2px 8px;
+	background: #343946;
+}
+.state-running,
+.state-compiling,
+.state-instrumenting {
+	color: #ffcc66;
+}
+.state-succeeded {
+	color: #6ee7a0;
+}
+.state-compile_error,
+.state-runtime_error,
+.state-timed_out {
+	color: #ff7b72;
+}
+.warning {
+	padding: 5px 12px;
+	color: #f5c77a;
+	background: #2b2418;
+	border-bottom: 1px solid #4b3b20;
+	font-size: 12px;
+}
+.editor-wrap {
+	min-height: 0;
+}
+.bottom-panel {
+	border-top: 1px solid #343944;
+	background: #16191f;
+	min-height: 0;
+}
+.bottom-panel nav {
+	height: 36px;
+	display: flex;
+	gap: 4px;
+	padding: 4px 8px;
+	border-bottom: 1px solid #303640;
+}
+.bottom-panel nav button {
+	border: 0;
+	background: transparent;
+	border-radius: 0;
+}
+.bottom-panel nav button.active {
+	border-bottom: 2px solid #f7a41d;
+}
+.panel-content {
+	height: calc(100% - 36px);
+	overflow: auto;
+	padding: 8px 12px;
+	font:
+		12px / 1.45 ui-monospace,
+		SFMono-Regular,
+		Menlo,
+		monospace;
+}
+.panel-content pre {
+	margin: 0;
+	white-space: pre-wrap;
+}
+.panel-content .stdout {
+	color: #d6e0ef;
+}
+.panel-content .stderr {
+	color: #ff938a;
+}
+.panel-content ul {
+	list-style: none;
+	padding: 0;
+	margin: 0;
+}
+.panel-content li {
+	padding: 3px 0;
+}
+.runtime-grid {
+	display: grid;
+	grid-template-columns: 130px 1fr;
+	gap: 5px 12px;
+}
+.startup {
+	max-width: 800px;
+	margin: 8vh auto;
+	padding: 24px;
+}
+.inline-value {
+	color: #8bd5ca;
+	font-style: italic;
+	margin-left: 24px;
+}
+.inline-value.stale {
+	color: #777f8d;
+	text-decoration: line-through;
+	opacity: 0.7;
+}
+.manual-probe::before {
+	content: "○";
+	color: #8390a5;
+	font-size: 14px;
+}
+.manual-probe.enabled::before {
+	content: "●";
+	color: #f7a41d;
+}

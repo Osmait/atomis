@@ -1,0 +1,163 @@
+const std = @import("std");
+
+pub const ProbeMeta = struct {
+    line: u32,
+    column: u32,
+    name: []const u8,
+};
+
+const MAX_PREVIEW = 4096;
+const MAX_EVENT = 64 * 1024;
+var lock: std.atomic.Mutex = .unlocked;
+var sequence: std.atomic.Value(u64) = .init(0);
+
+extern "c" fn write(fd: c_int, buffer: [*]const u8, count: usize) isize;
+
+fn writeAllFd3(bytes: []const u8) void {
+    var offset: usize = 0;
+    while (offset < bytes.len) {
+        const result = write(3, bytes.ptr + offset, bytes.len - offset);
+        if (result <= 0) return;
+        offset += @intCast(result);
+    }
+}
+
+fn appendJsonString(writer: *std.Io.Writer, value: []const u8) !void {
+    try writer.writeByte('"');
+    for (value) |byte| switch (byte) {
+        '"' => try writer.writeAll("\\\""),
+        '\\' => try writer.writeAll("\\\\"),
+        '\n' => try writer.writeAll("\\n"),
+        '\r' => try writer.writeAll("\\r"),
+        '\t' => try writer.writeAll("\\t"),
+        0...8, 11...12, 14...0x1f => try writer.print("\\u00{x:0>2}", .{byte}),
+        else => try writer.writeByte(byte),
+    };
+    try writer.writeByte('"');
+}
+
+fn renderPreview(writer: *std.Io.Writer, value_ptr: anytype) !void {
+    const T = @TypeOf(value_ptr.*);
+    switch (@typeInfo(T)) {
+        .type, .void, .noreturn, .frame, .@"anyframe", .@"fn", .@"opaque", .undefined, .null, .enum_literal => try writer.print("<unavailable: {s}>", .{@typeName(T)}),
+        .pointer => |pointer| switch (pointer.size) {
+            .one, .many, .c => try writer.print("0x{x}", .{@intFromPtr(value_ptr.*)}),
+            .slice => {
+                const value = value_ptr.*;
+                if (pointer.child == u8) {
+                    const shown = value[0..@min(value.len, 512)];
+                    try appendJsonString(writer, shown);
+                    if (shown.len != value.len) try writer.writeAll("…");
+                } else {
+                    const shown = value[0..@min(value.len, 32)];
+                    try writer.print("{any}", .{shown});
+                    if (shown.len != value.len) try writer.writeAll("…");
+                }
+            },
+        },
+        .array => |array| {
+            if (array.child == u8) {
+                try appendJsonString(writer, value_ptr.*[0..]);
+            } else try writer.print("{any}", .{value_ptr.*});
+        },
+        else => try writer.print("{any}", .{value_ptr.*}),
+    }
+}
+
+pub inline fn probe(comptime probe_id: []const u8, value: anytype, comptime meta: ProbeMeta) void {
+    switch (@typeInfo(@TypeOf(value))) {
+        .comptime_int => {
+            const materialized: i128 = value;
+            emit(probe_id, &materialized, meta);
+        },
+        .comptime_float => {
+            const materialized: f128 = value;
+            emit(probe_id, &materialized, meta);
+        },
+        else => {
+            const materialized = value;
+            emit(probe_id, &materialized, meta);
+        },
+    }
+}
+
+inline fn emit(comptime probe_id: []const u8, value_ptr: anytype, comptime meta: ProbeMeta) void {
+    var preview_buffer: [MAX_PREVIEW]u8 = undefined;
+    var preview_writer: std.Io.Writer = .fixed(preview_buffer[0 .. MAX_PREVIEW - 8]);
+    var truncated = false;
+    renderPreview(&preview_writer, value_ptr) catch {
+        truncated = true;
+    };
+    const preview = preview_writer.buffered();
+
+    var event_buffer: [MAX_EVENT]u8 = undefined;
+    var event_writer: std.Io.Writer = .fixed(&event_buffer);
+    event_writer.writeAll("{\"protocolVersion\":1,\"kind\":\"probe_value\",\"probeId\":") catch return;
+    appendJsonString(&event_writer, probe_id) catch return;
+    event_writer.writeAll(",\"name\":") catch return;
+    appendJsonString(&event_writer, meta.name) catch return;
+    event_writer.print(",\"line\":{d},\"column\":{d},\"typeName\":", .{ meta.line, meta.column }) catch return;
+    appendJsonString(&event_writer, @typeName(@TypeOf(value_ptr.*))) catch return;
+    event_writer.writeAll(",\"preview\":") catch return;
+    appendJsonString(&event_writer, preview) catch return;
+    event_writer.print(",\"truncated\":{s},\"sequence\":{d}}}\n", .{
+        if (truncated) "true" else "false",
+        sequence.fetchAdd(1, .monotonic) + 1,
+    }) catch return;
+
+    while (!lock.tryLock()) std.atomic.spinLoopHint();
+    defer lock.unlock();
+    writeAllFd3(event_writer.buffered());
+}
+
+test "preview scalar and JSON escaping" {
+    var value: i32 = -42;
+    var buffer: [128]u8 = undefined;
+    var writer: std.Io.Writer = .fixed(&buffer);
+    try renderPreview(&writer, &value);
+    try std.testing.expectEqualStrings("-42", writer.buffered());
+
+    var json_buffer: [128]u8 = undefined;
+    var json_writer: std.Io.Writer = .fixed(&json_buffer);
+    try appendJsonString(&json_writer, "a\n\"b");
+    try std.testing.expectEqualStrings("\"a\\n\\\"b\"", json_writer.buffered());
+}
+
+test "preview values" {
+    const Choice = enum { first, second };
+    const Tagged = union(enum) { number: i32, empty };
+    var boolean = true;
+    var signed: i32 = -7;
+    var unsigned: u64 = 9;
+    var float: f64 = 1.5;
+    var choice: Choice = .second;
+    var optional_null: ?u8 = null;
+    var optional_value: ?u8 = 3;
+    var error_success: anyerror!i32 = 4;
+    var error_value: anyerror!i32 = error.TestFailure;
+    var string: []const u8 = "hello";
+    var array = [_]i16{ 1, 2, 3 };
+    var slice: []i16 = &array;
+    var structure = struct { x: i32, ok: bool }{ .x = 3, .ok = true };
+    var tuple = .{ @as(i32, 2), true };
+    var tagged: Tagged = .{ .number = 8 };
+    var pointee: i32 = 11;
+    var pointer: *i32 = &pointee;
+    inline for (.{
+        &boolean,        &signed,        &unsigned,    &float,   &choice, &optional_null,
+        &optional_value, &error_success, &error_value, &string,  &array,  &slice,
+        &structure,      &tuple,         &tagged,      &pointer,
+    }) |value| {
+        var buffer: [512]u8 = undefined;
+        var writer: std.Io.Writer = .fixed(&buffer);
+        try renderPreview(&writer, value);
+        try std.testing.expect(writer.buffered().len > 0);
+    }
+}
+
+test "preview truncates through bounded writer" {
+    var large: [100]u32 = @splat(123456);
+    var buffer: [32]u8 = undefined;
+    var writer: std.Io.Writer = .fixed(&buffer);
+    try std.testing.expectError(error.WriteFailed, renderPreview(&writer, &large));
+}

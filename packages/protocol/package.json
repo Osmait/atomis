@@ -1,0 +1,13 @@
+{
+  "name": "@ziglive/protocol",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json"
+  },
+  "dependencies": { "zod": "4.4.3" },
+  "devDependencies": { "typescript": "7.0.2" }
+}

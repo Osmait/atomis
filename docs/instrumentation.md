@@ -1,0 +1,13 @@
+# Instrumentation
+
+`runzig-instrument` parses a sentinel-terminated copy with `std.zig.Ast.parse`. `AstAdapter.zig` is the compatibility boundary for Zig 0.16 AST details.
+
+Eligible local `const`/`var` declarations receive a same-line call immediately after their semicolon. Insertions are sorted by descending original byte offset. The generated file keeps every original byte in order and exactly the same newline count; visible `src/main.zig` is never changed by probes and is what Monaco/ZLS use.
+
+Probe IDs are SHA-256-derived from algorithm version, URI, original byte range and identifier. The catalog reports both supported and safely omitted declarations. Top-level, comptime, discard identifiers, no-init declarations and type/function/namespace initializers are omitted.
+
+Zig 0.16 reports a later `_ = value;` as pointless once the active probe is a real use. When such a discard is the final statement on its source line, the generated copy prefixes that exact AST assignment with `//`; no newline or original byte is removed. Unsupported same-line cases are left untouched and may produce the ordinary compiler diagnostic.
+
+The runtime reflects the value without replacing it. Scalars and aggregates use bounded formatting; slices cap elements, strings are escaped, non-slice pointers show only addresses, and unavailable categories produce an explicit placeholder. Event writes are mutex-protected and write failures on fd 3 are ignored.
+
+ZLS unused diagnostics are filtered only for an active supported probe, an exact probe range, and either a known diagnostic code or an explicit known message. All other diagnostics remain.

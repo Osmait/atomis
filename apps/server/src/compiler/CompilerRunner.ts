@@ -1,0 +1,306 @@
+import { join } from "node:path";
+import type {
+	AppDiagnostic,
+	DocumentSnapshot,
+	ProbeDescriptor,
+	ProbeValueEvent,
+	RunResult,
+} from "@ziglive/protocol";
+import type { Session, SessionSettings } from "../sessions/SessionManager.js";
+import { parseCompilerDiagnostics } from "../diagnostics/DiagnosticMapper.js";
+import type { ProcessSupervisor } from "../processes/ProcessSupervisor.js";
+import { ProbeEventReader } from "./ProbeEventReader.js";
+
+interface InstrumentationOutput {
+	protocolVersion: 1;
+	documentVersion: number;
+	generatedPath?: string;
+	sourceMapPath?: string;
+	probes: ProbeDescriptor[];
+	parseDiagnostics: { message: string; severity: string }[];
+}
+
+export interface RunnerCallbacks {
+	state: (state: "instrumenting" | "compiling" | "running") => void;
+	catalog: (probes: ProbeDescriptor[]) => void;
+	output: (stream: "stdout" | "stderr", chunk: string) => void;
+	diagnostic: (owner: string, diagnostics: AppDiagnostic[]) => void;
+	probe: (
+		event: Omit<
+			ProbeValueEvent,
+			"sessionId" | "runId" | "documentVersion" | "timestamp" | "count" | "type"
+		> & { count?: number },
+	) => void;
+}
+
+export interface RunnerOutcome {
+	result: RunResult;
+	terminalState:
+		| "succeeded"
+		| "compile_error"
+		| "runtime_error"
+		| "timed_out"
+		| "cancelled";
+}
+
+export class CompilerRunner {
+	public constructor(
+		private readonly supervisor: ProcessSupervisor,
+		private readonly instrumenter: string,
+	) {}
+
+	public async run(
+		session: Session,
+		snapshot: DocumentSnapshot,
+		settings: SessionSettings,
+		_runId: string,
+		signal: AbortSignal,
+		callbacks: RunnerCallbacks,
+	): Promise<RunnerOutcome> {
+		const generatedPath = join(session.root, "generated", "main.zig");
+		const mapPath = join(session.root, "generated", "source-map.json");
+		const metrics: RunResult = {
+			instrumentationMs: 0,
+			compilationMs: 0,
+			executionMs: 0,
+			exitCode: null,
+			signal: null,
+			timedOut: false,
+			cancelled: false,
+		};
+
+		callbacks.state("instrumenting");
+		const instrumentArgs = [
+			"--input",
+			join(session.root, "src", "main.zig"),
+			"--output",
+			generatedPath,
+			"--source-map",
+			mapPath,
+			"--uri",
+			snapshot.uri,
+			"--version",
+			String(snapshot.version),
+		];
+		if (!settings.autoInspect) instrumentArgs.push("--no-auto-inspect");
+		for (const id of settings.manualProbeIds)
+			instrumentArgs.push("--manual", id);
+		const instrument = await this.supervisor.run(
+			this.instrumenter,
+			instrumentArgs,
+			{
+				cwd: session.root,
+				signal,
+				limits: {
+					timeoutMs: 5000,
+					stdoutBytes: 1024 * 1024,
+					stderrBytes: 512 * 1024,
+				},
+			},
+		);
+		metrics.instrumentationMs = instrument.durationMs;
+		if (instrument.cancelled || signal.aborted)
+			return {
+				terminalState: "cancelled",
+				result: { ...metrics, cancelled: true, reason: "superseded" },
+			};
+		if (instrument.exitCode !== 0) {
+			callbacks.output("stderr", instrument.stderr);
+			callbacks.diagnostic("ziglive-instrumenter", [
+				{
+					message: "Instrumentation failed",
+					severity: "error",
+					line: 1,
+					column: 1,
+					source: "runzig-instrument",
+				},
+			]);
+			return {
+				terminalState: "compile_error",
+				result: {
+					...metrics,
+					reason: "instrumenter failure",
+					exitCode: instrument.exitCode,
+				},
+			};
+		}
+		let metadata: InstrumentationOutput;
+		try {
+			metadata = JSON.parse(instrument.stdout) as InstrumentationOutput;
+		} catch (error) {
+			callbacks.diagnostic("ziglive-instrumenter", [
+				{
+					message: `Invalid instrumenter response: ${error instanceof Error ? error.message : String(error)}`,
+					severity: "error",
+					line: 1,
+					column: 1,
+				},
+			]);
+			return {
+				terminalState: "compile_error",
+				result: { ...metrics, reason: "invalid instrumenter response" },
+			};
+		}
+		if (
+			metadata.protocolVersion !== 1 ||
+			metadata.documentVersion !== snapshot.version ||
+			!Array.isArray(metadata.probes)
+		) {
+			callbacks.diagnostic("ziglive-instrumenter", [
+				{
+					message: "Instrumenter protocol/version mismatch",
+					severity: "error",
+					line: 1,
+					column: 1,
+				},
+			]);
+			return {
+				terminalState: "compile_error",
+				result: { ...metrics, reason: "instrumenter protocol mismatch" },
+			};
+		}
+		session.probes = metadata.probes;
+		callbacks.catalog(metadata.probes);
+		if (!metadata.generatedPath) {
+			callbacks.diagnostic(
+				"ziglive-instrumenter",
+				metadata.parseDiagnostics.map((item) => ({
+					message: item.message,
+					severity: "error",
+					line: 1,
+					column: 1,
+					source: "runzig-instrument",
+				})),
+			);
+			return {
+				terminalState: "compile_error",
+				result: { ...metrics, reason: "parse error" },
+			};
+		}
+		callbacks.diagnostic("ziglive-instrumenter", []);
+
+		callbacks.state("compiling");
+		const compile = await this.supervisor.run(
+			"zig",
+			["build", "instrumented", "--color", "off"],
+			{
+				cwd: session.root,
+				signal,
+				limits: {
+					timeoutMs: 30_000,
+					stdoutBytes: 512 * 1024,
+					stderrBytes: 512 * 1024,
+				},
+				callbacks: {
+					stdout: (chunk) => callbacks.output("stdout", chunk),
+					stderr: (chunk) => callbacks.output("stderr", chunk),
+				},
+			},
+		);
+		metrics.compilationMs = compile.durationMs;
+		if (compile.cancelled || signal.aborted)
+			return {
+				terminalState: "cancelled",
+				result: { ...metrics, cancelled: true, reason: "superseded" },
+			};
+		if (compile.exitCode !== 0 || compile.limit) {
+			callbacks.diagnostic(
+				"zig-compiler",
+				parseCompilerDiagnostics(compile.stderr, generatedPath),
+			);
+			return {
+				terminalState: "compile_error",
+				result: {
+					...metrics,
+					exitCode: compile.exitCode,
+					signal: compile.signal,
+					reason: compile.limit
+						? `${compile.limit} output limit exceeded`
+						: "compiler error",
+				},
+			};
+		}
+		callbacks.diagnostic("zig-compiler", []);
+
+		callbacks.state("running");
+		const counts = new Map<string, number>();
+		let probeError: string | undefined;
+		const reader = new ProbeEventReader((event) => {
+			const count = (counts.get(event.probeId) ?? 0) + 1;
+			counts.set(event.probeId, count);
+			callbacks.probe({ ...event, count });
+		});
+		const executable = join(session.root, "zig-out", "bin", "ziglive-session");
+		const execution = await this.supervisor.run(executable, [], {
+			cwd: session.root,
+			signal,
+			probeFd: true,
+			limits: {
+				timeoutMs: settings.timeoutMs,
+				stdoutBytes: 512 * 1024,
+				stderrBytes: 512 * 1024,
+				probeBytes: 1024 * 1024,
+			},
+			callbacks: {
+				stdout: (chunk) => callbacks.output("stdout", chunk),
+				stderr: (chunk) => callbacks.output("stderr", chunk),
+				probe: (chunk) => {
+					try {
+						reader.push(chunk);
+					} catch (error) {
+						probeError = error instanceof Error ? error.message : String(error);
+					}
+				},
+			},
+		});
+		metrics.executionMs = execution.durationMs;
+		metrics.exitCode = execution.exitCode;
+		metrics.signal = execution.signal;
+		metrics.timedOut = execution.timedOut;
+		metrics.cancelled = execution.cancelled;
+		try {
+			reader.end();
+		} catch (error) {
+			probeError ??= error instanceof Error ? error.message : String(error);
+		}
+		if (execution.cancelled || signal.aborted)
+			return {
+				terminalState: "cancelled",
+				result: { ...metrics, reason: "cancelled" },
+			};
+		if (execution.timedOut)
+			return {
+				terminalState: "timed_out",
+				result: { ...metrics, reason: "execution timeout" },
+			};
+		if (execution.limit || probeError)
+			return {
+				terminalState: "runtime_error",
+				result: {
+					...metrics,
+					reason:
+						probeError ?? `${execution.limit ?? "runtime"} limit exceeded`,
+				},
+			};
+		if (execution.exitCode !== 0 || execution.signal) {
+			const location = new RegExp(
+				`${generatedPath.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}:(\\d+):(\\d+)`,
+			).exec(execution.stderr);
+			callbacks.diagnostic("zig-runtime", [
+				{
+					message: "Program panicked or exited abnormally",
+					severity: "error",
+					line: Number(location?.[1] ?? 1),
+					column: Number(location?.[2] ?? 1),
+					source: "runtime",
+				},
+			]);
+			return {
+				terminalState: "runtime_error",
+				result: { ...metrics, reason: "abnormal exit" },
+			};
+		}
+		callbacks.diagnostic("zig-runtime", []);
+		return { terminalState: "succeeded", result: metrics };
+	}
+}
