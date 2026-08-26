@@ -7,6 +7,7 @@ const Options = struct {
     source_map: ?[]const u8 = null,
     uri: []const u8 = "file:///main.zig",
     version: u64 = 1,
+    file_id: u32 = 0,
     auto_inspect: bool = true,
     manual_ids: std.ArrayList([]const u8) = .empty,
 };
@@ -86,6 +87,9 @@ pub fn main(init: std.process.Init) !void {
         } else if (std.mem.eql(u8, arg, "--version") and index + 1 < args.len) {
             index += 1;
             options.version = try std.fmt.parseInt(u64, args[index], 10);
+        } else if (std.mem.eql(u8, arg, "--file-id") and index + 1 < args.len) {
+            index += 1;
+            options.file_id = try std.fmt.parseInt(u32, args[index], 10);
         } else if (std.mem.eql(u8, arg, "--manual") and index + 1 < args.len) {
             index += 1;
             try options.manual_ids.append(allocator, args[index]);
@@ -100,7 +104,7 @@ pub fn main(init: std.process.Init) !void {
 
     const bytes = try std.Io.Dir.cwd().readFileAlloc(init.io, input, allocator, .limited(1024 * 1024));
     const source = try allocator.dupeZ(u8, bytes);
-    const result = try AstAdapter.instrument(allocator, source, options.uri, options.auto_inspect, options.manual_ids.items);
+    const result = try AstAdapter.instrument(allocator, source, options.uri, options.auto_inspect, options.manual_ids.items, options.file_id);
 
     var json_writer: std.Io.Writer.Allocating = .init(allocator);
     defer json_writer.deinit();

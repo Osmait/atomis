@@ -1,4 +1,7 @@
+import { dirname } from "node:path";
 import type { AppDiagnostic, ProbeDescriptor } from "@ziglive/protocol";
+
+type ProjectDiagnostic = AppDiagnostic & { path?: string };
 
 const COMPILER_LOCATION = /^(.*\.zig):(\d+):(\d+): (error|warning|note): (.+)$/;
 
@@ -8,24 +11,37 @@ function generatedPathAliases(generatedPath: string): string[] {
 	return relative === normalized ? [normalized] : [normalized, relative];
 }
 
-function isGeneratedPath(path: string, generatedPath: string): boolean {
+function generatedProjectPath(
+	path: string,
+	generatedPath: string,
+): string | undefined {
 	const normalized = path.replaceAll("\\", "/");
-	return generatedPathAliases(generatedPath).includes(normalized);
+	const root = dirname(generatedPath).replaceAll("\\", "/");
+	if (normalized.startsWith(`${root}/`))
+		return `src/${normalized.slice(root.length + 1)}`;
+	const marker = "generated/";
+	const markerIndex = normalized.lastIndexOf(marker);
+	if (markerIndex >= 0) return `src/${normalized.slice(markerIndex + marker.length)}`;
+	if (generatedPathAliases(generatedPath).includes(normalized))
+		return `src/${normalized.split("/").at(-1) ?? "main.zig"}`;
+	return undefined;
 }
 
 function generatedReference(
 	line: string,
 	generatedPath: string,
-): { line: number; column: number } | undefined {
-	for (const alias of generatedPathAliases(generatedPath)) {
-		const marker = `${alias}:`;
-		const markerIndex = line.indexOf(marker);
-		if (markerIndex < 0) continue;
-		const location = /^(\d+):(\d+)(?:\s|$)/.exec(
-			line.slice(markerIndex + marker.length),
-		);
-		if (!location?.[1] || !location[2]) continue;
-		return { line: Number(location[1]), column: Number(location[2]) };
+): { path: string; line: number; column: number } | undefined {
+	const locations = line.matchAll(/([^\s:]*\.zig):(\d+):(\d+)/g);
+	for (const location of locations) {
+		const [, path, lineText, columnText] = location;
+		if (!path || !lineText || !columnText) continue;
+		const projectPath = generatedProjectPath(path, generatedPath);
+		if (projectPath)
+			return {
+				path: projectPath,
+				line: Number(lineText),
+				column: Number(columnText),
+			};
 	}
 	return undefined;
 }
@@ -34,15 +50,15 @@ function findGeneratedReference(
 	lines: string[],
 	startIndex: number,
 	generatedPath: string,
-): { line: number; column: number } | undefined {
+): { path: string; line: number; column: number } | undefined {
 	for (let index = startIndex; index < lines.length; index++) {
 		const line = lines[index];
 		if (line === undefined) return undefined;
-		const reference = generatedReference(line, generatedPath);
-		if (reference) return reference;
 		const diagnostic = COMPILER_LOCATION.exec(line);
 		if (diagnostic?.[4] === "error" || diagnostic?.[4] === "warning")
 			return undefined;
+		const reference = generatedReference(line, generatedPath);
+		if (reference) return reference;
 	}
 	return undefined;
 }
@@ -56,20 +72,22 @@ function compilerSeverity(level: string): AppDiagnostic["severity"] {
 export function parseCompilerDiagnostics(
 	stderr: string,
 	generatedPath: string,
-): AppDiagnostic[] {
-	const diagnostics: AppDiagnostic[] = [];
+): ProjectDiagnostic[] {
+	const diagnostics: ProjectDiagnostic[] = [];
 	const lines = stderr.split(/\r?\n/);
 	for (const [index, line] of lines.entries()) {
 		const match = COMPILER_LOCATION.exec(line);
 		if (!match) continue;
 		const [, path, lineText, columnText, level, message] = match;
 		if (!path || !lineText || !columnText || !level || !message) continue;
-		const generated = isGeneratedPath(path, generatedPath);
-		const reference = generated
+		const projectPath = generatedProjectPath(path, generatedPath);
+		const reference = projectPath
 			? undefined
 			: findGeneratedReference(lines, index + 1, generatedPath);
+		const diagnosticPath = reference?.path ?? projectPath;
 		diagnostics.push({
-			message: generated ? message : `${message} (${path})`,
+			...(diagnosticPath ? { path: diagnosticPath } : {}),
+			message: projectPath ? message : `${message} (${path})`,
 			severity: compilerSeverity(level),
 			line: reference?.line ?? Number(lineText),
 			column: reference?.column ?? Number(columnText),

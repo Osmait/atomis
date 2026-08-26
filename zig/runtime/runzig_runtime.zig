@@ -7,11 +7,13 @@ pub const ProbeMeta = struct {
 };
 
 pub const LogMeta = struct {
+    file_id: u32,
     line: u32,
     column: u32,
 };
 
 pub const LogLoopMeta = struct {
+    file_id: u32,
     line: u32,
     column: u32,
     loop_line: u32,
@@ -42,7 +44,7 @@ fn writeAllFd3(bytes: []const u8) void {
 pub inline fn logSource(comptime meta: LogMeta) void {
     var marker_buffer: [96]u8 = undefined;
     var marker_writer: std.Io.Writer = .fixed(&marker_buffer);
-    marker_writer.print("\x1eZIGLIVE_LOG:{d}:{d}\x1f", .{ meta.line, meta.column }) catch return;
+    marker_writer.print("\x1eZIGLIVE_LOG:{d}:{d}:{d}\x1f", .{ meta.file_id, meta.line, meta.column }) catch return;
     writeAllFd(2, marker_writer.buffered());
 }
 
@@ -115,7 +117,8 @@ inline fn emitLogSourceLoop(comptime meta: LogLoopMeta, value_ptr: anytype) void
 
     var marker_buffer: [MAX_PREVIEW + 256]u8 = undefined;
     var marker_writer: std.Io.Writer = .fixed(&marker_buffer);
-    marker_writer.print("\x1eZIGLIVE_LOG:{d}:{d}:{d}:{d}:{s}:", .{
+    marker_writer.print("\x1eZIGLIVE_LOG:{d}:{d}:{d}:{d}:{d}:{s}:", .{
+        meta.file_id,
         meta.line,
         meta.column,
         meta.loop_line,

@@ -210,6 +210,7 @@ pub fn instrument(
     uri: []const u8,
     auto_inspect: bool,
     manual_ids: []const []const u8,
+    file_id: u32,
 ) !Result {
     if (std.mem.indexOf(u8, source, "@import(\"runzig_runtime.zig\").probe(") != null or
         std.mem.indexOf(u8, source, "@import(\"runzig_runtime.zig\").logSource(") != null or
@@ -378,9 +379,9 @@ pub fn instrument(
             var snippet: [384]u8 = undefined;
             const suffix: []const u8 = if (insertion.closes_loop_block) " }" else "";
             const text = if (insertion.loop) |loop|
-                try std.fmt.bufPrint(&snippet, " @import(\"runzig_runtime.zig\").logSourceLoop(.{{ .line = {d}, .column = {d}, .loop_line = {d}, .loop_column = {d}, .loop_name = \"{s}\" }}, {s});{s}", .{ insertion.line, insertion.column, loop.line, loop.column, loop.variable, loop.variable, suffix })
+                try std.fmt.bufPrint(&snippet, " @import(\"runzig_runtime.zig\").logSourceLoop(.{{ .file_id = {d}, .line = {d}, .column = {d}, .loop_line = {d}, .loop_column = {d}, .loop_name = \"{s}\" }}, {s});{s}", .{ file_id, insertion.line, insertion.column, loop.line, loop.column, loop.variable, loop.variable, suffix })
             else
-                try std.fmt.bufPrint(&snippet, " @import(\"runzig_runtime.zig\").logSource(.{{ .line = {d}, .column = {d} }});{s}", .{ insertion.line, insertion.column, suffix });
+                try std.fmt.bufPrint(&snippet, " @import(\"runzig_runtime.zig\").logSource(.{{ .file_id = {d}, .line = {d}, .column = {d} }});{s}", .{ file_id, insertion.line, insertion.column, suffix });
             try generated.insertSlice(allocator, insertion.offset, text);
         },
         .probe => {
@@ -406,7 +407,7 @@ pub fn instrument(
 
 test "instruments local declarations and preserves lines" {
     const source: [:0]const u8 = "const top = 1;\npub fn main() void {\n const x: i32 = 2; const y = x + 1;\n _ = y;\n}\n";
-    const result = try instrument(std.testing.allocator, source, "file:///main.zig", true, &.{});
+    const result = try instrument(std.testing.allocator, source, "file:///main.zig", true, &.{}, 0);
     defer {
         if (result.generated) |generated| std.testing.allocator.free(generated);
         for (result.probes) |probe| std.testing.allocator.free(probe.name);
@@ -420,54 +421,54 @@ test "instruments local declarations and preserves lines" {
 
 test "marks log statements with original source locations" {
     const source: [:0]const u8 = "const std = @import(\"std\");\npub fn main() void {\n    std.debug.print(\"hello\\n\", .{});\n    std.log.info(\"world\", .{});\n}\n";
-    const result = try instrument(std.testing.allocator, source, "file:///logs.zig", false, &.{});
+    const result = try instrument(std.testing.allocator, source, "file:///logs.zig", false, &.{}, 0);
     defer {
         std.testing.allocator.free(result.generated.?);
         for (result.probes) |probe| std.testing.allocator.free(probe.name);
         std.testing.allocator.free(result.probes);
     }
-    try std.testing.expect(std.mem.indexOf(u8, result.generated.?, "std.debug.print(\"hello\\n\", .{}); @import(\"runzig_runtime.zig\").logSource(.{ .line = 3, .column = 5 });") != null);
-    try std.testing.expect(std.mem.indexOf(u8, result.generated.?, "std.log.info(\"world\", .{}); @import(\"runzig_runtime.zig\").logSource(.{ .line = 4, .column = 5 });") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.generated.?, "std.debug.print(\"hello\\n\", .{}); @import(\"runzig_runtime.zig\").logSource(.{ .file_id = 0, .line = 3, .column = 5 });") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.generated.?, "std.log.info(\"world\", .{}); @import(\"runzig_runtime.zig\").logSource(.{ .file_id = 0, .line = 4, .column = 5 });") != null);
     try std.testing.expectEqual(std.mem.count(u8, source, "\n"), std.mem.count(u8, result.generated.?, "\n"));
 }
 
 test "captures the innermost loop variable for logs" {
     const source: [:0]const u8 = "const std = @import(\"std\");\npub fn main() void {\n    for (0..3) |i| {\n        std.debug.print(\"{d}\\n\", .{i});\n    }\n}\n";
-    const result = try instrument(std.testing.allocator, source, "file:///loop.zig", false, &.{});
+    const result = try instrument(std.testing.allocator, source, "file:///loop.zig", false, &.{}, 0);
     defer {
         std.testing.allocator.free(result.generated.?);
         for (result.probes) |probe| std.testing.allocator.free(probe.name);
         std.testing.allocator.free(result.probes);
     }
-    try std.testing.expect(std.mem.indexOf(u8, result.generated.?, "logSourceLoop(.{ .line = 4, .column = 9, .loop_line = 3, .loop_column = 5, .loop_name = \"i\" }, i)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.generated.?, "logSourceLoop(.{ .file_id = 0, .line = 4, .column = 9, .loop_line = 3, .loop_column = 5, .loop_name = \"i\" }, i)") != null);
 }
 
 test "wraps compact loop log bodies without changing visible source positions" {
     const source: [:0]const u8 = "const std = @import(\"std\");\npub fn main() void {\n    for (0..10) |i| std.debug.print(\"{}\\n\", .{i});\n}\n";
-    const result = try instrument(std.testing.allocator, source, "file:///compact-loop.zig", false, &.{});
+    const result = try instrument(std.testing.allocator, source, "file:///compact-loop.zig", false, &.{}, 0);
     defer {
         std.testing.allocator.free(result.generated.?);
         for (result.probes) |probe| std.testing.allocator.free(probe.name);
         std.testing.allocator.free(result.probes);
     }
-    try std.testing.expect(std.mem.indexOf(u8, result.generated.?, "|i| { std.debug.print(\"{}\\n\", .{i}); @import(\"runzig_runtime.zig\").logSourceLoop(.{ .line = 3, .column = 21, .loop_line = 3, .loop_column = 5, .loop_name = \"i\" }, i); }") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.generated.?, "|i| { std.debug.print(\"{}\\n\", .{i}); @import(\"runzig_runtime.zig\").logSourceLoop(.{ .file_id = 0, .line = 3, .column = 21, .loop_line = 3, .loop_column = 5, .loop_name = \"i\" }, i); }") != null);
     try std.testing.expectEqual(std.mem.count(u8, source, "\n"), std.mem.count(u8, result.generated.?, "\n"));
 }
 
 test "captures a while continuation variable for logs" {
     const source: [:0]const u8 = "const std = @import(\"std\");\npub fn main() void {\n    var i: usize = 0;\n    while (i < 2) : (i += 1) {\n        std.debug.print(\"{d}\\n\", .{i});\n    }\n}\n";
-    const result = try instrument(std.testing.allocator, source, "file:///while.zig", false, &.{});
+    const result = try instrument(std.testing.allocator, source, "file:///while.zig", false, &.{}, 0);
     defer {
         std.testing.allocator.free(result.generated.?);
         for (result.probes) |probe| std.testing.allocator.free(probe.name);
         std.testing.allocator.free(result.probes);
     }
-    try std.testing.expect(std.mem.indexOf(u8, result.generated.?, "logSourceLoop(.{ .line = 5, .column = 9, .loop_line = 4, .loop_column = 5, .loop_name = \"i\" }, i)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.generated.?, "logSourceLoop(.{ .file_id = 0, .line = 5, .column = 9, .loop_line = 4, .loop_column = 5, .loop_name = \"i\" }, i)") != null);
 }
 
 test "parse errors do not generate source" {
     const source: [:0]const u8 = "pub fn main( {";
-    const result = try instrument(std.testing.allocator, source, "file:///bad.zig", true, &.{});
+    const result = try instrument(std.testing.allocator, source, "file:///bad.zig", true, &.{}, 0);
     defer {
         for (result.parse_diagnostics) |diagnostic| std.testing.allocator.free(diagnostic);
         std.testing.allocator.free(result.parse_diagnostics);
@@ -478,8 +479,8 @@ test "parse errors do not generate source" {
 
 test "ids deterministic and Unicode position is codepoint based" {
     const source: [:0]const u8 = "pub fn main() void { const smile = \"😀\"; const x = 1; _ = .{ smile, x }; }";
-    const first = try instrument(std.testing.allocator, source, "file:///unicode.zig", false, &.{});
-    const second = try instrument(std.testing.allocator, source, "file:///unicode.zig", false, &.{});
+    const first = try instrument(std.testing.allocator, source, "file:///unicode.zig", false, &.{}, 0);
+    const second = try instrument(std.testing.allocator, source, "file:///unicode.zig", false, &.{}, 0);
     defer {
         for (first.probes) |probe| std.testing.allocator.free(probe.name);
         for (second.probes) |probe| std.testing.allocator.free(probe.name);
@@ -500,7 +501,7 @@ test "nested blocks branches loops and other functions are discovered" {
         " while (false) { const loop_value = 3; _ = loop_value; }\n" ++
         " { const nested = 4; _ = nested; }\n" ++
         " helper();\n}\n";
-    const result = try instrument(std.testing.allocator, source, "file:///nested.zig", true, &.{});
+    const result = try instrument(std.testing.allocator, source, "file:///nested.zig", true, &.{}, 0);
     defer {
         std.testing.allocator.free(result.generated.?);
         for (result.probes) |probe| std.testing.allocator.free(probe.name);
@@ -520,7 +521,7 @@ test "top-level comptime and type-producing declarations are safely omitted" {
         " const Namespace = struct { value: i32 };\n" ++
         " _ = Namespace;\n" ++
         "}\n";
-    const result = try instrument(std.testing.allocator, source, "file:///omitted.zig", true, &.{});
+    const result = try instrument(std.testing.allocator, source, "file:///omitted.zig", true, &.{}, 0);
     defer {
         std.testing.allocator.free(result.generated.?);
         for (result.probes) |probe| std.testing.allocator.free(probe.name);
@@ -536,7 +537,7 @@ test "comments and strings do not create declarations and manual mode selects on
         " const text = \"var fake = 2;\";\n" ++
         " _ = text;\n" ++
         "}\n";
-    const catalog = try instrument(std.testing.allocator, source, "file:///manual.zig", false, &.{});
+    const catalog = try instrument(std.testing.allocator, source, "file:///manual.zig", false, &.{}, 0);
     defer {
         std.testing.allocator.free(catalog.generated.?);
         for (catalog.probes) |probe| std.testing.allocator.free(probe.name);
@@ -545,7 +546,7 @@ test "comments and strings do not create declarations and manual mode selects on
     try std.testing.expectEqual(@as(usize, 1), catalog.probes.len);
     try std.testing.expect(catalog.probes[0].insertion_byte == null);
     const manual_ids = [_][]const u8{&catalog.probes[0].probe_id};
-    const manual = try instrument(std.testing.allocator, source, "file:///manual.zig", false, &manual_ids);
+    const manual = try instrument(std.testing.allocator, source, "file:///manual.zig", false, &manual_ids, 0);
     defer {
         std.testing.allocator.free(manual.generated.?);
         for (manual.probes) |probe| std.testing.allocator.free(probe.name);
@@ -557,7 +558,7 @@ test "comments and strings do not create declarations and manual mode selects on
 
 test "destructuring declarations are catalogued as unsupported" {
     const source: [:0]const u8 = "pub fn main() void { const a, const b = .{ 1, 2 }; _ = .{ a, b }; }";
-    const result = try instrument(std.testing.allocator, source, "file:///destructure.zig", true, &.{});
+    const result = try instrument(std.testing.allocator, source, "file:///destructure.zig", true, &.{}, 0);
     defer {
         std.testing.allocator.free(result.generated.?);
         for (result.probes) |probe| std.testing.allocator.free(probe.name);
@@ -572,7 +573,7 @@ test "destructuring declarations are catalogued as unsupported" {
 
 test "generated code is not reinstrumented" {
     const source: [:0]const u8 = "pub fn main() void { const x = 1; }";
-    const first = try instrument(std.testing.allocator, source, "file:///once.zig", true, &.{});
+    const first = try instrument(std.testing.allocator, source, "file:///once.zig", true, &.{}, 0);
     defer {
         for (first.probes) |probe| std.testing.allocator.free(probe.name);
         std.testing.allocator.free(first.probes);
@@ -580,7 +581,7 @@ test "generated code is not reinstrumented" {
     }
     const sentinel = try std.testing.allocator.dupeZ(u8, first.generated.?);
     defer std.testing.allocator.free(sentinel);
-    const second = try instrument(std.testing.allocator, sentinel, "file:///once.zig", true, &.{});
+    const second = try instrument(std.testing.allocator, sentinel, "file:///once.zig", true, &.{}, 0);
     defer {
         std.testing.allocator.free(second.probes);
         std.testing.allocator.free(second.parse_diagnostics);

@@ -151,7 +151,7 @@ export const runtimeClientMessageSchema = z.discriminatedUnion("type", [
 			type: z.literal("document.update"),
 			sessionId,
 			version: z.number().int().positive(),
-			path: projectPathSchema,
+			path: projectPathSchema.default("main.zig"),
 			source: z.string().max(MAX_SOURCE_BYTES),
 		})
 		.strict(),

@@ -127,12 +127,23 @@ export class LspProxy {
 			message.params &&
 			typeof message.params === "object"
 		) {
-			const params = message.params as { diagnostics?: unknown };
-			if (Array.isArray(params.diagnostics))
+			const params = message.params as {
+				diagnostics?: unknown;
+				uri?: string;
+			};
+			if (Array.isArray(params.diagnostics)) {
+				const file = this.session.store
+					.current()
+					.files.find((candidate) => candidate.uri === params.uri);
+				const projectPath = file ? `src/${file.path}` : undefined;
 				params.diagnostics = filterObservedUnused(
 					params.diagnostics,
-					this.session.probes,
+					this.session.probes.filter(
+						(probe) =>
+							!("path" in probe) || probe.path === projectPath,
+					),
 				);
+			}
 		}
 		const socket = this.socket;
 		if (socket && socket.readyState === socket.OPEN)
