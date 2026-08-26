@@ -62,16 +62,17 @@ pnpm typecheck
 
 ## Usage
 
-- Edit Zig; ZLS diagnostics, completion, hover, definition, formatting, semantic tokens, inlay hints and code actions are enabled only when advertised.
+- Create, open, rename and delete files from the project tree. Tabs preserve Monaco models, and Zig modules can import one another with relative `@import` paths.
+- ZLS diagnostics, completion, hover, definition, formatting, semantic tokens, inlay hints and code actions work across opened `.zig` files when advertised.
 - Auto Run debounces edits for 400 ms. **Ctrl/Cmd+Enter** runs immediately; Stop cancels the active run.
 - Vim Mode is enabled by default and can be toggled in the navigator. Use `i` to insert, `Esc` for Normal mode and `:w` to run the current source. Native Ctrl/Cmd+A/C/X/V shortcuts and the editor's right-click Copy/Paste menu remain available.
-- Auto Inspect adds probes to supported local declarations in `generated/main.zig`. Click declaration glyphs for manual probes.
+- Auto Inspect adds probes to supported local declarations in every `.zig` module under `generated/`. Click declaration glyphs for manual probes.
 - Inline values become crossed-out/stale immediately after an edit. Only matching document-version events can replace them.
 - The terminal resets at the start of every run. Program output is neutral; compiler/runtime failures are red. Hover output produced by `std.debug.print` or `std.log` to highlight its source line; click to pin the highlight and move the editor there. Repeated loop logs show their execution number, enclosing loop line, and detected loop variable/value. Diagnostics and Runtime retain owner and timing details.
 
 ## Workspace
 
-Each tab gets `/tmp/ziglive/<random-id>/` with visible `src/main.zig`, generated source/runtime/source map, `build.zig`, a local cache and output. Session IDs and bearer tokens are random; arbitrary client paths are rejected. Workspaces are removed on disconnect/shutdown and abandoned directories older than 24 hours are removed at startup.
+Each browser session gets `/tmp/ziglive/<random-id>/` with a visible multi-file `src/` project, a generated mirror, runtime/source maps, `build.zig`, a local cache and output. Text assets are mirrored so `@embedFile("input.txt")` works; execution uses `src/` as cwd so runtime reads such as `readFileAlloc(..., "input.txt", ...)` work too. Projects are capped at 64 files and 8 MiB. Session IDs and bearer tokens are random; absolute paths and traversal segments are rejected. Workspaces are removed on disconnect/shutdown and abandoned directories older than 24 hours are removed at startup.
 
 ## Documentation
 

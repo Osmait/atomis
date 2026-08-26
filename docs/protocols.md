@@ -4,17 +4,18 @@ All runtime messages are JSON and versioned at protocol version 1. Shared TypeSc
 
 ## Session HTTP
 
-`POST /api/sessions` returns a random session ID, a 256-bit bearer token, the real `file://` URI, tool versions and initial source. Origin must exactly match the loopback UI origin.
+`POST /api/sessions` returns a random session ID, a 256-bit bearer token, tool versions and the initial project file catalog with real `file://` URIs. Origin must exactly match the loopback UI origin.
 
 ## Runtime WebSocket
 
 `/ws/runtime?sessionId=…&token=…` accepts:
 
-- `document.update` with a full monotonic snapshot;
+- `document.update` for a versioned project-relative file;
+- `file.create`, `file.rename` and `file.delete` for validated paths below `src/`;
 - `run.request` and `run.cancel`;
 - `settings.update` for Auto Run, Auto Inspect, debounce, timeout and manual IDs.
 
-Server events include `run.state`, `probe.catalog`, `probe_value`, capped output chunks, owner-separated diagnostics, `run.finished` metrics and typed recoverable errors. Output chunks retain the OS stream and carry a `program` or `error` category so normal Zig stderr output is not presented as a failure. Instrumented `std.debug.print` and `std.log` chunks also carry an optional `sourceLocation` with the original line/column and `executionIndex`. When detected, `sourceLocation.loop` contains the enclosing loop line/column plus its variable name and runtime value. Hovering a sourced terminal row temporarily highlights the print and loop lines; clicking pins the highlight and reveals the print line. The browser ignores every event whose `documentVersion` is not active.
+Server events include authoritative `project.files` catalogs, `run.state`, `probe.catalog`, `probe_value`, capped output chunks, owner-separated diagnostics, `run.finished` metrics and typed recoverable errors. Output chunks retain the OS stream and carry a `program` or `error` category so normal Zig stderr output is not presented as a failure. Instrumented `std.debug.print` and `std.log` chunks also carry an optional `sourceLocation` with the original line/column and `executionIndex`. When detected, `sourceLocation.loop` contains the enclosing loop line/column plus its variable name and runtime value. Hovering a sourced terminal row temporarily highlights the print and loop lines; clicking pins the highlight and reveals the print line. The browser ignores every event whose `documentVersion` is not active.
 
 ## LSP WebSocket
 

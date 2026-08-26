@@ -2,7 +2,7 @@
 
 - This is **not a strong security sandbox**. Native Zig code executes locally with the user's permissions and can access files, processes and the network. Use Auto Run and review untrusted code.
 - Linux and macOS are supported; Windows process groups and fd 3 are outside this MVP.
-- One editable file and no external packages/dependency manager.
+- Multi-file text projects are supported, but there is no external package/dependency manager and binary file editing is not supported.
 - No stdin or interactive terminal.
 - Value previews are bounded text, not expandable object trees. Arbitrary pointers are never dereferenced.
 - The generated-copy workaround for an observed `_ = name;` applies only when the AST assignment is the last statement on its line.
