@@ -294,6 +294,7 @@ export function App(): React.JSX.Element {
 	const [drawerTab, setDrawerTab] = useState<"tests" | "hist">("tests");
 	const [termMenuOpen, setTermMenuOpen] = useState(false);
 	const [treeMenuOpen, setTreeMenuOpen] = useState(false);
+	const [srcCollapsed, setSrcCollapsed] = useState(false);
 	const [treeContextMenu, setTreeContextMenu] = useState<
 		| { x: number; y: number; path?: string; folder?: string }
 		| undefined
@@ -2002,10 +2003,19 @@ export function App(): React.JSX.Element {
 							}}
 						>
 							<div className="tree-root">
-								<span className="chev">
-									<Lucide icon="chevron-down" size={13} />
-								</span>
-								<FolderIcon open /> src
+								<button
+									className="tree-root-toggle"
+									onClick={() => setSrcCollapsed((previous) => !previous)}
+									title={srcCollapsed ? "Expandir src" : "Colapsar src"}
+								>
+									<span className="chev">
+										<Lucide
+											icon={srcCollapsed ? "chevron-right" : "chevron-down"}
+											size={13}
+										/>
+									</span>
+									<FolderIcon open={!srcCollapsed} /> src
+								</button>
 								<span className="tree-menu-wrap root-tools">
 									<button
 										aria-label="Acciones del árbol"
@@ -2075,7 +2085,8 @@ export function App(): React.JSX.Element {
 									</button>
 								</div>
 							)}
-							{treeRows.map((row) => {
+							{!srcCollapsed &&
+								treeRows.map((row) => {
 								if (row.kind === "folder")
 									return (
 										<div

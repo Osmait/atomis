@@ -738,6 +738,12 @@ test("folders group files and collapse in the tree", async ({ page }) => {
 		page.getByRole("button", { name: "aoc/day1.zig" }),
 	).toBeVisible();
 
+	// the src root row folds the whole tree
+	await page.locator(".tree-root-toggle").click();
+	await expect(page.locator(".tree-file")).toHaveCount(0);
+	await page.locator(".tree-root-toggle").click();
+	await expect(page.locator(".tree-file").first()).toBeVisible();
+
 	// right-click: create inside a folder from the context menu
 	await page.locator(".tree-folder-row").first().click({ button: "right" });
 	await expect(page.locator(".tree-context-menu")).toBeVisible();
