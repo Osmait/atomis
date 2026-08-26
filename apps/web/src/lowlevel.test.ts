@@ -165,6 +165,15 @@ describe("displayPreview", () => {
 		).toBe("Pixel · 4 B · align 1");
 	});
 
+	it("never rebases pointer addresses", () => {
+		const pointer = { preview: "0x1268695", typeName: "*const [4:0]u8" };
+		expect(displayPreview(pointer, "dec")).toBe("0x1268695");
+		expect(displayPreview(pointer, "bin")).toBe("0x1268695");
+		expect(
+			displayPreview({ preview: '"hola"', typeName: "*const [4:0]u8" }, "hex"),
+		).toBe('"hola"');
+	});
+
 	it("keeps non-integer previews untouched", () => {
 		expect(displayPreview({ preview: '"hola"', typeName: "char*" }, "hex")).toBe(
 			'"hola"',

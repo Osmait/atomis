@@ -67,7 +67,17 @@ fn renderPreview(writer: *std.Io.Writer, value_ptr: anytype) !void {
     switch (@typeInfo(T)) {
         .type, .void, .noreturn, .frame, .@"anyframe", .@"fn", .@"opaque", .undefined, .null, .enum_literal => try writer.print("<unavailable: {s}>", .{@typeName(T)}),
         .pointer => |pointer| switch (pointer.size) {
-            .one, .many, .c => try writer.print("0x{x}", .{@intFromPtr(value_ptr.*)}),
+            // String literals are `*const [N:0]u8`: show the text, not the
+            // address. Other pointers-to-array preview their pointee too.
+            .one => switch (@typeInfo(pointer.child)) {
+                .array => |array| {
+                    if (array.child == u8) {
+                        try appendJsonString(writer, value_ptr.*.*[0..]);
+                    } else try writer.print("{any}", .{value_ptr.*.*});
+                },
+                else => try writer.print("0x{x}", .{@intFromPtr(value_ptr.*)}),
+            },
+            .many, .c => try writer.print("0x{x}", .{@intFromPtr(value_ptr.*)}),
             .slice => {
                 const value = value_ptr.*;
                 if (pointer.child == u8) {
@@ -265,6 +275,20 @@ test "preview values" {
         try renderPreview(&writer, value);
         try std.testing.expect(writer.buffered().len > 0);
     }
+}
+
+test "string literal pointers preview their text" {
+    const text: *const [4:0]u8 = "hola";
+    var buffer: [64]u8 = undefined;
+    var writer: std.Io.Writer = .fixed(&buffer);
+    try renderPreview(&writer, &text);
+    try std.testing.expectEqualStrings("\"hola\"", writer.buffered());
+
+    var numbers = [_]i16{ 1, 2 };
+    const numbers_ptr: *const [2]i16 = &numbers;
+    var array_writer: std.Io.Writer = .fixed(&buffer);
+    try renderPreview(&array_writer, &numbers_ptr);
+    try std.testing.expect(array_writer.buffered().len > 0);
 }
 
 test "layout metadata for ints and structs" {

@@ -235,8 +235,9 @@ export function displayPreview(
 	}
 	const parsed = parseIntegerPreview(value.preview);
 	if (parsed === undefined) return value.preview;
+	// Only reformat when the TYPE is a known integer: a pointer's 0x… address
+	// or an opaque numeric preview must never be rebased.
 	const width = value.bits ?? bitsForType(value.typeName, language);
-	if (width === undefined)
-		return fmt === "dec" ? parsed.toString() : value.preview;
+	if (width === undefined) return value.preview;
 	return formatInt(parsed, width, fmt);
 }
