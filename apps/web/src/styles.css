@@ -538,12 +538,19 @@ button:disabled {
 }
 
 .monaco-editor .error-lens-message {
-	margin-left: 18px;
+	display: inline-block;
+	max-width: min(620px, 70vw);
+	margin-left: 14px;
+	overflow: hidden;
 	border-radius: 3px;
 	padding: 1px 5px;
 	font-style: normal;
 	font-weight: 500;
+	line-height: 20px;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 	opacity: 0.95;
+	pointer-events: none;
 }
 
 .monaco-editor .error-lens-message-error {

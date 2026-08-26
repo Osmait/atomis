@@ -125,6 +125,7 @@ export function App(): React.JSX.Element {
 	const errorLensDecorationsRef = useRef<
 		MonacoApi.editor.IEditorDecorationsCollection | undefined
 	>(undefined);
+	const errorLensWidgetsRef = useRef<MonacoApi.editor.IContentWidget[]>([]);
 	const versionRef = useRef(1);
 	const sourceRef = useRef("");
 	const settingsRef = useRef(settings);
@@ -446,6 +447,10 @@ export function App(): React.JSX.Element {
 			byLine.set(diagnostic.line, lineDiagnostics);
 		}
 
+		for (const widget of errorLensWidgetsRef.current)
+			editor.removeContentWidget(widget);
+		const nextWidgets: MonacoApi.editor.IContentWidget[] = [];
+
 		decorations.set(
 			[...byLine.entries()].map(([line, lineDiagnostics]) => {
 				const primary = [...lineDiagnostics].sort(
@@ -466,6 +471,22 @@ export function App(): React.JSX.Element {
 							? "#cca700"
 							: "#3794ff";
 				const endColumn = model.getLineMaxColumn(line);
+				const messageNode = document.createElement("span");
+				messageNode.className = `error-lens-message error-lens-message-${primary.severity}`;
+				messageNode.textContent = `${primary.severity === "error" ? "×" : "△"} ${message}`;
+				messageNode.title = `${primary.owner} — ${message}`;
+				const widget: MonacoApi.editor.IContentWidget = {
+					getId: () => `ziglive.errorLens.${line}`,
+					getDomNode: () => messageNode,
+					getPosition: () => ({
+						position: { lineNumber: line, column: endColumn },
+						preference: [
+							monaco.editor.ContentWidgetPositionPreference.EXACT,
+						],
+					}),
+				};
+				nextWidgets.push(widget);
+				editor.addContentWidget(widget);
 				return {
 					range: {
 						startLineNumber: line,
@@ -480,12 +501,6 @@ export function App(): React.JSX.Element {
 							monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
 						className: `error-lens-line error-lens-${primary.severity}`,
 						linesDecorationsClassName: `error-lens-glyph error-lens-glyph-${primary.severity}`,
-						after: {
-							content: `  ${primary.severity === "error" ? "×" : "△"} ${message}`,
-							inlineClassName: `error-lens-message error-lens-message-${primary.severity}`,
-							inlineClassNameAffectsLetterSpacing: true,
-							cursorStops: monaco.editor.InjectedTextCursorStops.None,
-						},
 						hoverMessage: { value: `**${primary.owner}** — ${message}` },
 						overviewRuler: {
 							color,
@@ -495,6 +510,10 @@ export function App(): React.JSX.Element {
 				};
 			}),
 		);
+		errorLensWidgetsRef.current = nextWidgets;
+		return () => {
+			for (const widget of nextWidgets) editor.removeContentWidget(widget);
+		};
 	}, [allProblems]);
 
 	useEffect(
