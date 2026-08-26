@@ -8,6 +8,7 @@ import "monaco-editor/editor/contrib/format/browser/formatActions";
 import "monaco-editor/editor/contrib/gotoSymbol/browser/link/goToDefinitionAtPosition";
 import "monaco-editor/editor/contrib/hover/browser/hoverContribution";
 import "monaco-editor/editor/contrib/inlayHints/browser/inlayHintsContribution";
+import "monaco-editor/editor/contrib/linesOperations/browser/linesOperations";
 import "monaco-editor/editor/contrib/semanticTokens/browser/documentSemanticTokens";
 import "monaco-editor/editor/contrib/semanticTokens/browser/viewportSemanticTokens";
 import "monaco-editor/editor/contrib/suggest/browser/suggestController";

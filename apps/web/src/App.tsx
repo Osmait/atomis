@@ -38,11 +38,7 @@ interface OwnedDiagnostic extends AppDiagnostic {
 
 interface VimModeWithCommands {
 	Vim: {
-		defineEx: (
-			name: string,
-			prefix: string,
-			callback: () => void,
-		) => void;
+		defineEx: (name: string, prefix: string, callback: () => void) => void;
 	};
 }
 
@@ -709,16 +705,26 @@ export function App(): React.JSX.Element {
 						</label>
 					</div>
 					<div className={vimEnabled ? "shortcut-help" : "shortcut-help dim"}>
-						<span><b>i</b> insert</span>
-						<span><b>:w</b> compilar</span>
-						<span><b>Esc</b> normal</span>
-						<span><b>⌘↵</b> ejecutar</span>
+						<span>
+							<b>i</b> insert
+						</span>
+						<span>
+							<b>:w</b> compilar
+						</span>
+						<span>
+							<b>Esc</b> normal
+						</span>
+						<span>
+							<b>⌘↵</b> ejecutar
+						</span>
 					</div>
 				</aside>
 
 				<section className="editor-pane">
 					<header className="pane-header editor-header">
-						<span><b>src/main.zig</b> › main()</span>
+						<span>
+							<b>src/main.zig</b> › main()
+						</span>
 					</header>
 					<div className="editor-wrap">
 						<Editor
@@ -751,7 +757,9 @@ export function App(): React.JSX.Element {
 
 				<section className="side-panel">
 					<header className="pane-header terminal-header">
-						<span><b>[Terminal]</b> term://zig-run</span>
+						<span>
+							<b>[Terminal]</b> term://zig-run
+						</span>
 						<strong>
 							{result?.exitCode === null || result?.exitCode === undefined
 								? RUN_STATE_LABELS[runState]
@@ -886,7 +894,9 @@ export function App(): React.JSX.Element {
 				<span className="status-path">src/main.zig</span>
 				<span className="status-spacer" />
 				<span>
-					{result ? `${result.compilationMs.toFixed(0)}ms · ${result.executionMs.toFixed(0)}ms` : "—"}
+					{result
+						? `${result.compilationMs.toFixed(0)}ms · ${result.executionMs.toFixed(0)}ms`
+						: "—"}
 				</span>
 				<span className="encoding">zig · utf-8 · unix</span>
 				<strong className="cursor-status">

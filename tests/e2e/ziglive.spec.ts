@@ -56,7 +56,9 @@ pub fn main() void {
 	).toBeVisible();
 });
 
-test("Vim mode switches between normal and insert modes", async ({ page }) => {
+test("Vim mode switches modes and opens a line", async ({ page }) => {
+	const pageErrors: string[] = [];
+	page.on("pageerror", (error) => pageErrors.push(error.message));
 	await openClean(page);
 	await page.getByLabel("Vim Mode").check();
 	const editorInput = page.getByRole("textbox", { name: "Editor content" });
@@ -65,6 +67,12 @@ test("Vim mode switches between normal and insert modes", async ({ page }) => {
 	await expect(page.locator(".vim-status")).toContainText(/INSERT/i);
 	await page.keyboard.press("Escape");
 	await expect(page.locator(".vim-status")).toContainText(/NORMAL/i);
+	await page.keyboard.press("o");
+	await expect(page.locator(".vim-status")).toContainText(/INSERT/i);
+	await page.keyboard.type("// vim");
+	await page.keyboard.press("Escape");
+	await expect(page.locator(".vim-status")).toContainText(/NORMAL/i);
+	expect(pageErrors).toEqual([]);
 });
 
 test("ZLS completion opens Monaco suggestions with real std symbols", async ({
@@ -88,13 +96,15 @@ test("compile errors do not become current and repair reruns", async ({
 }) => {
 	await openClean(page);
 	await expect(page.locator(".state-succeeded")).toBeVisible();
-	await replaceEditor(page, 'pub fn main() void { const x: i32 = "wrong"; }\n');
+	await replaceEditor(
+		page,
+		'const std = @import("std");\npub fn main() void {\n    std.debug.print("{hello}", .{});\n}\n',
+	);
 	await expect(page.locator(".state-compile_error")).toBeVisible();
 	await expect(page.locator(".error-lens-message-error").first()).toBeVisible();
 	await page.getByRole("button", { name: /Problems/ }).click();
-	await expect(
-		page.getByText(/expected type|cannot coerce|error/i).first(),
-	).toBeVisible();
+	await expect(page.getByText(/too few arguments/i).first()).toBeVisible();
+	await expect(page.getByText("zig-compiler · Ln 3, Col 20")).toBeVisible();
 
 	await replaceEditor(page, "pub fn main() void { const x: i32 = 7; }\n");
 	await expect(page.locator(".state-succeeded")).toBeVisible();
@@ -128,8 +138,10 @@ pub fn main() void {
 	);
 	await expect(page.locator(".state-runtime_error")).toBeVisible();
 	await page.getByRole("button", { name: "Output" }).click();
-	await expect(page.getByText(/before panic/)).toBeVisible();
-	await expect(page.getByText(/panic: expected panic/).first()).toBeVisible();
+	const terminal = page.locator(".panel-content");
+	await expect(terminal.getByText(/before panic/)).toBeVisible();
+	await expect(terminal.getByText(/panic:/).first()).toBeVisible();
+	await expect(terminal.getByText(/expected panic/).first()).toBeVisible();
 	await page.getByRole("button", { name: /Problems/ }).click();
 	await expect(
 		page.getByText(/Program panicked|abnormally/).first(),

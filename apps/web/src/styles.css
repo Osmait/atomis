@@ -340,7 +340,11 @@ button:disabled {
 	min-height: 0;
 	overflow: auto;
 	padding: 9px 12px;
-	font: 11px/1.65 "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+	font:
+		11px / 1.65 "JetBrains Mono",
+		"SFMono-Regular",
+		Consolas,
+		monospace;
 }
 
 .panel-tabs {

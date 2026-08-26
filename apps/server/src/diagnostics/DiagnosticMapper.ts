@@ -2,26 +2,77 @@ import type { AppDiagnostic, ProbeDescriptor } from "@ziglive/protocol";
 
 const COMPILER_LOCATION = /^(.*\.zig):(\d+):(\d+): (error|warning|note): (.+)$/;
 
+function generatedPathAliases(generatedPath: string): string[] {
+	const normalized = generatedPath.replaceAll("\\", "/");
+	const relative = normalized.split("/").slice(-2).join("/");
+	return relative === normalized ? [normalized] : [normalized, relative];
+}
+
+function isGeneratedPath(path: string, generatedPath: string): boolean {
+	const normalized = path.replaceAll("\\", "/");
+	return generatedPathAliases(generatedPath).includes(normalized);
+}
+
+function generatedReference(
+	line: string,
+	generatedPath: string,
+): { line: number; column: number } | undefined {
+	for (const alias of generatedPathAliases(generatedPath)) {
+		const marker = `${alias}:`;
+		const markerIndex = line.indexOf(marker);
+		if (markerIndex < 0) continue;
+		const location = /^(\d+):(\d+)(?:\s|$)/.exec(
+			line.slice(markerIndex + marker.length),
+		);
+		if (!location?.[1] || !location[2]) continue;
+		return { line: Number(location[1]), column: Number(location[2]) };
+	}
+	return undefined;
+}
+
+function findGeneratedReference(
+	lines: string[],
+	startIndex: number,
+	generatedPath: string,
+): { line: number; column: number } | undefined {
+	for (let index = startIndex; index < lines.length; index++) {
+		const line = lines[index];
+		if (line === undefined) return undefined;
+		const reference = generatedReference(line, generatedPath);
+		if (reference) return reference;
+		const diagnostic = COMPILER_LOCATION.exec(line);
+		if (diagnostic?.[4] === "error" || diagnostic?.[4] === "warning")
+			return undefined;
+	}
+	return undefined;
+}
+
+function compilerSeverity(level: string): AppDiagnostic["severity"] {
+	if (level === "error") return "error";
+	if (level === "warning") return "warning";
+	return "information";
+}
+
 export function parseCompilerDiagnostics(
 	stderr: string,
 	generatedPath: string,
 ): AppDiagnostic[] {
 	const diagnostics: AppDiagnostic[] = [];
-	for (const line of stderr.split(/\r?\n/)) {
+	const lines = stderr.split(/\r?\n/);
+	for (const [index, line] of lines.entries()) {
 		const match = COMPILER_LOCATION.exec(line);
 		if (!match) continue;
 		const [, path, lineText, columnText, level, message] = match;
 		if (!path || !lineText || !columnText || !level || !message) continue;
+		const generated = isGeneratedPath(path, generatedPath);
+		const reference = generated
+			? undefined
+			: findGeneratedReference(lines, index + 1, generatedPath);
 		diagnostics.push({
-			message: path === generatedPath ? message : `${message} (${path})`,
-			severity:
-				level === "error"
-					? "error"
-					: level === "warning"
-						? "warning"
-						: "information",
-			line: Number(lineText),
-			column: Number(columnText),
+			message: generated ? message : `${message} (${path})`,
+			severity: compilerSeverity(level),
+			line: reference?.line ?? Number(lineText),
+			column: reference?.column ?? Number(columnText),
 			source: "zig",
 		});
 	}
@@ -53,11 +104,13 @@ export function filterObservedUnused(
 	probes: ProbeDescriptor[],
 ): LspDiagnostic[] {
 	return diagnostics.filter((diagnostic) => {
-		const messageMatches =
-			typeof diagnostic.code !== "undefined"
-				? UNUSED_CODES.has(diagnostic.code)
-				: typeof diagnostic.message === "string" &&
-					EXACT_UNUSED_MESSAGES.has(diagnostic.message.trim().toLowerCase());
+		let messageMatches = false;
+		if (diagnostic.code !== undefined)
+			messageMatches = UNUSED_CODES.has(diagnostic.code);
+		else if (typeof diagnostic.message === "string")
+			messageMatches = EXACT_UNUSED_MESSAGES.has(
+				diagnostic.message.trim().toLowerCase(),
+			);
 		if (!messageMatches) return true;
 		const start = diagnostic.range?.start;
 		if (typeof start?.line !== "number" || typeof start.character !== "number")

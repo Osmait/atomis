@@ -31,6 +31,34 @@ describe("diagnostics", () => {
 			expect.objectContaining({ line: 2, column: 7, message: "bad" }),
 		]);
 	});
+	it("maps standard-library errors to the generated call-site trace", () => {
+		const generatedPath = "/tmp/ziglive/session/generated/main.zig";
+		const stderr = `/usr/lib/zig/std/Io/Writer.zig:717:13: error: too few arguments
+            @compileError("too few arguments");
+referenced by:
+    print__anon_32842: /usr/lib/zig/std/debug.zig:311:39
+    main: generated/main.zig:6:24
+    5 reference(s) hidden
+`;
+		expect(parseCompilerDiagnostics(stderr, generatedPath)).toEqual([
+			expect.objectContaining({
+				line: 6,
+				column: 24,
+				message: "too few arguments (/usr/lib/zig/std/Io/Writer.zig)",
+			}),
+		]);
+	});
+
+	it("does not map a dependency error onto a later unrelated diagnostic", () => {
+		const generatedPath = "/tmp/ziglive/session/generated/main.zig";
+		const stderr = `/usr/lib/zig/std/Io/Writer.zig:717:13: error: too few arguments
+${generatedPath}:9:3: error: unrelated
+`;
+		expect(parseCompilerDiagnostics(stderr, generatedPath)[0]).toEqual(
+			expect.objectContaining({ line: 717, column: 13 }),
+		);
+	});
+
 	it("filters exact observed unused diagnostics only", () => {
 		const diagnostics = [
 			{
