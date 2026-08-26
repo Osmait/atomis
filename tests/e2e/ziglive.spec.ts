@@ -75,7 +75,7 @@ async function replaceEditor(
 	await page
 		.context()
 		.grantPermissions(["clipboard-read", "clipboard-write"], {
-			origin: "http://127.0.0.1:5173",
+			origin: process.env.ZIGLIVE_BASE_URL ?? "http://127.0.0.1:5173",
 		});
 	await page.evaluate(
 		async (text) => await navigator.clipboard.writeText(text),
@@ -184,7 +184,7 @@ pub fn main(init: std.process.Init) !void {
 test("Vim mode keeps native clipboard shortcuts", async ({ page, context }) => {
 	const pageErrors: string[] = [];
 	await context.grantPermissions(["clipboard-read", "clipboard-write"], {
-		origin: "http://127.0.0.1:5173",
+		origin: process.env.ZIGLIVE_BASE_URL ?? "http://127.0.0.1:5173",
 	});
 	page.on("pageerror", (error) => pageErrors.push(error.message));
 	await openClean(page);
