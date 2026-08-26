@@ -2246,6 +2246,9 @@ export function App(): React.JSX.Element {
 									glyphMargin: true,
 									inlineSuggest: { enabled: true },
 									lineHeight: (APP_SIZES[appearance.sizeIndex] ?? 13) + 11,
+									suggestFontSize: APP_SIZES[appearance.sizeIndex] ?? 13,
+									suggestLineHeight:
+										(APP_SIZES[appearance.sizeIndex] ?? 13) + 11,
 									minimap: { enabled: false },
 									overviewRulerBorder: false,
 									padding: { top: 14 },
