@@ -142,6 +142,42 @@ export const zigMonarch: Monaco.languages.IMonarchLanguage = {
 };
 
 export function registerZig(monaco: typeof Monaco): void {
+	monaco.editor.defineTheme("ziglive-dark", {
+		base: "vs-dark",
+		inherit: true,
+		rules: [
+			{ token: "keyword", foreground: "ff6b9d", fontStyle: "bold" },
+			{ token: "type", foreground: "70b7ff" },
+			{ token: "predefined", foreground: "b692f6" },
+			{ token: "string", foreground: "8ed76f" },
+			{ token: "string.escape", foreground: "f5b85c" },
+			{ token: "number", foreground: "79c0ff" },
+			{ token: "comment", foreground: "536176", fontStyle: "italic" },
+			{ token: "comment.doc", foreground: "66758a", fontStyle: "italic" },
+			{ token: "operator", foreground: "a7b5c8" },
+		],
+		colors: {
+			"editor.background": "#0a0e13",
+			"editor.foreground": "#cbd5e1",
+			"editorCursor.foreground": "#f59e0b",
+			"editorLineNumber.foreground": "#354154",
+			"editorLineNumber.activeForeground": "#738096",
+			"editor.selectionBackground": "#26364a",
+			"editor.inactiveSelectionBackground": "#1b2838",
+			"editorIndentGuide.background1": "#19212b",
+			"editorIndentGuide.activeBackground1": "#344154",
+			"editorWhitespace.foreground": "#25303c",
+			"editorError.foreground": "#f14c4c",
+			"editorWarning.foreground": "#cca700",
+			"editorInfo.foreground": "#3794ff",
+			"editorOverviewRuler.border": "#00000000",
+			"editorSuggestWidget.background": "#111820",
+			"editorSuggestWidget.border": "#2a3542",
+			"editorSuggestWidget.selectedBackground": "#263342",
+			"editorHoverWidget.background": "#111820",
+			"editorHoverWidget.border": "#2a3542",
+		},
+	});
 	monaco.languages.register({
 		id: "zig",
 		extensions: [".zig"],

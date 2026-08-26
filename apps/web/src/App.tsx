@@ -26,6 +26,30 @@ interface Settings {
 	manualProbeIds: string[];
 }
 
+interface OwnedDiagnostic extends AppDiagnostic {
+	owner: string;
+}
+
+const RUN_STATE_LABELS: Record<RunState, string> = {
+	idle: "listo",
+	debouncing: "esperando",
+	instrumenting: "inspeccionando",
+	compiling: "compilando",
+	running: "ejecutando",
+	succeeded: "listo",
+	compile_error: "error",
+	runtime_error: "error",
+	timed_out: "timeout",
+	cancelled: "cancelado",
+};
+
+const SEVERITY_RANK: Record<AppDiagnostic["severity"], number> = {
+	error: 4,
+	warning: 3,
+	information: 2,
+	hint: 1,
+};
+
 const DEFAULT_SETTINGS: Settings = {
 	autoRun: true,
 	autoInspect: true,
@@ -80,7 +104,7 @@ export function App(): React.JSX.Element {
 	const [values, setValues] = useState<Map<string, InlineValue>>(new Map());
 	const [stale, setStale] = useState(false);
 	const [output, setOutput] = useState<
-		{ stream: "stdout" | "stderr"; chunk: string }[]
+		{ stream: "stdout" | "stderr"; chunk: string; receivedAt: number }[]
 	>([]);
 	const [diagnostics, setDiagnostics] = useState<
 		Record<string, AppDiagnostic[]>
@@ -88,6 +112,7 @@ export function App(): React.JSX.Element {
 	const [result, setResult] = useState<RunResult>();
 	const [tab, setTab] = useState<"output" | "problems" | "runtime">("output");
 	const [capabilities, setCapabilities] = useState<Record<string, unknown>>({});
+	const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 });
 	const editorRef = useRef<MonacoApi.editor.IStandaloneCodeEditor | undefined>(
 		undefined,
 	);
@@ -97,10 +122,24 @@ export function App(): React.JSX.Element {
 	const decorationsRef = useRef<
 		MonacoApi.editor.IEditorDecorationsCollection | undefined
 	>(undefined);
+	const errorLensDecorationsRef = useRef<
+		MonacoApi.editor.IEditorDecorationsCollection | undefined
+	>(undefined);
 	const versionRef = useRef(1);
 	const sourceRef = useRef("");
 	const settingsRef = useRef(settings);
 	const catalogRef = useRef<ProbeDescriptor[]>([]);
+	const allProblems = useMemo<OwnedDiagnostic[]>(() => {
+		const seen = new Set<string>();
+		return Object.entries(diagnostics).flatMap(([owner, items]) =>
+			items.flatMap((item) => {
+				const key = `${item.severity}:${item.line}:${item.column}:${item.message}`;
+				if (seen.has(key)) return [];
+				seen.add(key);
+				return [{ owner, ...item }];
+			}),
+		);
+	}, [diagnostics]);
 
 	useEffect(() => {
 		void fetch("/api/sessions", {
@@ -171,7 +210,10 @@ export function App(): React.JSX.Element {
 			setStale(false);
 		} else if (event.type === "output")
 			setOutput((previous) =>
-				[...previous, { stream: event.stream, chunk: event.chunk }].slice(-500),
+				[
+					...previous,
+					{ stream: event.stream, chunk: event.chunk, receivedAt: performance.now() },
+				].slice(-500),
 			);
 		else if (event.type === "diagnostics") {
 			setDiagnostics((previous) => ({
@@ -207,6 +249,17 @@ export function App(): React.JSX.Element {
 			if (!model) return;
 			sourceRef.current = model.getValue();
 			decorationsRef.current = editor.createDecorationsCollection();
+			errorLensDecorationsRef.current = editor.createDecorationsCollection();
+			setCursorPosition({
+				line: editor.getPosition()?.lineNumber ?? 1,
+				column: editor.getPosition()?.column ?? 1,
+			});
+			editor.onDidChangeCursorPosition(({ position: nextPosition }) =>
+				setCursorPosition({
+					line: nextPosition.lineNumber,
+					column: nextPosition.column,
+				}),
+			);
 
 			const runtime = new WebSocket(websocketUrl("/ws/runtime", session));
 			runtimeRef.current = runtime;
@@ -265,6 +318,9 @@ export function App(): React.JSX.Element {
 											: "error",
 							line: item.range.start.line + 1,
 							column: item.range.start.character + 1,
+							endLine: item.range.end.line + 1,
+							endColumn: item.range.end.character + 1,
+							...(item.code !== undefined ? { code: item.code } : {}),
 							source: item.source ?? "zls",
 						})),
 					}));
@@ -363,6 +419,75 @@ export function App(): React.JSX.Element {
 		decorations.set(descriptors);
 	}, [catalog, settings.manualProbeIds, stale, values]);
 
+	useEffect(() => {
+		const editor = editorRef.current;
+		const decorations = errorLensDecorationsRef.current;
+		const monaco = monacoRef.current;
+		const model = editor?.getModel();
+		if (!editor || !decorations || !monaco || !model) return;
+
+		const byLine = new Map<number, OwnedDiagnostic[]>();
+		for (const diagnostic of allProblems) {
+			if (diagnostic.line < 1 || diagnostic.line > model.getLineCount()) continue;
+			const lineDiagnostics = byLine.get(diagnostic.line) ?? [];
+			if (
+				!lineDiagnostics.some(
+					(item) =>
+						item.message === diagnostic.message &&
+						item.severity === diagnostic.severity,
+				)
+			)
+				lineDiagnostics.push(diagnostic);
+			byLine.set(diagnostic.line, lineDiagnostics);
+		}
+
+		decorations.set(
+			[...byLine.entries()].map(([line, lineDiagnostics]) => {
+				const primary = [...lineDiagnostics].sort(
+					(left, right) =>
+						SEVERITY_RANK[right.severity] - SEVERITY_RANK[left.severity],
+				)[0]!;
+				const message = lineDiagnostics
+					.map((item) =>
+						item.code === undefined
+							? item.message
+							: `${String(item.code)}: ${item.message}`,
+					)
+					.join("  •  ");
+				const color =
+					primary.severity === "error"
+						? "#f14c4c"
+						: primary.severity === "warning"
+							? "#cca700"
+							: "#3794ff";
+				const endColumn = model.getLineMaxColumn(line);
+				return {
+					range: {
+						startLineNumber: line,
+						startColumn: Math.max(1, endColumn - 1),
+						endLineNumber: line,
+						endColumn,
+					} as MonacoApi.Range,
+					options: {
+						isWholeLine: true,
+						className: `error-lens-line error-lens-${primary.severity}`,
+						linesDecorationsClassName: `error-lens-glyph error-lens-glyph-${primary.severity}`,
+						after: {
+							content: `  ${primary.severity === "error" ? "×" : "△"} ${message}`,
+							inlineClassName: `error-lens-message error-lens-message-${primary.severity}`,
+							inlineClassNameAffectsLetterSpacing: true,
+						},
+						hoverMessage: { value: `**${primary.owner}** — ${message}` },
+						overviewRuler: {
+							color,
+							position: monaco.editor.OverviewRulerLane.Right,
+						},
+					},
+				};
+			}),
+		);
+	}, [allProblems]);
+
 	useEffect(
 		() => () => {
 			lspRef.current?.dispose();
@@ -413,9 +538,6 @@ export function App(): React.JSX.Element {
 				<p>Running environment doctor…</p>
 			</main>
 		);
-	const allProblems = Object.entries(diagnostics).flatMap(([owner, items]) =>
-		items.map((item) => ({ owner, ...item })),
-	);
 	const busy = ["debouncing", "instrumenting", "compiling", "running"].includes(
 		runState,
 	);
@@ -423,14 +545,23 @@ export function App(): React.JSX.Element {
 	return (
 		<main className="app-shell">
 			<header className="toolbar">
-				<strong>ZigLive</strong>
-				<button onClick={run} disabled={Boolean(session.degraded.zig)}>
-					▶ Run
+				<div className="brand">
+					<span className="brand-mark">Z</span>
+					<strong>ZigLive</strong>
+				</div>
+				<button
+					className="run-button"
+					onClick={run}
+					disabled={Boolean(session.degraded.zig)}
+					title="Ejecutar (Ctrl/Cmd + Enter)"
+				>
+					<span>▶</span> Run <kbd>⌘↵</kbd>
 				</button>
-				<button onClick={stop} disabled={!busy}>
-					■ Stop
+				<button className="stop-button" onClick={stop} disabled={!busy}>
+					<span>■</span> Stop
 				</button>
-				<label>
+				<span className="toolbar-divider" />
+				<label className="toggle-control">
 					<input
 						type="checkbox"
 						checked={settings.autoRun}
@@ -438,10 +569,10 @@ export function App(): React.JSX.Element {
 						onChange={(event) =>
 							sendSettings({ ...settings, autoRun: event.target.checked })
 						}
-					/>{" "}
+					/>
 					Auto Run
 				</label>
-				<label>
+				<label className="toggle-control">
 					<input
 						type="checkbox"
 						checked={settings.autoInspect}
@@ -449,116 +580,184 @@ export function App(): React.JSX.Element {
 							sendSettings({ ...settings, autoInspect: event.target.checked });
 							setTimeout(run, 0);
 						}}
-					/>{" "}
+					/>
 					Auto Inspect
 				</label>
-				<span className={`state state-${runState}`}>{runState}</span>
-				<span>
-					compile {result ? `${result.compilationMs.toFixed(0)} ms` : "—"}
+				<div className="toolbar-spacer" />
+				<span className={`state state-${runState}`}>
+					<i /> {RUN_STATE_LABELS[runState]}
 				</span>
-				<span>run {result ? `${result.executionMs.toFixed(0)} ms` : "—"}</span>
-				<span>
-					Zig {session.zigVersion} · ZLS {session.zlsVersion}
-				</span>
-			</header>
-			<aside className="warning">
-				El código se ejecuta localmente con tus permisos. Auto Run está{" "}
-				{settings.autoRun ? "activo" : "pausado"}.{" "}
-				{Object.values(session.degraded).join(" · ")}
-				{Object.keys(session.degraded).length
-					? " · Ejecuta pnpm run doctor."
-					: ""}
-			</aside>
-			<section className="editor-wrap">
-				<Editor
-					height="100%"
-					path={session.documentUri}
-					defaultLanguage="zig"
-					defaultValue={visibleSource}
-					theme="vs-dark"
-					beforeMount={registerZig}
-					onMount={handleMount}
-					onChange={onChange}
-					options={{
-						automaticLayout: true,
-						glyphMargin: true,
-						minimap: { enabled: false },
-						fontSize: 14,
-						inlineSuggest: { enabled: true },
-					}}
-				/>
-			</section>
-			<section className="bottom-panel">
-				<nav>
-					<button
-						className={tab === "output" ? "active" : ""}
-						onClick={() => setTab("output")}
-					>
-						Output
-					</button>
-					<button
-						className={tab === "problems" ? "active" : ""}
-						onClick={() => setTab("problems")}
-					>
-						Problems ({allProblems.length})
-					</button>
-					<button
-						className={tab === "runtime" ? "active" : ""}
-						onClick={() => setTab("runtime")}
-					>
-						Runtime
-					</button>
-				</nav>
-				<div className="panel-content">
-					{tab === "output" && (
-						<pre>
-							{output.length
-								? output.map((entry, index) => (
-										<span key={index} className={entry.stream}>
-											{entry.chunk}
-										</span>
-									))
-								: "No output yet."}
-						</pre>
-					)}
-					{tab === "problems" && (
-						<ul>
-							{allProblems.length ? (
-								allProblems.map((item, index) => (
-									<li key={`${item.owner}-${index}`}>
-										<b>{item.owner}</b> · {item.severity} · {item.line}:
-										{item.column} — {item.message}
-									</li>
-								))
-							) : (
-								<li>No problems.</li>
-							)}
-						</ul>
-					)}
-					{tab === "runtime" && (
-						<div className="runtime-grid">
-							<span>Status</span>
-							<b>{runState}</b>
-							<span>Exit code</span>
-							<b>{result?.exitCode ?? "—"}</b>
-							<span>Signal</span>
-							<b>{result?.signal ?? "—"}</b>
-							<span>Timeout</span>
-							<b>{result?.timedOut ? "yes" : "no"}</b>
-							<span>Probes / values</span>
-							<b>
-								{catalog.length} / {values.size}
-							</b>
-							<span>ZLS capabilities</span>
-							<b>
-								{Object.keys(capabilities)
-									.filter((key) => capabilities[key])
-									.join(", ") || status}
-							</b>
-						</div>
-					)}
+				<div className="metrics">
+					<span>
+						compile {result ? `${result.compilationMs.toFixed(0)}ms` : "—"}
+					</span>
+					<b>/</b>
+					<span>run {result ? `${result.executionMs.toFixed(0)}ms` : "—"}</span>
+					<b>·</b>
+					<span>zig {session.zigVersion}</span>
 				</div>
-			</section>
+			</header>
+
+			<div className="workspace">
+				<section className="editor-pane">
+					<header className="pane-header editor-header">
+						<span className="file-name">
+							<i>◆</i> main.zig <b className={stale ? "dirty active" : "dirty"} />
+						</span>
+						<span>
+							Ln {cursorPosition.line}, Col {cursorPosition.column}
+						</span>
+					</header>
+					<div className="editor-wrap">
+						<Editor
+							height="100%"
+							path={session.documentUri}
+							defaultLanguage="zig"
+							defaultValue={visibleSource}
+							theme="ziglive-dark"
+							beforeMount={registerZig}
+							onMount={handleMount}
+							onChange={onChange}
+							options={{
+								automaticLayout: true,
+								fontFamily:
+									'"JetBrains Mono", "SFMono-Regular", Consolas, monospace',
+								fontLigatures: true,
+								fontSize: 13,
+								glyphMargin: true,
+								inlineSuggest: { enabled: true },
+								lineHeight: 22,
+								minimap: { enabled: false },
+								overviewRulerBorder: false,
+								padding: { top: 11 },
+								renderLineHighlight: "none",
+								scrollBeyondLastLine: false,
+							}}
+						/>
+					</div>
+				</section>
+
+				<section className="side-panel">
+					<nav className="pane-header panel-tabs">
+						<div>
+							<button
+								aria-label="Output"
+								className={tab === "output" ? "active" : ""}
+								onClick={() => setTab("output")}
+							>
+								Salida
+							</button>
+							<button
+								aria-label={`Problems (${allProblems.length})`}
+								className={tab === "problems" ? "active" : ""}
+								onClick={() => setTab("problems")}
+							>
+								Problemas ({allProblems.length})
+							</button>
+							<button
+								className={tab === "runtime" ? "active" : ""}
+								onClick={() => setTab("runtime")}
+							>
+								Runtime
+							</button>
+						</div>
+						{tab === "output" && (
+							<button className="clear-button" onClick={() => setOutput([])}>
+								Limpiar
+							</button>
+						)}
+					</nav>
+
+					<div className="panel-content">
+						{tab === "output" && (
+							<div className="output-list">
+								{output.length ? (
+									output.map((entry, index) => (
+										<div className="output-entry" key={index}>
+											<time>
+												{(
+													(entry.receivedAt -
+														(output[0]?.receivedAt ?? entry.receivedAt)) /
+													1000
+												).toFixed(3)}
+												s
+											</time>
+											<span className="output-chevron">›</span>
+											<pre className={entry.stream}>{entry.chunk}</pre>
+										</div>
+									))
+								) : (
+									<p className="empty-state">La salida aparecerá aquí.</p>
+								)}
+							</div>
+						)}
+						{tab === "problems" && (
+							<ul className="problems-list">
+								{allProblems.length ? (
+									allProblems.map((item, index) => (
+										<li
+											className={`problem problem-${item.severity}`}
+											key={`${item.owner}-${index}`}
+										>
+											<button
+												onClick={() => {
+													editorRef.current?.setPosition({
+														lineNumber: item.line,
+														column: item.column,
+													});
+													editorRef.current?.revealLineInCenter(item.line);
+													editorRef.current?.focus();
+												}}
+											>
+												<i>{item.severity === "error" ? "×" : "△"}</i>
+												<span>{item.message}</span>
+												<small>
+													{item.owner} · Ln {item.line}, Col {item.column}
+												</small>
+											</button>
+										</li>
+									))
+								) : (
+									<li className="empty-state">Sin problemas.</li>
+								)}
+							</ul>
+						)}
+						{tab === "runtime" && (
+							<div className="runtime-grid">
+								<span>Estado</span>
+								<b>{RUN_STATE_LABELS[runState]}</b>
+								<span>Código de salida</span>
+								<b>{result?.exitCode ?? "—"}</b>
+								<span>Señal</span>
+								<b>{result?.signal ?? "—"}</b>
+								<span>Timeout</span>
+								<b>{result?.timedOut ? "sí" : "no"}</b>
+								<span>Probes / valores</span>
+								<b>
+									{catalog.length} / {values.size}
+								</b>
+								<span>ZLS</span>
+								<b className="capabilities">
+									{Object.keys(capabilities)
+										.filter((key) => capabilities[key])
+										.join(", ") || status}
+								</b>
+							</div>
+						)}
+					</div>
+
+					<footer className="status-bar">
+						<span>
+							Auto Run {settings.autoRun ? "activo" : "pausado"} · se ejecuta
+							 localmente
+							{Object.keys(session.degraded).length
+								? ` · ${Object.values(session.degraded).join(" · ")}`
+								: ""}
+						</span>
+						<span>local · zls {session.zlsVersion}</span>
+					</footer>
+				</section>
+			</div>
 		</main>
 	);
 }

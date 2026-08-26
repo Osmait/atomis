@@ -77,6 +77,7 @@ test("compile errors do not become current and repair reruns", async ({
 	await expect(page.locator(".state-succeeded")).toBeVisible();
 	await replaceEditor(page, 'pub fn main() void { const x: i32 = "wrong"; }\n');
 	await expect(page.locator(".state-compile_error")).toBeVisible();
+	await expect(page.locator(".error-lens-message-error").first()).toBeVisible();
 	await page.getByRole("button", { name: /Problems/ }).click();
 	await expect(
 		page.getByText(/expected type|cannot coerce|error/i).first(),
@@ -117,7 +118,7 @@ pub fn main() void {
 	await expect(page.getByText(/before panic/)).toBeVisible();
 	await expect(page.getByText(/panic: expected panic/).first()).toBeVisible();
 	await page.getByRole("button", { name: /Problems/ }).click();
-	await expect(page.getByText(/Program panicked|abnormally/)).toBeVisible();
+	await expect(page.getByText(/Program panicked|abnormally/).first()).toBeVisible();
 });
 
 test("infinite loop times out and Auto Run can be paused", async ({ page }) => {
