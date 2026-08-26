@@ -56,6 +56,62 @@ pub fn main() void {
 	).toBeVisible();
 });
 
+test("project tree supports imports, embedFile, and runtime input files", async ({
+	page,
+}) => {
+	await openClean(page);
+	page.once("dialog", (dialog) => dialog.accept("solver.zig"));
+	await page.getByTitle("Crear archivo").click();
+	await replaceEditor(
+		page,
+		'const std = @import("std");\npub fn answer() usize {\n    std.debug.print("solver module\\n", .{});\n    return @embedFile("input.txt").len;\n}\n',
+	);
+
+	page.once("dialog", (dialog) => dialog.accept("input.txt"));
+	await page.getByTitle("Crear archivo").click();
+	await replaceEditor(page, "abcd\n");
+
+	await page.getByRole("button", { name: "◆ main.zig" }).click();
+	await replaceEditor(
+		page,
+		`const std = @import("std");
+const solver = @import("solver.zig");
+pub fn main(init: std.process.Init) !void {
+    const data = try std.Io.Dir.cwd().readFileAlloc(init.io, "input.txt", init.arena.allocator(), .limited(1024));
+    std.debug.print("embed {d} runtime {d}\\n", .{ solver.answer(), data.len });
+}
+`,
+	);
+	await expect(page.locator(".state-succeeded")).toBeVisible();
+	await expect(page.locator(".panel-content")).toContainText(
+		"embed 6 runtime 6",
+	);
+	const moduleLog = page
+		.locator(".output-entry.has-source")
+		.filter({ hasText: "solver module" });
+	await expect(moduleLog).toHaveAttribute(
+		"title",
+		/Generado por src\/solver\.zig:/,
+	);
+	await moduleLog.click();
+	await expect(page.locator(".editor-header")).toContainText("src/solver.zig");
+	await expect(page.locator(".log-source-line")).toBeVisible();
+
+	page.once("dialog", (dialog) => dialog.accept("notes.tmp"));
+	await page.getByTitle("Crear archivo").click();
+	await replaceEditor(page, "temporary");
+	page.once("dialog", (dialog) => dialog.accept("data/notes.txt"));
+	await page.getByTitle("Renombrar archivo").click();
+	await expect(
+		page.getByRole("button", { name: "◆ data/notes.txt" }),
+	).toBeVisible();
+	page.once("dialog", (dialog) => dialog.accept());
+	await page.getByTitle("Eliminar archivo").click();
+	await expect(
+		page.getByRole("button", { name: "◆ data/notes.txt" }),
+	).toHaveCount(0);
+});
+
 test("Vim mode keeps native clipboard shortcuts", async ({ page, context }) => {
 	const pageErrors: string[] = [];
 	await context.grantPermissions(["clipboard-read", "clipboard-write"], {

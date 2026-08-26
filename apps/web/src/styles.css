@@ -91,7 +91,12 @@ button:disabled {
 	gap: 7px;
 	min-width: 124px;
 	padding: 0 13px;
+	border-top: 0;
+	border-bottom: 0;
+	border-left: 0;
 	border-right: 1px solid var(--border);
+	background: transparent;
+	color: inherit;
 }
 
 .buffer-tab.active {
@@ -149,7 +154,7 @@ button:disabled {
 
 .navigator {
 	display: grid;
-	grid-template-rows: 35px minmax(0, 1fr) auto 108px;
+	grid-template-rows: 35px 28px minmax(0, 1fr) auto 108px;
 	border-right: 1px solid var(--border);
 	background: #050605;
 }
@@ -174,6 +179,26 @@ button:disabled {
 	letter-spacing: 0.05em;
 }
 
+.tree-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 3px;
+	padding: 3px 7px;
+	border-bottom: 1px solid #141814;
+}
+
+.tree-actions button {
+	width: 22px;
+	border: 0;
+	background: transparent;
+	color: #7f8a81;
+}
+
+.tree-actions button:hover:not(:disabled) {
+	background: #1a1d1a;
+	color: var(--green);
+}
+
 .file-tree {
 	padding: 9px 7px;
 	font-size: 11px;
@@ -191,9 +216,15 @@ button:disabled {
 }
 
 .tree-file {
+	display: block;
+	width: calc(100% - 19px);
 	margin-left: 19px;
+	border: 0;
 	padding-left: 10px;
+	background: transparent;
 	color: #88928a;
+	line-height: 23px;
+	text-align: left;
 }
 
 .tree-file.active {

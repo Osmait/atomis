@@ -92,6 +92,7 @@ export class LspClient {
 		{ resolve: (value: unknown) => void; reject: (reason: Error) => void }
 	>();
 	private readonly disposables: Monaco.IDisposable[] = [];
+	private readonly openedModels = new Map<string, Monaco.editor.ITextModel>();
 	private capabilities: Record<string, unknown> = {};
 
 	public constructor(
@@ -101,7 +102,10 @@ export class LspClient {
 		private readonly onCapabilities: (
 			capabilities: Record<string, unknown>,
 		) => void,
-		private readonly onDiagnostics: (diagnostics: LspDiagnostic[]) => void,
+		private readonly onDiagnostics: (
+			uri: string,
+			diagnostics: LspDiagnostic[],
+		) => void,
 		private readonly onStatus: (status: string) => void,
 	) {}
 
@@ -165,30 +169,40 @@ export class LspClient {
 		this.capabilities = result.capabilities;
 		this.onCapabilities(result.capabilities);
 		this.notify("initialized", {});
-		this.notify("textDocument/didOpen", {
-			textDocument: {
-				uri: this.model.uri.toString(),
-				languageId: "zig",
-				version: documentVersion,
-				text: this.model.getValue(),
-			},
-		});
+		this.open(this.model, documentVersion);
 		this.registerProviders();
 		this.onStatus("ZLS connected");
 	}
 
-	public change(version: number, source: string): void {
+	public open(model: Monaco.editor.ITextModel, version: number): void {
+		const uri = model.uri.toString();
+		if (this.openedModels.has(uri)) return;
+		this.openedModels.set(uri, model);
+		this.notify("textDocument/didOpen", {
+			textDocument: {
+				uri,
+				languageId: "zig",
+				version,
+				text: model.getValue(),
+			},
+		});
+	}
+
+	public change(
+		model: Monaco.editor.ITextModel,
+		version: number,
+		source: string,
+	): void {
+		this.open(model, version);
 		this.notify("textDocument/didChange", {
-			textDocument: { uri: this.model.uri.toString(), version },
+			textDocument: { uri: model.uri.toString(), version },
 			contentChanges: [{ text: source }],
 		});
 	}
 
-	public save(): void {
-		this.notify("textDocument/didSave", {
-			textDocument: { uri: this.model.uri.toString() },
-			text: this.model.getValue(),
-		});
+	public close(uri: string): void {
+		if (!this.openedModels.delete(uri)) return;
+		this.notify("textDocument/didClose", { textDocument: { uri } });
 	}
 
 	private registerProviders(): void {
@@ -207,12 +221,12 @@ export class LspClient {
 								).triggerCharacters,
 							}
 						: {}),
-					provideCompletionItems: async (_model, at) => {
+					provideCompletionItems: async (model, at) => {
 						let response: { items?: unknown[] } | unknown[] | null;
 						try {
 							response = await this.request<
 								{ items?: unknown[] } | unknown[] | null
-							>("textDocument/completion", this.documentPosition(at));
+							>("textDocument/completion", this.documentPosition(model, at));
 						} catch (error) {
 							this.onStatus(
 								`ZLS completion failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -268,11 +282,11 @@ export class LspClient {
 		if (capabilities.hoverProvider)
 			this.disposables.push(
 				this.monaco.languages.registerHoverProvider("zig", {
-					provideHover: async (_model, at) => {
+					provideHover: async (model, at) => {
 						const hover = await this.request<{
 							contents?: unknown;
 							range?: LspRange;
-						} | null>("textDocument/hover", this.documentPosition(at));
+						} | null>("textDocument/hover", this.documentPosition(model, at));
 						if (!hover) return null;
 						const raw = Array.isArray(hover.contents)
 							? hover.contents
@@ -297,10 +311,10 @@ export class LspClient {
 		if (capabilities.definitionProvider)
 			this.disposables.push(
 				this.monaco.languages.registerDefinitionProvider("zig", {
-					provideDefinition: async (_model, at) => {
+					provideDefinition: async (model, at) => {
 						const response = await this.request<Location | Location[] | null>(
 							"textDocument/definition",
-							this.documentPosition(at),
+							this.documentPosition(model, at),
 						);
 						if (!response) return [];
 						return (Array.isArray(response) ? response : [response]).map(
@@ -316,12 +330,12 @@ export class LspClient {
 		if (capabilities.documentFormattingProvider)
 			this.disposables.push(
 				this.monaco.languages.registerDocumentFormattingEditProvider("zig", {
-					provideDocumentFormattingEdits: async () =>
+					provideDocumentFormattingEdits: async (model) =>
 						this.textEdits(
 							await this.request<LspTextEdit[] | null>(
 								"textDocument/formatting",
 								{
-									textDocument: { uri: this.model.uri.toString() },
+									textDocument: { uri: model.uri.toString() },
 									options: { tabSize: 4, insertSpaces: true },
 								},
 							),
@@ -342,12 +356,12 @@ export class LspClient {
 						tokenTypes: semantic.legend?.tokenTypes ?? [],
 						tokenModifiers: semantic.legend?.tokenModifiers ?? [],
 					}),
-					provideDocumentSemanticTokens: async () => {
+					provideDocumentSemanticTokens: async (model) => {
 						const response = await this.request<{
 							data: number[];
 							resultId?: string;
 						} | null>("textDocument/semanticTokens/full", {
-							textDocument: { uri: this.model.uri.toString() },
+							textDocument: { uri: model.uri.toString() },
 						});
 						if (!response) return null;
 						return {
@@ -362,7 +376,7 @@ export class LspClient {
 		if (capabilities.inlayHintProvider)
 			this.disposables.push(
 				this.monaco.languages.registerInlayHintsProvider("zig", {
-					provideInlayHints: async (_model, requestedRange) => {
+					provideInlayHints: async (model, requestedRange) => {
 						const hints = await this.request<
 							| {
 									position: LspPosition;
@@ -371,7 +385,7 @@ export class LspClient {
 							  }[]
 							| null
 						>("textDocument/inlayHint", {
-							textDocument: { uri: this.model.uri.toString() },
+							textDocument: { uri: model.uri.toString() },
 							range: {
 								start: {
 									line: requestedRange.startLineNumber - 1,
@@ -402,7 +416,7 @@ export class LspClient {
 		if (capabilities.codeActionProvider)
 			this.disposables.push(
 				this.monaco.languages.registerCodeActionProvider("zig", {
-					provideCodeActions: async (_model, selectedRange, context) => {
+					provideCodeActions: async (model, selectedRange, context) => {
 						const actions = await this.request<
 							| {
 									title: string;
@@ -416,7 +430,7 @@ export class LspClient {
 							  }[]
 							| null
 						>("textDocument/codeAction", {
-							textDocument: { uri: this.model.uri.toString() },
+							textDocument: { uri: model.uri.toString() },
 							range: {
 								start: {
 									line: selectedRange.startLineNumber - 1,
@@ -492,9 +506,12 @@ export class LspClient {
 			text: edit.newText,
 		}));
 	}
-	private documentPosition(at: Monaco.Position): object {
+	private documentPosition(
+		model: Monaco.editor.ITextModel,
+		at: Monaco.Position,
+	): object {
 		return {
-			textDocument: { uri: this.model.uri.toString() },
+			textDocument: { uri: model.uri.toString() },
 			position: { line: at.lineNumber - 1, character: at.column - 1 },
 		};
 	}
@@ -520,10 +537,12 @@ export class LspClient {
 				uri?: string;
 				diagnostics?: LspDiagnostic[];
 			};
-			if (params.uri !== this.model.uri.toString()) return;
+			if (!params.uri) return;
+			const model = this.monaco.editor.getModel(this.monaco.Uri.parse(params.uri));
+			if (!model) return;
 			const diagnostics = params.diagnostics ?? [];
 			this.monaco.editor.setModelMarkers(
-				this.model,
+				model,
 				"zls",
 				diagnostics.map((diagnostic) => ({
 					...range(diagnostic.range),
@@ -542,7 +561,7 @@ export class LspClient {
 						][diagnostic.severity ?? 1] ?? this.monaco.MarkerSeverity.Error,
 				})),
 			);
-			this.onDiagnostics(diagnostics);
+			this.onDiagnostics(params.uri, diagnostics);
 		} else if (message.method === "window/showMessage") {
 			this.onStatus(
 				String(
@@ -586,9 +605,9 @@ export class LspClient {
 	}
 
 	public dispose(): void {
-		this.notify("textDocument/didClose", {
-			textDocument: { uri: this.model.uri.toString() },
-		});
+		for (const uri of this.openedModels.keys())
+			this.notify("textDocument/didClose", { textDocument: { uri } });
+		this.openedModels.clear();
 		for (const disposable of this.disposables) disposable.dispose();
 		this.socket?.close();
 		for (const pending of this.pending.values())

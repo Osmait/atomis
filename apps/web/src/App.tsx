@@ -25,6 +25,7 @@ import {
 } from "./state/runtimeState.js";
 
 interface LogSourceLocation {
+	path?: string;
 	line: number;
 	column: number;
 	executionIndex: number;
@@ -34,6 +35,12 @@ interface LogSourceLocation {
 		variable: string;
 		value: string;
 	};
+}
+
+interface ProjectFile {
+	path: string;
+	uri: string;
+	source: string;
 }
 
 interface Settings {
@@ -46,7 +53,10 @@ interface Settings {
 
 interface OwnedDiagnostic extends AppDiagnostic {
 	owner: string;
+	path?: string;
 }
+
+type ProjectDiagnostic = AppDiagnostic & { path?: string };
 
 interface VimModeWithCommands {
 	Vim: {
@@ -132,6 +142,9 @@ function markerSeverity(
 
 export function App(): React.JSX.Element {
 	const [session, setSession] = useState<CreateSessionResponse>();
+	const [files, setFiles] = useState<ProjectFile[]>([]);
+	const [activePath, setActivePath] = useState("main.zig");
+	const [openTabs, setOpenTabs] = useState(["main.zig"]);
 	const [startupError, setStartupError] = useState<string>();
 	const [settings, setSettings] = useState<Settings>(loadSettings);
 	const [runState, setRunState] = useState<RunState>("idle");
@@ -183,7 +196,8 @@ export function App(): React.JSX.Element {
 	const pinnedLogLocationRef = useRef<LogSourceLocation | undefined>(undefined);
 	const errorLensWidgetsRef = useRef<MonacoApi.editor.IContentWidget[]>([]);
 	const versionRef = useRef(1);
-	const sourceRef = useRef("");
+	const filesRef = useRef<ProjectFile[]>([]);
+	const activePathRef = useRef("main.zig");
 	const settingsRef = useRef(settings);
 	const catalogRef = useRef<ProbeDescriptor[]>([]);
 	const allProblems = useMemo<OwnedDiagnostic[]>(() => {
@@ -230,7 +244,20 @@ export function App(): React.JSX.Element {
 					throw new Error(`Session creation failed (${response.status})`);
 				return (await response.json()) as CreateSessionResponse;
 			})
-			.then(setSession)
+			.then((created) => {
+				const projectFiles = (
+					created as CreateSessionResponse & { files?: ProjectFile[] }
+				).files ?? [
+					{
+						path: "main.zig",
+						uri: created.documentUri,
+						source: created.initialSource,
+					},
+				];
+				filesRef.current = projectFiles;
+				setFiles(projectFiles);
+				setSession(created);
+			})
 			.catch((error: unknown) =>
 				setStartupError(error instanceof Error ? error.message : String(error)),
 			);
@@ -333,7 +360,11 @@ export function App(): React.JSX.Element {
 			const decorations = logSourceDecorationsRef.current;
 			const model = editor?.getModel();
 			if (!editor || !decorations || !model) return;
-			if (!location || location.line > model.getLineCount()) {
+			if (
+				!location ||
+				(location.path && location.path !== `src/${activePathRef.current}`) ||
+				location.line > model.getLineCount()
+			) {
 				decorations.clear();
 				return;
 			}
@@ -384,6 +415,17 @@ export function App(): React.JSX.Element {
 	);
 
 	const handleRuntimeEvent = useCallback((event: RuntimeServerEvent): void => {
+		const projectEvent = event as unknown as {
+			type: "project.files";
+			documentVersion: number;
+			files: ProjectFile[];
+		};
+		if (projectEvent.type === "project.files") {
+			if (!acceptsVersion(versionRef.current, projectEvent.documentVersion)) return;
+			filesRef.current = projectEvent.files;
+			setFiles(projectEvent.files);
+			return;
+		}
 		if (
 			"documentVersion" in event &&
 			!acceptsVersion(versionRef.current, event.documentVersion)
@@ -402,15 +444,15 @@ export function App(): React.JSX.Element {
 					"zig-runtime": [],
 					"ziglive-instrumenter": [],
 				}));
-				const model = editorRef.current?.getModel();
 				const monaco = monacoRef.current;
-				if (model && monaco)
-					for (const owner of [
-						"zig-compiler",
-						"zig-runtime",
-						"ziglive-instrumenter",
-					])
-						monaco.editor.setModelMarkers(model, owner, []);
+				if (monaco)
+					for (const model of monaco.editor.getModels())
+						for (const owner of [
+							"zig-compiler",
+							"zig-runtime",
+							"ziglive-instrumenter",
+						])
+							monaco.editor.setModelMarkers(model, owner, []);
 			}
 		} else if (event.type === "probe.catalog") {
 			catalogRef.current = event.probes;
@@ -437,26 +479,33 @@ export function App(): React.JSX.Element {
 				].slice(-500),
 			);
 		} else if (event.type === "diagnostics") {
+			const projectDiagnostics = event.diagnostics as ProjectDiagnostic[];
 			setDiagnostics((previous) => ({
 				...previous,
-				[event.owner]: event.diagnostics,
+				[event.owner]: projectDiagnostics,
 			}));
-			const model = editorRef.current?.getModel();
 			const monaco = monacoRef.current;
-			if (model && monaco)
-				monaco.editor.setModelMarkers(
-					model,
-					event.owner,
-					event.diagnostics.map((item) => ({
-						message: item.message,
-						severity: markerSeverity(monaco, item.severity),
-						source: item.source ?? event.owner,
-						startLineNumber: item.line,
-						startColumn: item.column,
-						endLineNumber: item.endLine ?? item.line,
-						endColumn: item.endColumn ?? item.column + 1,
-					})),
-				);
+			if (monaco)
+				for (const file of filesRef.current) {
+					const model = monaco.editor.getModel(monaco.Uri.parse(file.uri));
+					if (!model) continue;
+					const path = `src/${file.path}`;
+					monaco.editor.setModelMarkers(
+						model,
+						event.owner,
+						projectDiagnostics
+							.filter((item) => (item.path ?? "src/main.zig") === path)
+							.map((item) => ({
+								message: item.message,
+								severity: markerSeverity(monaco, item.severity),
+								source: item.source ?? event.owner,
+								startLineNumber: item.line,
+								startColumn: item.column,
+								endLineNumber: item.endLine ?? item.line,
+								endColumn: item.endColumn ?? item.column + 1,
+							})),
+					);
+				}
 		} else if (event.type === "run.finished") setResult(event.result);
 		else if (event.type === "server.error") setStatus(event.message);
 	}, []);
@@ -468,7 +517,9 @@ export function App(): React.JSX.Element {
 			monacoRef.current = monaco;
 			const model = editor.getModel();
 			if (!model) return;
-			sourceRef.current = model.getValue();
+			filesRef.current = filesRef.current.map((file) =>
+				file.path === "main.zig" ? { ...file, source: model.getValue() } : file,
+			);
 			decorationsRef.current = editor.createDecorationsCollection();
 			errorLensDecorationsRef.current = editor.createDecorationsCollection();
 			logSourceDecorationsRef.current = editor.createDecorationsCollection();
@@ -491,13 +542,17 @@ export function App(): React.JSX.Element {
 					sessionId: session.sessionId,
 					...settingsRef.current,
 				});
-				if (sourceRef.current !== session.initialSource) {
+				const mainSource =
+					filesRef.current.find((file) => file.path === "main.zig")?.source ??
+					session.initialSource;
+				if (mainSource !== session.initialSource) {
 					versionRef.current = 2;
 					sendRuntime({
 						type: "document.update",
 						sessionId: session.sessionId,
 						version: 2,
-						source: sourceRef.current,
+						path: "main.zig",
+						source: mainSource,
 					});
 				}
 			});
@@ -525,10 +580,12 @@ export function App(): React.JSX.Element {
 				model,
 				workspaceUri,
 				setCapabilities,
-				(items) => {
+				(uri, items) => {
+					const path = filesRef.current.find((file) => file.uri === uri)?.path;
 					setDiagnostics((previous) => ({
 						...previous,
-						zls: items.map((item) => ({
+						[`zls:${path ?? uri}`]: items.map((item) => ({
+							...(path ? { path: `src/${path}` } : {}),
 							message: item.message,
 							severity:
 								item.severity === 2
@@ -623,7 +680,10 @@ export function App(): React.JSX.Element {
 		const descriptors: MonacoApi.editor.IModelDeltaDecoration[] = catalog
 			.filter(
 				(probe) =>
-					probe.supported && probe.originalRange.startLine <= lineCount,
+					probe.supported &&
+					((probe as ProbeDescriptor & { path?: string }).path ??
+						"src/main.zig") === `src/${activePath}` &&
+					probe.originalRange.startLine <= lineCount,
 			)
 			.map((probe) => {
 				const selected = settings.manualProbeIds.includes(probe.probeId);
@@ -671,7 +731,7 @@ export function App(): React.JSX.Element {
 				};
 			});
 		decorations.set(descriptors);
-	}, [catalog, settings.manualProbeIds, stale, values]);
+	}, [activePath, catalog, settings.manualProbeIds, stale, values]);
 
 	useEffect(() => {
 		const editor = editorRef.current;
@@ -682,7 +742,11 @@ export function App(): React.JSX.Element {
 
 		const byLine = new Map<number, OwnedDiagnostic[]>();
 		for (const diagnostic of allProblems) {
-			if (diagnostic.line < 1 || diagnostic.line > model.getLineCount())
+			if (
+				(diagnostic.path ?? "src/main.zig") !== `src/${activePath}` ||
+				diagnostic.line < 1 ||
+				diagnostic.line > model.getLineCount()
+			)
 				continue;
 			const lineDiagnostics = byLine.get(diagnostic.line) ?? [];
 			if (
@@ -761,7 +825,7 @@ export function App(): React.JSX.Element {
 		return () => {
 			for (const widget of nextWidgets) editor.removeContentWidget(widget);
 		};
-	}, [allProblems]);
+	}, [activePath, allProblems]);
 
 	useEffect(
 		() => () => {
@@ -772,25 +836,166 @@ export function App(): React.JSX.Element {
 		[],
 	);
 
-	const visibleSource = useMemo(
-		() => localStorage.getItem(SOURCE_KEY) ?? session?.initialSource ?? "",
-		[session],
-	);
+	const selectFile = useCallback((path: string): void => {
+		const file = filesRef.current.find((candidate) => candidate.path === path);
+		if (!file) return;
+		activePathRef.current = path;
+		setActivePath(path);
+		setOpenTabs((previous) =>
+			previous.includes(path) ? previous : [...previous, path],
+		);
+		pinnedLogLocationRef.current = undefined;
+		logSourceDecorationsRef.current?.clear();
+		setTimeout(() => {
+			const model = monacoRef.current?.editor.getModel(
+				monacoRef.current.Uri.parse(file.uri),
+			);
+			if (model && path.endsWith(".zig"))
+				lspRef.current?.open(model, versionRef.current);
+		}, 0);
+	}, []);
+
+	const createFile = useCallback((): void => {
+		if (!session) return;
+		const path = window.prompt("Ruta del nuevo archivo (relativa a src/):")?.trim();
+		if (!path) return;
+		if (
+			path.startsWith("/") ||
+			path.includes("\\") ||
+			path.split("/").some((part) => !part || part === "." || part === "..")
+		) {
+			setStatus("Ruta de archivo inválida");
+			return;
+		}
+		if (filesRef.current.some((file) => file.path === path)) {
+			setStatus(`El archivo ${path} ya existe`);
+			return;
+		}
+		const base = session.documentUri.slice(
+			0,
+			session.documentUri.lastIndexOf("/") + 1,
+		);
+		const file = { path, uri: new URL(path, base).href, source: "" };
+		const nextFiles = [...filesRef.current, file].sort((left, right) =>
+			left.path.localeCompare(right.path),
+		);
+		filesRef.current = nextFiles;
+		setFiles(nextFiles);
+		const version = ++versionRef.current;
+		sendRuntime({
+			type: "file.create",
+			sessionId: session.sessionId,
+			version,
+			path,
+			source: "",
+		});
+		activePathRef.current = path;
+		setActivePath(path);
+		setOpenTabs((previous) => [...previous, path]);
+	}, [sendRuntime, session]);
+
+	const renameActiveFile = useCallback((): void => {
+		if (!session || activePathRef.current === "main.zig") return;
+		const path = activePathRef.current;
+		const newPath = window.prompt("Nueva ruta relativa a src/:", path)?.trim();
+		if (!newPath || newPath === path) return;
+		const current = filesRef.current.find((file) => file.path === path);
+		if (!current) return;
+		const base = session.documentUri.slice(
+			0,
+			session.documentUri.lastIndexOf("/") + 1,
+		);
+		const renamed = {
+			...current,
+			path: newPath,
+			uri: new URL(newPath, base).href,
+		};
+		filesRef.current = filesRef.current.map((file) =>
+			file.path === path ? renamed : file,
+		);
+		setFiles(filesRef.current);
+		setOpenTabs((previous) =>
+			previous.map((tab) => (tab === path ? newPath : tab)),
+		);
+		activePathRef.current = newPath;
+		setActivePath(newPath);
+		lspRef.current?.close(current.uri);
+		const version = ++versionRef.current;
+		sendRuntime({
+			type: "file.rename",
+			sessionId: session.sessionId,
+			version,
+			path,
+			newPath,
+		});
+	}, [sendRuntime, session]);
+
+	const deleteActiveFile = useCallback((): void => {
+		if (!session || activePathRef.current === "main.zig") return;
+		const path = activePathRef.current;
+		if (!window.confirm(`¿Eliminar src/${path}?`)) return;
+		const current = filesRef.current.find((file) => file.path === path);
+		if (!current) return;
+		filesRef.current = filesRef.current.filter((file) => file.path !== path);
+		setFiles(filesRef.current);
+		setOpenTabs((previous) => previous.filter((tab) => tab !== path));
+		activePathRef.current = "main.zig";
+		setActivePath("main.zig");
+		lspRef.current?.close(current.uri);
+		monacoRef.current?.editor.getModel(monacoRef.current.Uri.parse(current.uri))?.dispose();
+		const version = ++versionRef.current;
+		sendRuntime({
+			type: "file.delete",
+			sessionId: session.sessionId,
+			version,
+			path,
+		});
+	}, [sendRuntime, session]);
+
+	const activeFile = files.find((file) => file.path === activePath) ?? files[0];
+	useEffect(() => {
+		if (!activeFile?.path.endsWith(".zig")) return;
+		const timer = setTimeout(() => {
+			const monaco = monacoRef.current;
+			if (!monaco) return;
+			const model = monaco.editor.getModel(monaco.Uri.parse(activeFile.uri));
+			if (model) lspRef.current?.open(model, versionRef.current);
+		}, 0);
+		return () => clearTimeout(timer);
+	}, [activeFile]);
+	const visibleSource =
+		activeFile?.source ?? session?.initialSource ?? localStorage.getItem(SOURCE_KEY) ?? "";
+	const editorLanguage = activePath.endsWith(".zig")
+		? "zig"
+		: activePath.endsWith(".json")
+			? "json"
+			: activePath.endsWith(".md")
+				? "markdown"
+				: "plaintext";
 	const onChange = useCallback(
 		(source: string | undefined): void => {
-			if (!session || source === undefined || source === sourceRef.current)
-				return;
-			sourceRef.current = source;
+			if (!session || source === undefined) return;
+			const path = activePathRef.current;
+			const current = filesRef.current.find((file) => file.path === path);
+			if (!current || source === current.source) return;
+			const nextFiles = filesRef.current.map((file) =>
+				file.path === path ? { ...file, source } : file,
+			);
+			filesRef.current = nextFiles;
+			setFiles(nextFiles);
 			pinnedLogLocationRef.current = undefined;
 			logSourceDecorationsRef.current?.clear();
-			localStorage.setItem(SOURCE_KEY, source);
+			if (path === "main.zig") localStorage.setItem(SOURCE_KEY, source);
 			const version = ++versionRef.current;
 			setStale(true);
-			lspRef.current?.change(version, source);
+			const model = editorRef.current?.getModel();
+			if (model && path.endsWith(".zig"))
+				lspRef.current?.change(model, version, source);
 			sendRuntime({
 				type: "document.update",
 				sessionId: session.sessionId,
 				version,
+				path,
 				source,
 			});
 		},
@@ -823,10 +1028,15 @@ export function App(): React.JSX.Element {
 	return (
 		<main className="app-shell">
 			<header className="buffer-tabs">
-				<div className="buffer-tab active">
-					<i /> main.zig <b>{stale ? "[+]" : ""}</b>
-				</div>
-				<div className="buffer-tab muted">runtime.zig</div>
+				{openTabs.map((path) => (
+					<button
+						className={`buffer-tab${path === activePath ? " active" : ""}`}
+						key={path}
+						onClick={() => selectFile(path)}
+					>
+						<i /> {path} <b>{stale && path === activePath ? "[+]" : ""}</b>
+					</button>
+				))}
 				<div className="buffer-spacer" />
 				<span>zig {session.zigVersion}</span>
 				<span>zls</span>
@@ -839,11 +1049,38 @@ export function App(): React.JSX.Element {
 						<strong>ZigLive</strong>
 						<span>NVIM-TREE</span>
 					</header>
+					<div className="tree-actions">
+						<button onClick={createFile} title="Crear archivo">
+							＋
+						</button>
+						<button
+							disabled={activePath === "main.zig"}
+							onClick={renameActiveFile}
+							title="Renombrar archivo"
+						>
+							✎
+						</button>
+						<button
+							disabled={activePath === "main.zig"}
+							onClick={deleteActiveFile}
+							title="Eliminar archivo"
+						>
+							×
+						</button>
+					</div>
 					<div className="file-tree">
 						<div className="tree-root">⌄ ziglive-session</div>
 						<div className="tree-folder">⌄ src</div>
-						<div className="tree-file active">◆ main.zig</div>
-						<div className="tree-file generated">◇ generated/main.zig</div>
+						{files.map((file) => (
+							<button
+								className={`tree-file${file.path === activePath ? " active" : ""}`}
+								key={file.path}
+								onClick={() => selectFile(file.path)}
+							>
+								◆ {file.path}
+							</button>
+						))}
+						<div className="tree-file generated">◇ generated/</div>
 					</div>
 					<div className="navigator-actions">
 						<div>
@@ -914,15 +1151,15 @@ export function App(): React.JSX.Element {
 				<section className="editor-pane">
 					<header className="pane-header editor-header">
 						<span>
-							<b>src/main.zig</b> › main()
+							<b>src/{activePath}</b>
 						</span>
 					</header>
 					<div className="editor-wrap">
 						<Editor
 							height="100%"
-							path={session.documentUri}
-							defaultLanguage="zig"
-							defaultValue={visibleSource}
+							path={activeFile?.uri ?? session.documentUri}
+							language={editorLanguage}
+							value={visibleSource}
 							theme="ziglive-dark"
 							beforeMount={registerZig}
 							onMount={handleMount}
@@ -971,8 +1208,10 @@ export function App(): React.JSX.Element {
 											key={index}
 											onClick={() => {
 												if (!entry.sourceLocation) return;
+												const path = (entry.sourceLocation.path ?? "src/main.zig").replace(/^src\//, "");
+												selectFile(path);
 												pinnedLogLocationRef.current = entry.sourceLocation;
-												highlightLogSource(entry.sourceLocation, true);
+												setTimeout(() => highlightLogSource(entry.sourceLocation, true), 0);
 											}}
 											onKeyDown={(event) => {
 												if (
@@ -980,8 +1219,10 @@ export function App(): React.JSX.Element {
 													(event.key === "Enter" || event.key === " ")
 												) {
 													event.preventDefault();
+													const path = (entry.sourceLocation.path ?? "src/main.zig").replace(/^src\//, "");
+													selectFile(path);
 													pinnedLogLocationRef.current = entry.sourceLocation;
-													highlightLogSource(entry.sourceLocation, true);
+													setTimeout(() => highlightLogSource(entry.sourceLocation, true), 0);
 												}
 											}}
 											onMouseEnter={() =>
@@ -994,7 +1235,7 @@ export function App(): React.JSX.Element {
 											tabIndex={entry.sourceLocation ? 0 : undefined}
 											title={
 												entry.sourceLocation
-													? `Generado por src/main.zig:${entry.sourceLocation.line}:${entry.sourceLocation.column} · ejecución #${entry.sourceLocation.executionIndex}`
+													? `Generado por ${entry.sourceLocation.path ?? "src/main.zig"}:${entry.sourceLocation.line}:${entry.sourceLocation.column} · ejecución #${entry.sourceLocation.executionIndex}`
 													: undefined
 											}
 										>
@@ -1010,7 +1251,7 @@ export function App(): React.JSX.Element {
 											<pre className={entry.category}>{entry.chunk}</pre>
 											{entry.sourceLocation && (
 												<span className="log-origin-tooltip">
-													↳ src/main.zig:{entry.sourceLocation.line}:
+													↳ {entry.sourceLocation.path ?? "src/main.zig"}:{entry.sourceLocation.line}:
 													{entry.sourceLocation.column} · ejecución #
 													{entry.sourceLocation.executionIndex}
 													{entry.sourceLocation.loop && (
@@ -1042,18 +1283,21 @@ export function App(): React.JSX.Element {
 										>
 											<button
 												onClick={() => {
-													editorRef.current?.setPosition({
-														lineNumber: item.line,
-														column: item.column,
-													});
-													editorRef.current?.revealLineInCenter(item.line);
-													editorRef.current?.focus();
+													selectFile((item.path ?? "src/main.zig").replace(/^src\//, ""));
+													setTimeout(() => {
+														editorRef.current?.setPosition({
+															lineNumber: item.line,
+															column: item.column,
+														});
+														editorRef.current?.revealLineInCenter(item.line);
+														editorRef.current?.focus();
+													}, 0);
 												}}
 											>
 												<i>{item.severity === "error" ? "×" : "△"}</i>
 												<span>{item.message}</span>
 												<small>
-													{item.owner} · Ln {item.line}, Col {item.column}
+													{item.path ?? "src/main.zig"} · {item.owner} · Ln {item.line}, Col {item.column}
 												</small>
 											</button>
 										</li>
@@ -1156,7 +1400,7 @@ export function App(): React.JSX.Element {
 				<span className={`run-state state-${runState}`}>
 					{RUN_STATE_LABELS[runState]}
 				</span>
-				<span className="status-path">src/main.zig</span>
+				<span className="status-path">src/{activePath}</span>
 				<span className="status-spacer" />
 				<span>
 					{result
@@ -1173,7 +1417,7 @@ export function App(): React.JSX.Element {
 				<span>
 					{Object.keys(session.degraded).length
 						? Object.values(session.degraded).join(" · ")
-						: `src/main.zig ${sourceRef.current.split("\n").length}L`}
+						: `src/${activePath} ${visibleSource.split("\n").length}L`}
 				</span>
 			</div>
 		</main>
