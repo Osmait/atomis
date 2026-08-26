@@ -26,6 +26,16 @@ async function setToggle(
 	await expect(page.locator(".settings-modal")).toHaveCount(0);
 }
 
+/** Types into the tree's inline draft input and confirms. */
+async function fillTreeDraft(
+	page: import("@playwright/test").Page,
+	name: string,
+): Promise<void> {
+	const input = page.locator(".tree-draft input");
+	await input.fill(name);
+	await input.press("Enter");
+}
+
 /** Runs a file action from the tree's ⋯ dropdown. */
 async function treeAction(
 	page: import("@playwright/test").Page,
@@ -119,15 +129,15 @@ test("project tree supports imports, embedFile, and runtime input files", async 
 	page,
 }) => {
 	await openClean(page);
-	page.once("dialog", (dialog) => dialog.accept("solver.zig"));
 	await treeAction(page, "Crear archivo");
+	await fillTreeDraft(page, "solver.zig");
 	await replaceEditor(
 		page,
 		'const std = @import("std");\npub fn answer() usize {\n    std.debug.print("solver module\\n", .{});\n    return @embedFile("input.txt").len;\n}\n',
 	);
 
-	page.once("dialog", (dialog) => dialog.accept("input.txt"));
 	await treeAction(page, "Crear archivo");
+	await fillTreeDraft(page, "input.txt");
 	await replaceEditor(page, "abcd\n");
 
 	await page.getByRole("button", { name: "main.zig" }).click();
@@ -156,11 +166,11 @@ pub fn main(init: std.process.Init) !void {
 	await expect(page.locator(".global-status")).toContainText("src/solver.zig");
 	await expect(page.locator(".log-source-line")).toBeVisible();
 
-	page.once("dialog", (dialog) => dialog.accept("notes.tmp"));
 	await treeAction(page, "Crear archivo");
+	await fillTreeDraft(page, "notes.tmp");
 	await replaceEditor(page, "temporary");
-	page.once("dialog", (dialog) => dialog.accept("data/notes.txt"));
 	await treeAction(page, "Renombrar archivo");
+	await fillTreeDraft(page, "data/notes.txt");
 	await expect(
 		page.getByRole("button", { name: "data/notes.txt" }),
 	).toBeVisible();
@@ -450,8 +460,8 @@ test("command palette opens files and zen mode hides the chrome", async ({
 }) => {
 	await openClean(page);
 	await expect(page.locator(".state-succeeded")).toBeVisible();
-	page.once("dialog", (dialog) => dialog.accept("helper.zig"));
 	await treeAction(page, "Crear archivo");
+	await fillTreeDraft(page, "utils/helper.zig");
 	await replaceEditor(page, "pub fn helper() void {}\n");
 	await page.keyboard.press("ControlOrMeta+K");
 	const palette = page.locator(".palette");
@@ -604,6 +614,42 @@ test("Ctrl+S formats the document and returns vim to normal mode", async ({
 	);
 });
 
+test("leader key navigates tree and terminal app-wide", async ({ page }) => {
+	await openClean(page);
+	await expect(page.locator(".state-succeeded")).toBeVisible();
+
+	// With vim off, Space inside the editor must keep typing spaces — the
+	// leader only fires from vim NORMAL mode (or outside the editor).
+	await setToggle(page, "Vim Mode", true);
+	await page.locator(".monaco-editor").click();
+	await page.keyboard.press("Escape");
+	await expect(page.locator(".mode-chip")).toHaveText("NORMAL");
+	await page.keyboard.press(" ");
+	await expect(page.locator(".mode-chip")).toHaveText("LEADER");
+	await page.keyboard.press("e");
+	await expect(page.locator(".mode-chip")).toHaveText("ÁRBOL");
+	await expect(page.locator(".tree-card")).toHaveClass(/kb-zone/);
+
+	// j/k move the selection; Enter opens and returns to the editor
+	await page.keyboard.press("j");
+	await page.keyboard.press("j");
+	await expect(page.locator(".kb-sel")).toBeVisible();
+	await page.keyboard.press("Enter");
+	await expect(page.locator(".mode-chip")).not.toHaveText("ÁRBOL");
+
+	// leader t focuses the terminal; leader t again closes it
+	await page.keyboard.press("Escape");
+	await page.keyboard.press(" ");
+	await page.keyboard.press("t");
+	await expect(page.locator(".mode-chip")).toHaveText("TERMINAL");
+	await expect(page.locator(".side-panel")).toHaveClass(/kb-zone/);
+	await page.keyboard.press(" ");
+	await page.keyboard.press("t");
+	await expect(page.locator(".side-panel")).toHaveCount(0);
+	await page.keyboard.press("ControlOrMeta+J");
+	await expect(page.locator(".side-panel")).toBeVisible();
+});
+
 test("low-level peek: bits, bitops, struct layout and value formats", async ({
 	page,
 }) => {
@@ -724,16 +770,16 @@ test("folders group files and collapse in the tree", async ({ page }) => {
 		page.getByRole("button", { name: "utils/helper.zig" }),
 	).toBeVisible();
 
-	page.once("dialog", (dialog) => dialog.accept("aoc"));
 	await treeAction(page, "Crear carpeta");
+	await fillTreeDraft(page, "aoc");
 	const aocRow = page
 		.locator(".tree-folder-row")
 		.filter({ hasText: "aoc" })
 		.first();
 	await expect(aocRow).toBeVisible();
-	page.once("dialog", (dialog) => dialog.accept("aoc/day1.zig"));
 	await aocRow.hover();
 	await aocRow.locator(".folder-add").click();
+	await fillTreeDraft(page, "day1.zig");
 	await expect(
 		page.getByRole("button", { name: "aoc/day1.zig" }),
 	).toBeVisible();
@@ -747,11 +793,12 @@ test("folders group files and collapse in the tree", async ({ page }) => {
 	// right-click: create inside a folder from the context menu
 	await page.locator(".tree-folder-row").first().click({ button: "right" });
 	await expect(page.locator(".tree-context-menu")).toBeVisible();
-	page.once("dialog", (dialog) => dialog.accept());
 	await page
 		.getByRole("menuitem", { name: /Nuevo archivo en/ })
 		.click();
+	await expect(page.locator(".tree-draft input")).toBeVisible();
 	await page.keyboard.press("Escape");
+	await expect(page.locator(".tree-draft")).toHaveCount(0);
 
 	// right-click a file: rename/delete available
 	await page.locator(".tree-file").first().click({ button: "right" });

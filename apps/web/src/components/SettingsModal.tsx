@@ -19,6 +19,14 @@ export const APP_FONTS = [
 
 export const APP_SIZES = [12, 13, 14, 15] as const;
 
+export const LEADER_OPTIONS = [
+	{ id: "space", label: "Espacio" },
+	{ id: "comma", label: "Coma ," },
+	{ id: "backslash", label: "Barra \\" },
+] as const;
+
+export type LeaderOption = (typeof LEADER_OPTIONS)[number]["id"];
+
 interface Toggle {
 	label: string;
 	hint: string;
@@ -37,6 +45,8 @@ interface SettingsModalProps {
 	onFont: (index: number) => void;
 	sizeIndex: number;
 	onSize: (index: number) => void;
+	leader: LeaderOption;
+	onLeader: (leader: LeaderOption) => void;
 	onClose: () => void;
 }
 
@@ -52,6 +62,8 @@ export function SettingsModal({
 	onFont,
 	sizeIndex,
 	onSize,
+	leader,
+	onLeader,
 	onClose,
 }: SettingsModalProps): React.JSX.Element {
 	useEffect(() => {
@@ -165,6 +177,24 @@ export function SettingsModal({
 								onClick={() => onSize(index)}
 							>
 								{size}
+							</button>
+						))}
+					</div>
+				</section>
+
+				<section className="settings-section">
+					<div className="settings-title">Teclado</div>
+					<div className="settings-toggle-hint">
+						leader + e abre el árbol · leader + t la terminal · j/k navegan
+					</div>
+					<div className="settings-pills">
+						{LEADER_OPTIONS.map((option) => (
+							<button
+								className={leader === option.id ? "active" : ""}
+								key={option.id}
+								onClick={() => onLeader(option.id)}
+							>
+								{option.label}
 							</button>
 						))}
 					</div>

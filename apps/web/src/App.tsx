@@ -1,5 +1,11 @@
 import Editor, { type Monaco, type OnMount } from "@monaco-editor/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { createPortal } from "react-dom";
 import type {
 	AppDiagnostic,
@@ -188,10 +194,19 @@ const SETTINGS_KEY = "ziglive.settings.v1";
 const VALUE_FMT_KEY = "ziglive.value-fmt.v1";
 const APPEARANCE_KEY = "ziglive.appearance.v1";
 
+type LeaderKey = "space" | "comma" | "backslash";
+
+const LEADER_KEYS: Record<LeaderKey, string> = {
+	space: " ",
+	comma: ",",
+	backslash: "\\",
+};
+
 interface Appearance {
 	theme: AppTheme;
 	fontIndex: number;
 	sizeIndex: number;
+	leader: LeaderKey;
 }
 
 function loadAppearance(): Appearance {
@@ -215,9 +230,13 @@ function loadAppearance(): Appearance {
 				stored.sizeIndex < APP_SIZES.length
 					? stored.sizeIndex
 					: 1,
+			leader:
+				stored.leader && stored.leader in LEADER_KEYS
+					? stored.leader
+					: "space",
 		};
 	} catch {
-		return { theme: "mocha", fontIndex: 0, sizeIndex: 1 };
+		return { theme: "mocha", fontIndex: 0, sizeIndex: 1, leader: "space" };
 	}
 }
 const SOURCE_KEY = "ziglive.source.v1";
@@ -295,12 +314,38 @@ export function App(): React.JSX.Element {
 	const [termMenuOpen, setTermMenuOpen] = useState(false);
 	const [treeMenuOpen, setTreeMenuOpen] = useState(false);
 	const [srcCollapsed, setSrcCollapsed] = useState(false);
+	const [treeDraft, setTreeDraft] = useState<
+		| {
+				kind: "file" | "folder" | "rename";
+				base: string;
+				original?: string;
+		  }
+		| undefined
+	>(undefined);
+	const [treeDraftInvalid, setTreeDraftInvalid] = useState(false);
+	const [treeDraftValue, setTreeDraftValue] = useState("");
 	const [treeContextMenu, setTreeContextMenu] = useState<
 		| { x: number; y: number; path?: string; folder?: string }
 		| undefined
 	>(undefined);
 	const [settingsOpen, setSettingsOpen] = useState(false);
 	const [appearance, setAppearance] = useState<Appearance>(loadAppearance);
+	const appearanceRef = useRef(appearance);
+	appearanceRef.current = appearance;
+	const [focusZone, setFocusZone] = useState<"editor" | "tree" | "term">(
+		"editor",
+	);
+	const focusZoneRef = useRef(focusZone);
+	focusZoneRef.current = focusZone;
+	const [leaderPending, setLeaderPending] = useState(false);
+	const leaderPendingRef = useRef(false);
+	const leaderTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+	const [treeSel, setTreeSel] = useState(0);
+	const treeSelRef = useRef(0);
+	treeSelRef.current = treeSel;
+	const treeNavRef = useRef<
+		{ kind: "folder" | "file"; path: string; collapsed?: boolean }[]
+	>([]);
 	const [runState, setRunState] = useState<RunState>("idle");
 	const [status, setStatus] = useState("Starting…");
 	const [catalog, setCatalog] = useState<ProbeDescriptor[]>([]);
@@ -349,6 +394,8 @@ export function App(): React.JSX.Element {
 	const [narrow, setNarrow] = useState(false);
 	const [tight, setTight] = useState(false);
 	const [vimModeLabel, setVimModeLabel] = useState("NORMAL");
+	const vimModeRef = useRef("NORMAL");
+	vimModeRef.current = vimModeLabel;
 	const editorRef = useRef<MonacoApi.editor.IStandaloneCodeEditor | undefined>(
 		undefined,
 	);
@@ -933,6 +980,7 @@ export function App(): React.JSX.Element {
 					vimStatusRef.current,
 					NvimStatusBar,
 				);
+			editor.onDidFocusEditorText(() => setFocusZone("editor"));
 			editor.onMouseDown((mouse) => {
 				const element = mouse.target.element as HTMLElement | null;
 				if (
@@ -1105,6 +1153,13 @@ export function App(): React.JSX.Element {
 			setPeekNode(null);
 		};
 	}, [peek, activePath]);
+
+	useEffect(() => {
+		if (focusZone !== "tree") return;
+		document
+			.querySelector(".file-tree .kb-sel")
+			?.scrollIntoView({ block: "nearest" });
+	}, [focusZone, treeSel]);
 
 	// The peek follows the run: close it when its probe stops reporting or
 	// the buffer goes stale (lines may have shifted under the zone).
@@ -1499,19 +1554,19 @@ export function App(): React.JSX.Element {
 		}, 0);
 	}, [openInLsp]);
 
-	const createFileNamed = useCallback((path: string): void => {
-		if (!session) return;
+	const createFileNamed = useCallback((path: string): boolean => {
+		if (!session) return false;
 		if (
 			path.startsWith("/") ||
 			path.includes("\\") ||
 			path.split("/").some((part) => !part || part === "." || part === "..")
 		) {
 			setStatus("Ruta de archivo inválida");
-			return;
+			return false;
 		}
 		if (filesRef.current.some((file) => file.path === path)) {
 			setStatus(`El archivo ${path} ya existe`);
-			return;
+			return false;
 		}
 		const base = session.documentUri.slice(
 			0,
@@ -1534,25 +1589,29 @@ export function App(): React.JSX.Element {
 		activePathRef.current = path;
 		setActivePath(path);
 		setOpenTabs((previous) => [...previous, path]);
+		return true;
 	}, [sendRuntime, session]);
 
-	const createFile = useCallback(
-		(prefix = ""): void => {
-			const path = window
-				.prompt("Ruta del nuevo archivo (relativa a src/):", prefix)
-				?.trim();
-			if (path) createFileNamed(path);
-		},
-		[createFileNamed],
-	);
+	// VS Code-style inline creation: the tree shows an input row instead of
+	// a browser prompt. `base` is the folder prefix ("" for the root).
+	const createFile = useCallback((prefix = ""): void => {
+		setTreeDraftInvalid(false);
+		setTreeDraftValue("");
+		setSrcCollapsed(false);
+		setTreeDraft({ kind: "file", base: prefix });
+	}, []);
 
-	const createFolder = useCallback((): void => {
-		const raw = window
-			.prompt("Nombre de la carpeta (p. ej. utils o aoc/day1):")
-			?.trim();
-		if (!raw) return;
+	const createFolder = useCallback((base = ""): void => {
+		setTreeDraftInvalid(false);
+		setTreeDraftValue("");
+		setSrcCollapsed(false);
+		setTreeDraft({ kind: "folder", base });
+	}, []);
+
+	const createFolderNamed = useCallback((raw: string): boolean => {
 		const folder = raw.replace(/\/+$/, "");
 		if (
+			!folder ||
 			folder.startsWith("/") ||
 			folder.includes("\\") ||
 			folder
@@ -1560,11 +1619,12 @@ export function App(): React.JSX.Element {
 				.some((part) => !part || part === "." || part === "..")
 		) {
 			setStatus("Nombre de carpeta inválido");
-			return;
+			return false;
 		}
 		setPendingFolders((previous) =>
 			previous.includes(folder) ? previous : [...previous, folder],
 		);
+		return true;
 	}, []);
 
 	const toggleFolder = useCallback((path: string): void => {
@@ -1575,6 +1635,167 @@ export function App(): React.JSX.Element {
 			return next;
 		});
 	}, []);
+
+	const focusEditorZone = useCallback((): void => {
+		setFocusZone("editor");
+		editorRef.current?.focus();
+	}, []);
+
+	const focusTreeZone = useCallback((): void => {
+		updateLayout({ treeOpen: true, zen: false });
+		setSrcCollapsed(false);
+		const rows = treeNavRef.current;
+		const activeIndex = rows.findIndex(
+			(row) => row.kind === "file" && row.path === activePathRef.current,
+		);
+		setTreeSel(activeIndex >= 0 ? activeIndex : 0);
+		setFocusZone("tree");
+		(document.activeElement as HTMLElement | null)?.blur?.();
+	}, [updateLayout]);
+
+	const focusTermZone = useCallback((): void => {
+		updateLayout({ termOpen: true, zen: false });
+		setFocusZone("term");
+		(document.activeElement as HTMLElement | null)?.blur?.();
+	}, [updateLayout]);
+
+	// ── Leader key (vim-style, app-wide) + j/k zone navigation ──
+	useEffect(() => {
+		const cancelLeader = (): void => {
+			leaderPendingRef.current = false;
+			setLeaderPending(false);
+			if (leaderTimerRef.current) clearTimeout(leaderTimerRef.current);
+		};
+		const onKey = (event: KeyboardEvent): void => {
+			if (event.metaKey || event.ctrlKey || event.altKey) return;
+			const target = event.target as HTMLElement | null;
+			const inMonaco = Boolean(target?.closest?.(".monaco-editor"));
+			const inInput =
+				!inMonaco &&
+				Boolean(target?.closest?.("input, textarea, select, [contenteditable]"));
+			if (inInput) return;
+			if (paletteOpenRef.current) return;
+			if (document.querySelector(".settings-modal")) return;
+
+			if (leaderPendingRef.current) {
+				cancelLeader();
+				const key = event.key.toLowerCase();
+				if (key === "e") {
+					event.preventDefault();
+					event.stopPropagation();
+					if (focusZoneRef.current === "tree") focusEditorZone();
+					else focusTreeZone();
+				} else if (key === "t") {
+					event.preventDefault();
+					event.stopPropagation();
+					if (!layoutRef.current.termOpen) focusTermZone();
+					else if (focusZoneRef.current === "term") {
+						updateLayout({ termOpen: false });
+						focusEditorZone();
+					} else focusTermZone();
+				}
+				return;
+			}
+
+			const leaderChar = LEADER_KEYS[appearanceRef.current.leader];
+			if (event.key === leaderChar) {
+				// Inside Monaco the leader only fires from vim NORMAL mode, so
+				// typing (insert mode / vim off) keeps the key.
+				const allowed = inMonaco
+					? vimEnabledRef.current && vimModeRef.current === "NORMAL"
+					: true;
+				if (allowed) {
+					event.preventDefault();
+					event.stopPropagation();
+					leaderPendingRef.current = true;
+					setLeaderPending(true);
+					leaderTimerRef.current = setTimeout(cancelLeader, 1500);
+					return;
+				}
+			}
+
+			const zone = focusZoneRef.current;
+			if (zone === "editor" || inMonaco) return;
+			if (zone === "tree") {
+				const rows = treeNavRef.current;
+				if (event.key === "j" || event.key === "ArrowDown") {
+					event.preventDefault();
+					event.stopPropagation();
+					setTreeSel((previous) =>
+						Math.min(previous + 1, Math.max(0, rows.length - 1)),
+					);
+				} else if (event.key === "k" || event.key === "ArrowUp") {
+					event.preventDefault();
+					event.stopPropagation();
+					setTreeSel((previous) => Math.max(previous - 1, 0));
+				} else if (event.key === "Enter" || event.key === "l") {
+					event.preventDefault();
+					event.stopPropagation();
+					const row = rows[treeSelRef.current];
+					if (!row) return;
+					if (row.kind === "folder") {
+						if (event.key === "l" && !row.collapsed) return;
+						toggleFolder(row.path);
+					} else if (event.key === "Enter") {
+						selectFile(row.path);
+						focusEditorZone();
+					} else selectFile(row.path);
+				} else if (event.key === "h") {
+					event.preventDefault();
+					event.stopPropagation();
+					const row = rows[treeSelRef.current];
+					if (row?.kind === "folder" && !row.collapsed)
+						toggleFolder(row.path);
+				} else if (event.key === "Escape") {
+					event.preventDefault();
+					event.stopPropagation();
+					focusEditorZone();
+				}
+				return;
+			}
+			if (zone === "term") {
+				const panel = document.querySelector<HTMLElement>(
+					".side-panel .panel-content",
+				);
+				if (!panel) return;
+				const step = 48;
+				if (event.key === "j" || event.key === "ArrowDown") {
+					event.preventDefault();
+					event.stopPropagation();
+					panel.scrollTop += step;
+				} else if (event.key === "k" || event.key === "ArrowUp") {
+					event.preventDefault();
+					event.stopPropagation();
+					panel.scrollTop -= step;
+				} else if (event.key === "d") {
+					event.preventDefault();
+					event.stopPropagation();
+					panel.scrollTop += panel.clientHeight / 2;
+				} else if (event.key === "u") {
+					event.preventDefault();
+					event.stopPropagation();
+					panel.scrollTop -= panel.clientHeight / 2;
+				} else if (event.key === "G") {
+					event.preventDefault();
+					event.stopPropagation();
+					panel.scrollTop = panel.scrollHeight;
+				} else if (event.key === "Escape") {
+					event.preventDefault();
+					event.stopPropagation();
+					focusEditorZone();
+				}
+			}
+		};
+		window.addEventListener("keydown", onKey, true);
+		return () => window.removeEventListener("keydown", onKey, true);
+	}, [
+		focusEditorZone,
+		focusTreeZone,
+		focusTermZone,
+		selectFile,
+		toggleFolder,
+		updateLayout,
+	]);
 
 	const closeTab = useCallback(
 		(path: string): void => {
@@ -1602,12 +1823,23 @@ export function App(): React.JSX.Element {
 		[selectFile],
 	);
 
-	const renameFile = useCallback((path: string): void => {
-		if (!session || ENTRY_FILES.has(path)) return;
-		const newPath = window.prompt("Nueva ruta relativa a src/:", path)?.trim();
-		if (!newPath || newPath === path) return;
+	const renameFileTo = useCallback((path: string, newPath: string): boolean => {
+		if (!session || ENTRY_FILES.has(path)) return false;
+		if (!newPath || newPath === path) return true;
+		if (
+			newPath.startsWith("/") ||
+			newPath.includes("\\") ||
+			newPath.split("/").some((part) => !part || part === "." || part === "..")
+		) {
+			setStatus("Ruta de archivo inválida");
+			return false;
+		}
+		if (filesRef.current.some((file) => file.path === newPath)) {
+			setStatus(`El archivo ${newPath} ya existe`);
+			return false;
+		}
 		const current = filesRef.current.find((file) => file.path === path);
-		if (!current) return;
+		if (!current) return false;
 		const base = session.documentUri.slice(
 			0,
 			session.documentUri.lastIndexOf("/") + 1,
@@ -1638,7 +1870,36 @@ export function App(): React.JSX.Element {
 			path,
 			newPath,
 		});
+		return true;
 	}, [sendRuntime, session]);
+
+	const renameFile = useCallback((path: string): void => {
+		if (ENTRY_FILES.has(path)) return;
+		setTreeDraftInvalid(false);
+		setTreeDraftValue(path);
+		setSrcCollapsed(false);
+		setTreeDraft({ kind: "rename", base: "", original: path });
+	}, []);
+
+	const commitTreeDraft = useCallback(
+		(value: string): void => {
+			const draft = treeDraft;
+			if (!draft) return;
+			const name = value.trim();
+			if (!name) {
+				setTreeDraft(undefined);
+				return;
+			}
+			let ok = false;
+			if (draft.kind === "file") ok = createFileNamed(draft.base + name);
+			else if (draft.kind === "folder")
+				ok = createFolderNamed(draft.base + name);
+			else if (draft.original) ok = renameFileTo(draft.original, name);
+			if (ok) setTreeDraft(undefined);
+			else setTreeDraftInvalid(true);
+		},
+		[treeDraft, createFileNamed, createFolderNamed, renameFileTo],
+	);
 
 	const deleteFile = useCallback((path: string): void => {
 		if (!session || ENTRY_FILES.has(path)) return;
@@ -1784,6 +2045,13 @@ export function App(): React.JSX.Element {
 			]),
 		),
 	});
+	treeNavRef.current = srcCollapsed
+		? []
+		: treeRows.map((row) =>
+				row.kind === "folder"
+					? { kind: "folder" as const, path: row.path, collapsed: row.collapsed }
+					: { kind: "file" as const, path: row.path },
+			);
 	const activeTests = tests.filter(
 		(test) => test.path === `src/${activePath}`,
 	);
@@ -1893,6 +2161,48 @@ export function App(): React.JSX.Element {
 		languageForPath(activePath) ?? activeLanguageRef.current;
 	const runDisabled = Boolean(session.degraded[activeLanguage]);
 	const [casesHintSource, casesHintEmpty] = TEST_HINTS[activeLanguage];
+
+	const treeDraftRow = (indent: number): React.JSX.Element => (
+		<div
+			className={`tree-draft${treeDraftInvalid ? " invalid" : ""}`}
+			style={{ paddingLeft: `${10 + indent * 14}px` }}
+		>
+			{treeDraft?.kind === "folder" ? (
+				<FolderIcon />
+			) : (
+				<FileIcon path={treeDraftValue || "file.txt"} />
+			)}
+			<input
+				aria-label={
+					treeDraft?.kind === "folder"
+						? "Nombre de la carpeta"
+						: treeDraft?.kind === "rename"
+							? "Nueva ruta del archivo"
+							: "Nombre del archivo"
+				}
+				autoFocus
+				onBlur={() => {
+					if (treeDraftValue.trim() && treeDraft?.kind !== "rename")
+						commitTreeDraft(treeDraftValue);
+					setTreeDraft(undefined);
+				}}
+				onChange={(event) => {
+					setTreeDraftInvalid(false);
+					setTreeDraftValue(event.target.value);
+				}}
+				onKeyDown={(event) => {
+					event.stopPropagation();
+					if (event.key === "Enter") commitTreeDraft(treeDraftValue);
+					else if (event.key === "Escape") setTreeDraft(undefined);
+				}}
+				placeholder={
+					treeDraft?.kind === "folder" ? "carpeta" : "nombre.ext"
+				}
+				spellCheck={false}
+				value={treeDraftValue}
+			/>
+		</div>
+	);
 	const runCommand = WEB_LANGUAGE_PACKS[activeLanguage].runCommand;
 	const testCommand = WEB_LANGUAGE_PACKS[activeLanguage].testCommand;
 	const toggleAutoRun = (): void =>
@@ -1979,7 +2289,9 @@ export function App(): React.JSX.Element {
 		>
 			<div className="workspace">
 				{treeVisible && (
-					<aside className="tree-card">
+					<aside
+						className={`tree-card${focusZone === "tree" ? " kb-zone" : ""}`}
+					>
 						<div
 							className="file-tree"
 							onContextMenu={(event) => {
@@ -2085,14 +2397,20 @@ export function App(): React.JSX.Element {
 									</button>
 								</div>
 							)}
+							{treeDraft &&
+								treeDraft.kind !== "rename" &&
+								treeDraft.base === "" &&
+								treeDraftRow(0)}
 							{!srcCollapsed &&
-								treeRows.map((row) => {
+								treeRows.map((row, rowIndex) => {
+								const kbSelected =
+									focusZone === "tree" && rowIndex === treeSel;
 								if (row.kind === "folder")
 									return (
+										<React.Fragment key={`folder:${row.path}`}>
 										<div
-											className="tree-folder-row"
+											className={`tree-folder-row${kbSelected ? " kb-sel" : ""}`}
 											data-tree-folder={row.path}
-											key={`folder:${row.path}`}
 											style={{ paddingLeft: `${10 + row.depth * 14}px` }}
 										>
 											<button
@@ -2119,12 +2437,26 @@ export function App(): React.JSX.Element {
 												＋
 											</button>
 										</div>
+										{treeDraft &&
+											treeDraft.kind !== "rename" &&
+											treeDraft.base === `${row.path}/` &&
+											treeDraftRow(row.depth + 1)}
+										</React.Fragment>
+									);
+								if (
+									treeDraft?.kind === "rename" &&
+									treeDraft.original === row.path
+								)
+									return (
+										<React.Fragment key={row.path}>
+											{treeDraftRow(row.depth)}
+										</React.Fragment>
 									);
 								const fails = failsByFile.get(`src/${row.path}`) ?? 0;
 								return (
 									<button
 										aria-label={row.path}
-										className={`tree-file${row.path === activePath ? " active" : ""}`}
+										className={`tree-file${row.path === activePath ? " active" : ""}${kbSelected ? " kb-sel" : ""}`}
 										data-tree-path={row.path}
 										key={row.path}
 										onClick={() => selectFile(row.path)}
@@ -2271,7 +2603,9 @@ export function App(): React.JSX.Element {
 					</section>
 
 					{termVisible && (
-						<section className="side-panel">
+						<section
+							className={`side-panel${focusZone === "term" ? " kb-zone" : ""}`}
+						>
 							<header className="pane-header terminal-header">
 								<span className={`run-dot ${termTone}`} />
 								{tab !== "output" && (
@@ -2821,7 +3155,9 @@ export function App(): React.JSX.Element {
 					<button
 						onClick={() => {
 							setTreeContextMenu(undefined);
-							createFolder();
+							createFolder(
+								treeContextMenu.folder ? `${treeContextMenu.folder}/` : "",
+							);
 						}}
 						role="menuitem"
 					>
@@ -2850,8 +3186,20 @@ export function App(): React.JSX.Element {
 			)}
 
 			<footer className="global-status">
-				<span className={`mode-chip mode-${vimModeLabel.toLowerCase()}`}>
-					{vimModeLabel}
+				<span
+					className={`mode-chip mode-${
+						leaderPending || focusZone !== "editor"
+							? "zone"
+							: vimModeLabel.toLowerCase()
+					}`}
+				>
+					{leaderPending
+						? "LEADER"
+						: focusZone === "tree"
+							? "ÁRBOL"
+							: focusZone === "term"
+								? "TERMINAL"
+								: vimModeLabel}
 				</span>
 				<div className="vim-mode-slot">
 					<div className="vim-status" ref={vimStatusRef} />
@@ -2959,6 +3307,8 @@ export function App(): React.JSX.Element {
 						setValueFmt(fmt);
 						localStorage.setItem(VALUE_FMT_KEY, fmt);
 					}}
+					leader={appearance.leader}
+					onLeader={(leader) => updateAppearance({ leader })}
 					sizeIndex={appearance.sizeIndex}
 					theme={appearance.theme}
 					toggles={[
