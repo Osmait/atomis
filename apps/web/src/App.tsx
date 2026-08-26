@@ -293,6 +293,11 @@ export function App(): React.JSX.Element {
 	const [drawer, setDrawer] = useState(false);
 	const [drawerTab, setDrawerTab] = useState<"tests" | "hist">("tests");
 	const [termMenuOpen, setTermMenuOpen] = useState(false);
+	const [treeMenuOpen, setTreeMenuOpen] = useState(false);
+	const [treeContextMenu, setTreeContextMenu] = useState<
+		| { x: number; y: number; path?: string; folder?: string }
+		| undefined
+	>(undefined);
 	const [settingsOpen, setSettingsOpen] = useState(false);
 	const [appearance, setAppearance] = useState<Appearance>(loadAppearance);
 	const [runState, setRunState] = useState<RunState>("idle");
@@ -369,6 +374,7 @@ export function App(): React.JSX.Element {
 	const filesRef = useRef<ProjectFile[]>([]);
 	const activePathRef = useRef(entryRef.current);
 	const lastRunLanguageRef = useRef<Language | null>(null);
+	const lastRunFailedRef = useRef(false);
 	const settingsRef = useRef(settings);
 	const catalogRef = useRef<ProbeDescriptor[]>([]);
 	const testLensDecorationsRef = useRef<
@@ -742,8 +748,13 @@ export function App(): React.JSX.Element {
 					ms: `${event.result.executionMs.toFixed(1)}ms`,
 				};
 				setHistory((previous) => [entry, ...previous].slice(0, 4));
-				if (summary && (summary.failed > 0 || summary.leaked > 0))
-					setDrawer(true);
+				// Open the drawer when tests START failing; if the user closes it
+				// while still red, later failing runs must not force it back open.
+				const failedTests = Boolean(
+					summary && (summary.failed > 0 || summary.leaked > 0),
+				);
+				if (failedTests && !lastRunFailedRef.current) setDrawer(true);
+				lastRunFailedRef.current = failedTests;
 			}
 		} else if (event.type === "server.error") setStatus(event.message);
 	}, []);
@@ -1378,9 +1389,58 @@ export function App(): React.JSX.Element {
 				return;
 			setTermMenuOpen(false);
 		};
+		const closeOnEscape = (event: KeyboardEvent): void => {
+			if (event.key === "Escape") setTermMenuOpen(false);
+		};
 		window.addEventListener("pointerdown", close);
-		return () => window.removeEventListener("pointerdown", close);
+		window.addEventListener("keydown", closeOnEscape);
+		return () => {
+			window.removeEventListener("pointerdown", close);
+			window.removeEventListener("keydown", closeOnEscape);
+		};
 	}, [termMenuOpen]);
+
+	useEffect(() => {
+		if (!treeMenuOpen) return;
+		const close = (event: PointerEvent): void => {
+			if (
+				event.target instanceof Element &&
+				event.target.closest(".tree-menu-wrap, .tree-menu")
+			)
+				return;
+			setTreeMenuOpen(false);
+		};
+		const closeOnEscape = (event: KeyboardEvent): void => {
+			if (event.key === "Escape") setTreeMenuOpen(false);
+		};
+		window.addEventListener("pointerdown", close);
+		window.addEventListener("keydown", closeOnEscape);
+		return () => {
+			window.removeEventListener("pointerdown", close);
+			window.removeEventListener("keydown", closeOnEscape);
+		};
+	}, [treeMenuOpen]);
+
+	useEffect(() => {
+		if (!treeContextMenu) return;
+		const closeOnPointer = (event: PointerEvent): void => {
+			if (
+				event.target instanceof Element &&
+				event.target.closest(".tree-context-menu")
+			)
+				return;
+			setTreeContextMenu(undefined);
+		};
+		const closeOnEscape = (event: KeyboardEvent): void => {
+			if (event.key === "Escape") setTreeContextMenu(undefined);
+		};
+		window.addEventListener("pointerdown", closeOnPointer);
+		window.addEventListener("keydown", closeOnEscape);
+		return () => {
+			window.removeEventListener("pointerdown", closeOnPointer);
+			window.removeEventListener("keydown", closeOnEscape);
+		};
+	}, [treeContextMenu]);
 
 	useEffect(() => {
 		const narrowQuery = window.matchMedia("(max-width: 1040px)");
@@ -1541,9 +1601,8 @@ export function App(): React.JSX.Element {
 		[selectFile],
 	);
 
-	const renameActiveFile = useCallback((): void => {
-		if (!session || ENTRY_FILES.has(activePathRef.current)) return;
-		const path = activePathRef.current;
+	const renameFile = useCallback((path: string): void => {
+		if (!session || ENTRY_FILES.has(path)) return;
 		const newPath = window.prompt("Nueva ruta relativa a src/:", path)?.trim();
 		if (!newPath || newPath === path) return;
 		const current = filesRef.current.find((file) => file.path === path);
@@ -1564,8 +1623,10 @@ export function App(): React.JSX.Element {
 		setOpenTabs((previous) =>
 			previous.map((tab) => (tab === path ? newPath : tab)),
 		);
-		activePathRef.current = newPath;
-		setActivePath(newPath);
+		if (activePathRef.current === path) {
+			activePathRef.current = newPath;
+			setActivePath(newPath);
+		}
 		const oldLanguage = languageForPath(path);
 		if (oldLanguage) lspClientsRef.current[oldLanguage]?.close(current.uri);
 		const version = ++versionRef.current;
@@ -1578,17 +1639,18 @@ export function App(): React.JSX.Element {
 		});
 	}, [sendRuntime, session]);
 
-	const deleteActiveFile = useCallback((): void => {
-		if (!session || ENTRY_FILES.has(activePathRef.current)) return;
-		const path = activePathRef.current;
+	const deleteFile = useCallback((path: string): void => {
+		if (!session || ENTRY_FILES.has(path)) return;
 		if (!window.confirm(`¿Eliminar src/${path}?`)) return;
 		const current = filesRef.current.find((file) => file.path === path);
 		if (!current) return;
 		filesRef.current = filesRef.current.filter((file) => file.path !== path);
 		setFiles(filesRef.current);
 		setOpenTabs((previous) => previous.filter((tab) => tab !== path));
-		activePathRef.current = entryRef.current;
-		setActivePath(entryRef.current);
+		if (activePathRef.current === path) {
+			activePathRef.current = entryRef.current;
+			setActivePath(entryRef.current);
+		}
 		const language = languageForPath(path);
 		if (language) lspClientsRef.current[language]?.close(current.uri);
 		monacoRef.current?.editor
@@ -1917,47 +1979,108 @@ export function App(): React.JSX.Element {
 			<div className="workspace">
 				{treeVisible && (
 					<aside className="tree-card">
-						<div className="file-tree">
+						<div
+							className="file-tree"
+							onContextMenu={(event) => {
+								event.preventDefault();
+								const row =
+									event.target instanceof Element
+										? event.target.closest<HTMLElement>(
+												"[data-tree-path], [data-tree-folder]",
+											)
+										: null;
+								setTreeContextMenu({
+									x: event.clientX,
+									y: event.clientY,
+									...(row?.dataset.treePath
+										? { path: row.dataset.treePath }
+										: {}),
+									...(row?.dataset.treeFolder
+										? { folder: row.dataset.treeFolder }
+										: {}),
+								});
+							}}
+						>
 							<div className="tree-root">
 								<span className="chev">
 									<Lucide icon="chevron-down" size={13} />
 								</span>
 								<FolderIcon open /> src
-								<span className="tree-tools root-tools">
-									<button onClick={() => createFile()} title="Crear archivo">
-										＋
-									</button>
-									<button onClick={createFolder} title="Crear carpeta">
-										＋/
-									</button>
+								<span className="tree-menu-wrap root-tools">
 									<button
-										disabled={ENTRY_FILES.has(activePath)}
-										onClick={renameActiveFile}
-										title="Renombrar archivo"
+										aria-label="Acciones del árbol"
+										className={`tree-menu-btn${treeMenuOpen ? " open" : ""}`}
+										onClick={() => setTreeMenuOpen((previous) => !previous)}
 									>
-										✎
-									</button>
-									<button
-										disabled={ENTRY_FILES.has(activePath)}
-										onClick={deleteActiveFile}
-										title="Eliminar archivo"
-									>
-										×
-									</button>
-									<button
-										className="tree-hide"
-										onClick={() => updateLayout({ treeOpen: false })}
-										title="Ocultar árbol (⌘B)"
-									>
-										<Lucide icon="x" size={12} />
+										<Lucide icon="ellipsis-vertical" size={14} />
 									</button>
 								</span>
 							</div>
+							{treeMenuOpen && (
+								<div className="term-menu tree-menu" role="menu">
+									<button
+										onClick={() => {
+											setTreeMenuOpen(false);
+											createFile();
+										}}
+										role="menuitem"
+									>
+										<Lucide icon="file-plus" size={13} />
+										<span>Crear archivo</span>
+									</button>
+									<button
+										onClick={() => {
+											setTreeMenuOpen(false);
+											createFolder();
+										}}
+										role="menuitem"
+									>
+										<Lucide icon="folder-plus" size={13} />
+										<span>Crear carpeta</span>
+									</button>
+									<span className="term-menu-sep" />
+									<button
+										disabled={ENTRY_FILES.has(activePath)}
+										onClick={() => {
+											setTreeMenuOpen(false);
+											renameFile(activePathRef.current);
+										}}
+										role="menuitem"
+									>
+										<Lucide icon="pencil" size={13} />
+										<span>Renombrar archivo</span>
+									</button>
+									<button
+										disabled={ENTRY_FILES.has(activePath)}
+										onClick={() => {
+											setTreeMenuOpen(false);
+											deleteFile(activePathRef.current);
+										}}
+										role="menuitem"
+									>
+										<Lucide icon="trash-2" size={13} />
+										<span>Eliminar archivo</span>
+									</button>
+									<span className="term-menu-sep" />
+									<button
+										onClick={() => {
+											setTreeMenuOpen(false);
+											updateLayout({ treeOpen: false });
+										}}
+										role="menuitem"
+									>
+										<Lucide icon="panel-left-close" size={13} />
+										<span>Ocultar árbol</span>
+										<b>⌘B</b>
+									</button>
+								</div>
+							)}
 							{treeRows.map((row) => {
 								if (row.kind === "folder")
 									return (
 										<div
 											className="tree-folder-row"
+											data-tree-folder={row.path}
 											key={`folder:${row.path}`}
 											style={{ paddingLeft: `${10 + row.depth * 14}px` }}
 										>
@@ -1991,6 +2114,7 @@ export function App(): React.JSX.Element {
 									<button
 										aria-label={row.path}
 										className={`tree-file${row.path === activePath ? " active" : ""}`}
+										data-tree-path={row.path}
 										key={row.path}
 										onClick={() => selectFile(row.path)}
 										style={{ paddingLeft: `${22 + row.depth * 14}px` }}
@@ -2608,6 +2732,90 @@ export function App(): React.JSX.Element {
 				</div>
 			</div>
 
+			{treeContextMenu && (
+				<div
+					className="term-menu tree-context-menu"
+					ref={(menu) => {
+						if (!menu) return;
+						const { innerWidth, innerHeight } = window;
+						const rect = menu.getBoundingClientRect();
+						menu.style.left = `${Math.min(treeContextMenu.x, innerWidth - rect.width - 8)}px`;
+						menu.style.top = `${Math.min(treeContextMenu.y, innerHeight - rect.height - 8)}px`;
+					}}
+					role="menu"
+				>
+					{treeContextMenu.path && (
+						<>
+							<button
+								onClick={() => {
+									setTreeContextMenu(undefined);
+									if (treeContextMenu.path) selectFile(treeContextMenu.path);
+								}}
+								role="menuitem"
+							>
+								<Lucide icon="chevron-right" size={13} />
+								<span>Abrir</span>
+							</button>
+							<button
+								disabled={ENTRY_FILES.has(treeContextMenu.path)}
+								onClick={() => {
+									setTreeContextMenu(undefined);
+									if (treeContextMenu.path)
+										renameFile(treeContextMenu.path);
+								}}
+								role="menuitem"
+							>
+								<Lucide icon="pencil" size={13} />
+								<span>Renombrar</span>
+							</button>
+							<button
+								disabled={ENTRY_FILES.has(treeContextMenu.path)}
+								onClick={() => {
+									setTreeContextMenu(undefined);
+									if (treeContextMenu.path)
+										deleteFile(treeContextMenu.path);
+								}}
+								role="menuitem"
+							>
+								<Lucide icon="trash-2" size={13} />
+								<span>Eliminar</span>
+							</button>
+							<span className="term-menu-sep" />
+						</>
+					)}
+					<button
+						onClick={() => {
+							setTreeContextMenu(undefined);
+							const base =
+								treeContextMenu.folder ??
+								(treeContextMenu.path?.includes("/")
+									? treeContextMenu.path.slice(
+											0,
+											treeContextMenu.path.lastIndexOf("/"),
+										)
+									: undefined);
+							createFile(base ? `${base}/` : "");
+						}}
+						role="menuitem"
+					>
+						<Lucide icon="file-plus" size={13} />
+						<span>
+							Nuevo archivo
+							{treeContextMenu.folder ? ` en ${treeContextMenu.folder}/` : ""}
+						</span>
+					</button>
+					<button
+						onClick={() => {
+							setTreeContextMenu(undefined);
+							createFolder();
+						}}
+						role="menuitem"
+					>
+						<Lucide icon="folder-plus" size={13} />
+						<span>Nueva carpeta</span>
+					</button>
+				</div>
+			)}
 			{editorContextMenu && (
 				<div
 					className="editor-context-menu"

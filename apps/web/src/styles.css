@@ -288,6 +288,7 @@ input:focus-visible,
 /* ── Tree card ─────────────────────────────────────────── */
 
 .tree-card {
+	position: relative;
 	width: 236px;
 	flex-shrink: 0;
 	background: var(--panel-side);
@@ -2258,4 +2259,41 @@ input:focus-visible,
 	color: var(--text);
 	background: var(--mauve-dim);
 	box-shadow: inset 0 0 0 1px var(--mauve-border);
+}
+
+/* ── Tree menu + context menu ──────────────────────────── */
+
+.tree-menu-btn {
+	display: flex;
+	align-items: center;
+	padding: 2px 4px;
+	border-radius: 4px;
+	color: var(--overlay);
+}
+
+.tree-menu-btn:hover,
+.tree-menu-btn.open {
+	color: var(--text);
+	background: var(--surface0);
+}
+
+.tree-menu {
+	position: absolute;
+	top: 36px;
+	right: 8px;
+	left: auto;
+	z-index: 40;
+}
+
+.tree-context-menu {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: auto;
+	z-index: 70;
+	width: 220px;
+}
+
+.term-menu button:disabled {
+	opacity: 0.45;
 }

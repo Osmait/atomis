@@ -26,6 +26,15 @@ async function setToggle(
 	await expect(page.locator(".settings-modal")).toHaveCount(0);
 }
 
+/** Runs a file action from the tree's ⋯ dropdown. */
+async function treeAction(
+	page: import("@playwright/test").Page,
+	name: string,
+): Promise<void> {
+	await page.locator(".tree-menu-btn").click();
+	await page.getByRole("menuitem", { name, exact: true }).click();
+}
+
 /** Switches the terminal panel view through its ⋮ menu. */
 async function openTermView(
 	page: import("@playwright/test").Page,
@@ -111,14 +120,14 @@ test("project tree supports imports, embedFile, and runtime input files", async 
 }) => {
 	await openClean(page);
 	page.once("dialog", (dialog) => dialog.accept("solver.zig"));
-	await page.getByTitle("Crear archivo").click();
+	await treeAction(page, "Crear archivo");
 	await replaceEditor(
 		page,
 		'const std = @import("std");\npub fn answer() usize {\n    std.debug.print("solver module\\n", .{});\n    return @embedFile("input.txt").len;\n}\n',
 	);
 
 	page.once("dialog", (dialog) => dialog.accept("input.txt"));
-	await page.getByTitle("Crear archivo").click();
+	await treeAction(page, "Crear archivo");
 	await replaceEditor(page, "abcd\n");
 
 	await page.getByRole("button", { name: "main.zig" }).click();
@@ -148,15 +157,15 @@ pub fn main(init: std.process.Init) !void {
 	await expect(page.locator(".log-source-line")).toBeVisible();
 
 	page.once("dialog", (dialog) => dialog.accept("notes.tmp"));
-	await page.getByTitle("Crear archivo").click();
+	await treeAction(page, "Crear archivo");
 	await replaceEditor(page, "temporary");
 	page.once("dialog", (dialog) => dialog.accept("data/notes.txt"));
-	await page.getByTitle("Renombrar archivo").click();
+	await treeAction(page, "Renombrar archivo");
 	await expect(
 		page.getByRole("button", { name: "data/notes.txt" }),
 	).toBeVisible();
 	page.once("dialog", (dialog) => dialog.accept());
-	await page.getByTitle("Eliminar archivo").click();
+	await treeAction(page, "Eliminar archivo");
 	await expect(
 		page.getByRole("button", { name: "data/notes.txt" }),
 	).toHaveCount(0);
@@ -420,6 +429,20 @@ test("zig test runner reports cases, error lens and tree badges", async ({
 		.filter({ hasText: "falla esperada" })
 		.click();
 	await expect(page.locator(".cursor-status")).toHaveText("4:1");
+
+	// closing the drawer must stick: a rerun that is STILL failing may not
+	// force it back open (it only auto-opens on the ok → failing transition)
+	await page.locator(".drawer-close").click();
+	await expect(page.locator(".tests-drawer")).toHaveCount(0);
+	await page.getByRole("textbox", { name: "Editor content" }).focus();
+	await page.keyboard.press("End");
+	await page.keyboard.type(" ");
+	await expect(page.locator(".state-succeeded")).toBeVisible({
+		timeout: 30_000,
+	});
+	await expect(page.locator(".test-score")).toHaveText("2/3");
+	await expect(page.locator(".test-score")).toHaveClass(/err/);
+	await expect(page.locator(".tests-drawer")).toHaveCount(0);
 });
 
 test("command palette opens files and zen mode hides the chrome", async ({
@@ -428,7 +451,7 @@ test("command palette opens files and zen mode hides the chrome", async ({
 	await openClean(page);
 	await expect(page.locator(".state-succeeded")).toBeVisible();
 	page.once("dialog", (dialog) => dialog.accept("helper.zig"));
-	await page.getByTitle("Crear archivo").click();
+	await treeAction(page, "Crear archivo");
 	await replaceEditor(page, "pub fn helper() void {}\n");
 	await page.keyboard.press("ControlOrMeta+K");
 	const palette = page.locator(".palette");
@@ -702,7 +725,7 @@ test("folders group files and collapse in the tree", async ({ page }) => {
 	).toBeVisible();
 
 	page.once("dialog", (dialog) => dialog.accept("aoc"));
-	await page.getByTitle("Crear carpeta").click();
+	await treeAction(page, "Crear carpeta");
 	const aocRow = page
 		.locator(".tree-folder-row")
 		.filter({ hasText: "aoc" })
@@ -714,6 +737,23 @@ test("folders group files and collapse in the tree", async ({ page }) => {
 	await expect(
 		page.getByRole("button", { name: "aoc/day1.zig" }),
 	).toBeVisible();
+
+	// right-click: create inside a folder from the context menu
+	await page.locator(".tree-folder-row").first().click({ button: "right" });
+	await expect(page.locator(".tree-context-menu")).toBeVisible();
+	page.once("dialog", (dialog) => dialog.accept());
+	await page
+		.getByRole("menuitem", { name: /Nuevo archivo en/ })
+		.click();
+	await page.keyboard.press("Escape");
+
+	// right-click a file: rename/delete available
+	await page.locator(".tree-file").first().click({ button: "right" });
+	await expect(
+		page.getByRole("menuitem", { name: "Renombrar", exact: true }),
+	).toBeVisible();
+	await page.keyboard.press("Escape");
+	await expect(page.locator(".tree-context-menu")).toHaveCount(0);
 });
 
 async function openGo(page: import("@playwright/test").Page): Promise<boolean> {
