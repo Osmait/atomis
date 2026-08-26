@@ -64,10 +64,10 @@ pnpm typecheck
 
 - Edit Zig; ZLS diagnostics, completion, hover, definition, formatting, semantic tokens, inlay hints and code actions are enabled only when advertised.
 - Auto Run debounces edits for 400 ms. **Ctrl/Cmd+Enter** runs immediately; Stop cancels the active run.
-- Vim Mode is enabled by default and can be toggled in the navigator. Use `i` to insert, `Esc` for Normal mode and `:w` to run the current source.
+- Vim Mode is enabled by default and can be toggled in the navigator. Use `i` to insert, `Esc` for Normal mode and `:w` to run the current source. Native Ctrl/Cmd+A/C/X/V selection and clipboard shortcuts remain available.
 - Auto Inspect adds probes to supported local declarations in `generated/main.zig`. Click declaration glyphs for manual probes.
 - Inline values become crossed-out/stale immediately after an edit. Only matching document-version events can replace them.
-- Output, Problems and Runtime preserve separate stdout, stderr/panics, diagnostic owners and run metrics.
+- The terminal resets at the start of every run. Program output is neutral; compiler/runtime failures are red. Diagnostics and Runtime retain owner and timing details.
 
 ## Workspace
 

@@ -14,7 +14,7 @@ All runtime messages are JSON and versioned at protocol version 1. Shared TypeSc
 - `run.request` and `run.cancel`;
 - `settings.update` for Auto Run, Auto Inspect, debounce, timeout and manual IDs.
 
-Server events include `run.state`, `probe.catalog`, `probe_value`, capped output chunks, owner-separated diagnostics, `run.finished` metrics and typed recoverable errors. The browser ignores every event whose `documentVersion` is not active.
+Server events include `run.state`, `probe.catalog`, `probe_value`, capped output chunks, owner-separated diagnostics, `run.finished` metrics and typed recoverable errors. Output chunks retain the OS stream and carry a `program` or `error` category so normal Zig stderr output is not presented as a failure. The browser ignores every event whose `documentVersion` is not active.
 
 ## LSP WebSocket
 

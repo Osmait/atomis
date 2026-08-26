@@ -23,7 +23,11 @@ interface InstrumentationOutput {
 export interface RunnerCallbacks {
 	state: (state: "instrumenting" | "compiling" | "running") => void;
 	catalog: (probes: ProbeDescriptor[]) => void;
-	output: (stream: "stdout" | "stderr", chunk: string) => void;
+	output: (
+		stream: "stdout" | "stderr",
+		chunk: string,
+		category: "program" | "error",
+	) => void;
 	diagnostic: (owner: string, diagnostics: AppDiagnostic[]) => void;
 	probe: (
 		event: Omit<
@@ -105,7 +109,7 @@ export class CompilerRunner {
 				result: { ...metrics, cancelled: true, reason: "superseded" },
 			};
 		if (instrument.exitCode !== 0) {
-			callbacks.output("stderr", instrument.stderr);
+			callbacks.output("stderr", instrument.stderr, "error");
 			callbacks.diagnostic("ziglive-instrumenter", [
 				{
 					message: "Instrumentation failed",
@@ -192,8 +196,8 @@ export class CompilerRunner {
 					stderrBytes: 512 * 1024,
 				},
 				callbacks: {
-					stdout: (chunk) => callbacks.output("stdout", chunk),
-					stderr: (chunk) => callbacks.output("stderr", chunk),
+					stdout: (chunk) => callbacks.output("stdout", chunk, "program"),
+					stderr: (chunk) => callbacks.output("stderr", chunk, "error"),
 				},
 			},
 		);
@@ -225,6 +229,30 @@ export class CompilerRunner {
 		callbacks.state("running");
 		const counts = new Map<string, number>();
 		let probeError: string | undefined;
+		let runtimeStderrIsError = false;
+		let runtimeStderrBuffer = "";
+		const emitRuntimeStderrLine = (line: string): void => {
+			if (/(?:^|\s)(?:thread \d+ )?(?:panic|error):/i.test(line))
+				runtimeStderrIsError = true;
+			callbacks.output(
+				"stderr",
+				line,
+				runtimeStderrIsError ? "error" : "program",
+			);
+		};
+		const emitRuntimeStderr = (chunk: string): void => {
+			runtimeStderrBuffer += chunk;
+			let newline = runtimeStderrBuffer.indexOf("\n");
+			while (newline >= 0) {
+				emitRuntimeStderrLine(runtimeStderrBuffer.slice(0, newline + 1));
+				runtimeStderrBuffer = runtimeStderrBuffer.slice(newline + 1);
+				newline = runtimeStderrBuffer.indexOf("\n");
+			}
+		};
+		const flushRuntimeStderr = (): void => {
+			if (runtimeStderrBuffer) emitRuntimeStderrLine(runtimeStderrBuffer);
+			runtimeStderrBuffer = "";
+		};
 		const reader = new ProbeEventReader((event) => {
 			const count = (counts.get(event.probeId) ?? 0) + 1;
 			counts.set(event.probeId, count);
@@ -242,8 +270,8 @@ export class CompilerRunner {
 				probeBytes: 1024 * 1024,
 			},
 			callbacks: {
-				stdout: (chunk) => callbacks.output("stdout", chunk),
-				stderr: (chunk) => callbacks.output("stderr", chunk),
+				stdout: (chunk) => callbacks.output("stdout", chunk, "program"),
+				stderr: emitRuntimeStderr,
 				probe: (chunk) => {
 					try {
 						reader.push(chunk);
@@ -253,6 +281,7 @@ export class CompilerRunner {
 				},
 			},
 		});
+		flushRuntimeStderr();
 		metrics.executionMs = execution.durationMs;
 		metrics.exitCode = execution.exitCode;
 		metrics.signal = execution.signal;

@@ -39,6 +39,7 @@ interface OwnedDiagnostic extends AppDiagnostic {
 interface VimModeWithCommands {
 	Vim: {
 		defineEx: (name: string, prefix: string, callback: () => void) => void;
+		unmap: (keys: string, context?: "normal" | "insert" | "visual") => boolean;
 	};
 }
 
@@ -127,7 +128,12 @@ export function App(): React.JSX.Element {
 	const [values, setValues] = useState<Map<string, InlineValue>>(new Map());
 	const [stale, setStale] = useState(false);
 	const [output, setOutput] = useState<
-		{ stream: "stdout" | "stderr"; chunk: string; receivedAt: number }[]
+		{
+			stream: "stdout" | "stderr";
+			category: "program" | "error";
+			chunk: string;
+			receivedAt: number;
+		}[]
 	>([]);
 	const [diagnostics, setDiagnostics] = useState<
 		Record<string, AppDiagnostic[]>
@@ -246,8 +252,28 @@ export function App(): React.JSX.Element {
 			!acceptsVersion(versionRef.current, event.documentVersion)
 		)
 			return;
-		if (event.type === "run.state") setRunState(event.state);
-		else if (event.type === "probe.catalog") {
+		if (event.type === "run.state") {
+			setRunState(event.state);
+			if (event.state === "instrumenting") {
+				setOutput([]);
+				setResult(undefined);
+				setDiagnostics((previous) => ({
+					...previous,
+					"zig-compiler": [],
+					"zig-runtime": [],
+					"ziglive-instrumenter": [],
+				}));
+				const model = editorRef.current?.getModel();
+				const monaco = monacoRef.current;
+				if (model && monaco)
+					for (const owner of [
+						"zig-compiler",
+						"zig-runtime",
+						"ziglive-instrumenter",
+					])
+						monaco.editor.setModelMarkers(model, owner, []);
+			}
+		} else if (event.type === "probe.catalog") {
 			catalogRef.current = event.probes;
 			setCatalog(event.probes);
 		} else if (event.type === "probe_value") {
@@ -259,6 +285,7 @@ export function App(): React.JSX.Element {
 					...previous,
 					{
 						stream: event.stream,
+						category: event.category,
 						chunk: event.chunk,
 						receivedAt: performance.now(),
 					},
@@ -390,6 +417,9 @@ export function App(): React.JSX.Element {
 				}
 			});
 			const vimCommands = VimMode as unknown as VimModeWithCommands;
+			for (const shortcut of ["<C-a>", "<C-c>", "<C-v>", "<C-x>"])
+				vimCommands.Vim.unmap(shortcut);
+			vimCommands.Vim.unmap("<C-c>", "insert");
 			vimCommands.Vim.defineEx("write", "w", run);
 			if (vimEnabledRef.current && vimStatusRef.current)
 				vimRef.current = initVimMode(
@@ -785,7 +815,7 @@ export function App(): React.JSX.Element {
 												s
 											</time>
 											<span className="output-chevron">›</span>
-											<pre className={entry.stream}>{entry.chunk}</pre>
+											<pre className={entry.category}>{entry.chunk}</pre>
 										</div>
 									))
 								) : (

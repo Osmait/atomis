@@ -56,8 +56,11 @@ pub fn main() void {
 	).toBeVisible();
 });
 
-test("Vim mode switches modes and opens a line", async ({ page }) => {
+test("Vim mode keeps native clipboard shortcuts", async ({ page, context }) => {
 	const pageErrors: string[] = [];
+	await context.grantPermissions(["clipboard-read", "clipboard-write"], {
+		origin: "http://127.0.0.1:5173",
+	});
 	page.on("pageerror", (error) => pageErrors.push(error.message));
 	await openClean(page);
 	await page.getByLabel("Vim Mode").check();
@@ -72,6 +75,16 @@ test("Vim mode switches modes and opens a line", async ({ page }) => {
 	await page.keyboard.type("// vim");
 	await page.keyboard.press("Escape");
 	await expect(page.locator(".vim-status")).toContainText(/NORMAL/i);
+	await page.evaluate(() => navigator.clipboard.writeText("// clipboard"));
+	await page.keyboard.press("i");
+	await page.keyboard.press("Control+V");
+	await page.keyboard.press("Escape");
+	await expect(page.locator(".view-lines")).toContainText("// clipboard");
+	await page.keyboard.press("Control+A");
+	await page.keyboard.press("Control+C");
+	await expect
+		.poll(() => page.evaluate(() => navigator.clipboard.readText()))
+		.toContain("// clipboard");
 	expect(pageErrors).toEqual([]);
 });
 
@@ -113,6 +126,31 @@ test("compile errors do not become current and repair reruns", async ({
 	).toBeVisible();
 });
 
+test("each run clears the terminal and colors only failures red", async ({
+	page,
+}) => {
+	await openClean(page);
+	await replaceEditor(
+		page,
+		'const std = @import("std");\npub fn main() void {\n    std.debug.print("{missing}", .{});\n}\n',
+	);
+	await expect(page.locator(".state-compile_error")).toBeVisible();
+	const terminal = page.locator(".panel-content");
+	await expect(terminal).toContainText("too few arguments");
+	await expect(terminal.locator("pre.error").first()).toBeVisible();
+
+	await replaceEditor(
+		page,
+		'const std = @import("std");\npub fn main() void {\n    std.debug.print("hello from ZigLive\\n", .{});\n}\n',
+	);
+	await expect(page.locator(".state-succeeded")).toBeVisible();
+	await expect(terminal).not.toContainText("too few arguments");
+	await expect(terminal.locator("pre.program")).toContainText(
+		"hello from ZigLive",
+	);
+	await expect(terminal.locator("pre.error")).toHaveCount(0);
+});
+
 test("Auto Inspect can be replaced by a gutter manual probe", async ({
 	page,
 }) => {
@@ -139,9 +177,18 @@ pub fn main() void {
 	await expect(page.locator(".state-runtime_error")).toBeVisible();
 	await page.getByRole("button", { name: "Output" }).click();
 	const terminal = page.locator(".panel-content");
-	await expect(terminal.getByText(/before panic/)).toBeVisible();
-	await expect(terminal.getByText(/panic:/).first()).toBeVisible();
-	await expect(terminal.getByText(/expected panic/).first()).toBeVisible();
+	await expect(
+		terminal.locator("pre.program").filter({ hasText: "before panic" }),
+	).toBeVisible();
+	await expect(
+		terminal.locator("pre.error").filter({ hasText: /panic:/ }),
+	).toBeVisible();
+	await expect(
+		terminal
+			.locator("pre.error")
+			.filter({ hasText: /expected panic/ })
+			.first(),
+	).toBeVisible();
 	await page.getByRole("button", { name: /Problems/ }).click();
 	await expect(
 		page.getByText(/Program panicked|abnormally/).first(),

@@ -65,14 +65,17 @@ export class RunScheduler {
 						emit({ type: "run.state", documentVersion: version, runId, state }),
 					catalog: (probes) =>
 						emit({ type: "probe.catalog", documentVersion: version, probes }),
-					output: (stream, chunk) =>
-						emit({
+					output: (stream, chunk, category) => {
+						const outputEvent = {
 							type: "output",
 							documentVersion: version,
 							runId,
+							category,
 							stream,
 							chunk,
-						}),
+						} as const;
+						emit(outputEvent);
+					},
 					diagnostic: (owner, diagnostics) =>
 						emit({
 							type: "diagnostics",

@@ -431,7 +431,7 @@ button:disabled {
 	color: #d0d7d1;
 }
 
-.output-entry pre.stderr {
+.output-entry pre.error {
 	color: #ff858a;
 }
 

@@ -150,6 +150,7 @@ export type RuntimeServerEvent =
 			documentVersion: number;
 			runId: string;
 			stream: "stdout" | "stderr";
+			category: "program" | "error";
 			chunk: string;
 	  }
 	| {
