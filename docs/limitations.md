@@ -51,6 +51,11 @@
   global cache (6.2 s vs 1.6 s for Zig; every later run in that session is
   identical). Sharing one cache across sessions would remove it, at the
   price of letting one session poison another's build artifacts.
+- **Allow network** (Settings, off by default) lets the program itself open
+  outbound TCP while everything else stays confined: it can call an API,
+  it still cannot read your home or listen on a port. Turning the sandbox
+  off instead removes both restrictions at once, which is why the toggle
+  exists separately.
 - **Installing dependencies opens the network for that step**: outbound
   HTTPS only, for the install process only, with the filesystem still
   confined to the workspace. npm (and any manager that runs install

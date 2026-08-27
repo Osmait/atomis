@@ -337,6 +337,54 @@ input:focus-visible,
 	min-height: 0;
 }
 
+/* The sidebar's title doubles as the workspace switcher: it has to read
+   as a control, not as a label. */
+.workspace-bar {
+	align-items: center;
+	background: none;
+	border: 0;
+	border-bottom: 1px solid var(--panel-border);
+	color: var(--text);
+	cursor: pointer;
+	display: flex;
+	font: inherit;
+	font-weight: 600;
+	gap: 7px;
+	padding: 9px 10px;
+	text-align: left;
+	transition: background 0.12s ease;
+	width: 100%;
+}
+
+.workspace-bar:hover {
+	background: var(--panel-side);
+}
+
+.workspace-bar .workspace-bar-name {
+	flex: 1;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.workspace-bar svg {
+	color: var(--mauve);
+	flex: none;
+}
+
+.workspace-bar svg:last-child {
+	color: var(--dim);
+}
+
+.workspace-bar.scratch {
+	color: var(--subtext);
+	font-weight: 500;
+}
+
+.workspace-bar.scratch svg:first-child {
+	color: var(--dim);
+}
+
 .tree-root {
 	display: flex;
 	align-items: center;

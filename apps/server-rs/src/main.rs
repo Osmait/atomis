@@ -299,6 +299,31 @@ async fn ws_lsp_route(
     })
 }
 
+/// Resolves when the process that spawned us is gone.
+///
+/// The desktop shell pipes our stdin and never writes to it, so the read
+/// only ever completes at EOF — which happens when the shell's end of the
+/// pipe is closed, including when it is killed outright and its own exit
+/// handler never runs. Without this, an orphaned server keeps the port,
+/// and the next launch has to pick a different one; since the page origin
+/// includes the port, that silently empties every stored preference.
+///
+/// Opt-in: run from a terminal or with stdin at /dev/null, EOF means
+/// nothing, so this only arms when the shell asks for it.
+async fn parent_gone() {
+    if std::env::var_os("ATOMIS_EXIT_ON_STDIN_EOF").is_none() {
+        std::future::pending::<()>().await;
+    }
+    let mut stdin = tokio::io::stdin();
+    let mut discard = [0_u8; 256];
+    loop {
+        match tokio::io::AsyncReadExt::read(&mut stdin, &mut discard).await {
+            Ok(0) | Err(_) => return,
+            Ok(_) => {}
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
     // `atomis-server --doctor` replaces the old `tsx apps/server/doctor.ts`.
@@ -385,8 +410,18 @@ async fn main() {
             tokio::select! {
                 _ = ctrl_c => {}
                 _ = sigterm.recv() => {}
+                _ = parent_gone() => {}
             }
             shutdown_state.sessions.close().await;
+            // Draining waits for every live connection to finish, and a
+            // WebSocket whose peer is gone can hold one open indefinitely —
+            // which leaves the port taken and the next launch on a new
+            // origin, with no stored preferences. Give the drain a moment
+            // to be polite, then leave regardless.
+            tokio::spawn(async {
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                std::process::exit(0);
+            });
         })
         .await
         .expect("serve");

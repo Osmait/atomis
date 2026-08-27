@@ -416,6 +416,11 @@ pub async fn scaffold(language: Language, root: &Path) -> std::io::Result<()> {
                 root.join("generated/sitecustomize.py"),
             )
             .await?;
+            copy_once(
+                source.join("python/session-template/pyproject.toml"),
+                root.join("pyproject.toml"),
+            )
+            .await?;
         }
         Language::C => {
             copy(

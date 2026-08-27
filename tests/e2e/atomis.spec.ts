@@ -16,7 +16,11 @@ async function setToggle(
 	on: boolean,
 ): Promise<void> {
 	await page.locator(".chrome-icon").click();
-	const toggle = page.locator(".settings-toggle", { hasText: label });
+	// Match the label element, not the whole button: hints mention other
+	// toggles by name ("sandbox off — …") and would match too.
+	const toggle = page.locator(".settings-toggle").filter({
+		has: page.getByText(label, { exact: true }),
+	});
 	await expect(toggle).toBeVisible();
 	const isOn = await toggle
 		.locator(".switch")
@@ -1547,14 +1551,17 @@ test("persistent workspaces keep their files across reloads", async ({
 	await openClean(page);
 	const name = `spec-${Date.now()}`;
 
-	// Create one from the tree menu's switcher; the app reloads into it.
-	await treeAction(page, "Switch workspace…");
+	// The sidebar is titled by the workspace, and the title is the switcher.
+	await expect(page.locator(".workspace-bar")).toContainText("Scratch session");
+	await page.locator(".workspace-bar").click();
 	await page.getByLabel("New workspace name").fill(name);
 	await page.getByRole("button", { name: "create" }).click();
 	await expect(page.locator(".file-tree")).toBeVisible();
-	await expect(page.locator(".branch-status")).toContainText(name, {
+	await expect(page.locator(".workspace-bar")).toContainText(name, {
 		timeout: 30_000,
 	});
+	// The status bar keeps showing it too, for when the tree is hidden.
+	await expect(page.locator(".branch-status")).toContainText(name);
 
 	// A file created here must survive a full reload.
 	await treeAction(page, "New file");
@@ -1578,7 +1585,7 @@ test("persistent workspaces keep their files across reloads", async ({
 	});
 
 	// A scratch session is a different, empty place…
-	await treeAction(page, "Switch workspace…");
+	await page.locator(".workspace-bar").click();
 	await page.getByText("Scratch session").click();
 	await expect(page.locator(".branch-status")).toContainText("scratch", {
 		timeout: 30_000,
@@ -1597,7 +1604,7 @@ test("persistent workspaces keep their files across reloads", async ({
 	await expect(page.getByText("5 : i32", { exact: true })).toBeVisible();
 
 	// …and the workspace is still listed, with its files, until deleted.
-	await treeAction(page, "Switch workspace…");
+	await page.locator(".workspace-bar").click();
 	await page.locator(".workspace-open", { hasText: name }).click();
 	await expect(page.getByLabel("persisted.zig")).toBeVisible({
 		timeout: 30_000,
@@ -1613,7 +1620,7 @@ test("persistent workspaces keep their files across reloads", async ({
 		timeout: 60_000,
 	});
 	const before = await page.locator(".branch-status b").textContent();
-	await treeAction(page, "Switch workspace…");
+	await page.locator(".workspace-bar").click();
 	await page.locator(".workspace-open", { hasText: name }).click();
 	await expect(page.locator(".palette-overlay")).toHaveCount(0);
 	await expect(page.locator(".branch-status b")).toHaveText(before ?? "");
@@ -1684,4 +1691,45 @@ test("dependencies install, persist and become importable", async ({
 	await page.getByRole("menuitem", { name: /Dependencies/ }).click();
 	await page.getByLabel("Remove uuid").click();
 	await expect(page.locator(".deps-row")).toHaveCount(0, { timeout: 120_000 });
+});
+
+test("Allow network lets code call out while files stay confined", async ({
+	page,
+}) => {
+	await openClean(page);
+	const support = await page.evaluate(async () => {
+		const response = await fetch("/api/sessions", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ language: "ts", scaffold: "minimal" }),
+		});
+		return ((await response.json()) as { sandboxSupport?: string })
+			.sandboxSupport;
+	});
+	test.skip(
+		support !== "files+network",
+		"kernel without Landlock network rules",
+	);
+
+	// A local request keeps the test off the internet; the boundary being
+	// tested is the sandbox, not the route.
+	await page.getByRole("button", { name: "main.ts", exact: true }).click();
+	await replaceEditor(
+		page,
+		'const probe = "/tmp/atomis-network-probe.txt";\nconst { writeFileSync } = await import("node:fs");\nlet reached = "denied";\ntry {\n\tconst response = await fetch("http://127.0.0.1:4317/api/health");\n\treached = String((await response.json()).ok);\n} catch {\n\treached = "denied";\n}\nlet wrote = "denied";\ntry {\n\twriteFileSync(probe, "x");\n\twrote = "escaped";\n} catch {\n\twrote = "denied";\n}\nconsole.log(`net:${reached} disk:${wrote}`);\n',
+	);
+	// Off by default: the program cannot reach the server at all.
+	await expect(page.locator(".output-list")).toContainText(
+		"net:denied disk:denied",
+		{ timeout: 60_000 },
+	);
+
+	// With the toggle on, the call goes through — and the disk does not.
+	await setToggle(page, "Allow network", true);
+	await page.locator(".run-button").click();
+	await expect(page.locator(".output-list")).toContainText(
+		"net:true disk:denied",
+		{ timeout: 60_000 },
+	);
+	await setToggle(page, "Allow network", false);
 });

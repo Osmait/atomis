@@ -288,14 +288,26 @@ impl LspProxy {
             return;
         };
         let args = packs::lsp_args(self.language, &self.session.root);
-        let child = tokio::process::Command::new(command)
+        let mut builder = tokio::process::Command::new(command);
+        builder
             .args(&args)
             .current_dir(&self.session.root)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn();
+            .kill_on_drop(true);
+        // kill_on_drop covers the ordinary path, where closing the socket
+        // drops the child. It cannot help if we exit without unwinding, so
+        // ask the kernel to take the language server down with us as well —
+        // one syscall, safe to make between fork and exec.
+        #[cfg(target_os = "linux")]
+        unsafe {
+            builder.pre_exec(|| {
+                libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM);
+                Ok(())
+            });
+        }
+        let child = builder.spawn();
         let mut child = match child {
             Ok(child) => child,
             Err(error) => {

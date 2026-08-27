@@ -23,7 +23,9 @@ pub struct DepsSupport {
     pub manifest: &'static str,
     /// Command and leading args; the dependency is appended.
     pub add: &'static [&'static str],
-    pub remove: &'static [&'static str],
+    /// None where the toolchain has no remove command and Atomis edits the
+    /// manifest itself (zig).
+    pub remove: Option<&'static [&'static str]>,
     /// Env for the add step, which is the only one allowed to reach the
     /// network (the runners keep their offline flags for builds).
     pub fetch_env: &'static [(&'static str, &'static str)],
@@ -42,6 +44,8 @@ pub fn support(language: Language) -> Option<&'static DepsSupport> {
         Language::Rust => Some(&RUST),
         Language::Go => Some(&GO),
         Language::Ts => Some(&TS),
+        Language::Zig => Some(&ZIG),
+        Language::Py => Some(&PY),
         _ => None,
     }
 }
@@ -49,7 +53,7 @@ pub fn support(language: Language) -> Option<&'static DepsSupport> {
 static RUST: DepsSupport = DepsSupport {
     manifest: "Cargo.toml",
     add: &["cargo", "add"],
-    remove: &["cargo", "remove"],
+    remove: Some(&["cargo", "remove"]),
     // The runners build with CARGO_NET_OFFLINE=true; adding needs the net.
     fetch_env: &[("CARGO_NET_OFFLINE", "false")],
     // `cargo add` writes the manifest and lock file but downloads nothing.
@@ -61,7 +65,7 @@ static RUST: DepsSupport = DepsSupport {
 static GO: DepsSupport = DepsSupport {
     manifest: "go.mod",
     add: &["go", "get"],
-    remove: &["go", "get"],
+    remove: Some(&["go", "get"]),
     fetch_env: &[("GOPROXY", "https://proxy.golang.org,direct"), ("GOFLAGS", "-mod=mod")],
     // `go get` populates the module cache itself.
     fetch_after_add: None,
@@ -72,7 +76,7 @@ static GO: DepsSupport = DepsSupport {
 static TS: DepsSupport = DepsSupport {
     manifest: "package.json",
     add: &["npm", "install"],
-    remove: &["npm", "uninstall"],
+    remove: Some(&["npm", "uninstall"]),
     fetch_env: &[],
     // `npm install` writes node_modules as it goes.
     fetch_after_add: None,
@@ -89,13 +93,181 @@ pub fn remove_argument(language: Language, name: &str) -> String {
     }
 }
 
+static ZIG: DepsSupport = DepsSupport {
+    manifest: "build.zig.zon",
+    // Zig has no registry: a dependency is a URL, and the package's own
+    // name in the fetched manifest is what the build then imports.
+    add: &["zig", "fetch", "--save"],
+    // There is no `zig fetch --remove`; Atomis rewrites the manifest.
+    remove: None,
+    fetch_env: &[],
+    fetch_after_add: None,
+    runs_untrusted_code: false,
+    input_hint: "package URL, e.g. git+https://github.com/user/repo",
+};
+
+static PY: DepsSupport = DepsSupport {
+    manifest: "pyproject.toml",
+    // uv resolves, locks and installs into the workspace's own .venv.
+    add: &["uv", "add"],
+    remove: Some(&["uv", "remove"]),
+    fetch_env: &[],
+    fetch_after_add: None,
+    // Building a wheel from source runs the package's build backend.
+    runs_untrusted_code: true,
+    input_hint: "package name, optionally name==version",
+};
+
 pub fn parse_manifest(language: Language, text: &str) -> Vec<Dependency> {
     match language {
         Language::Rust => parse_cargo_toml(text),
         Language::Go => parse_go_mod(text),
         Language::Ts => parse_package_json(text),
+        Language::Zig => parse_build_zon(text),
+        Language::Py => parse_pyproject(text),
         _ => Vec::new(),
     }
+}
+
+/// The `dependencies` array of a pyproject's `[project]` table, as uv
+/// writes it: one requirement string per line, name first.
+fn parse_pyproject(text: &str) -> Vec<Dependency> {
+    let mut found = Vec::new();
+    let mut in_project = false;
+    let mut in_list = false;
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            in_project = trimmed == "[project]";
+            in_list = false;
+            continue;
+        }
+        if !in_project {
+            continue;
+        }
+        if let Some(rest) = trimmed.strip_prefix("dependencies") {
+            let rest = rest.trim_start_matches([' ', '=']).trim();
+            in_list = !rest.ends_with(']');
+            // A single-line `dependencies = ["a", "b"]` closes immediately.
+            for requirement in rest.trim_matches(['[', ']']).split(',') {
+                if let Some(dependency) = parse_requirement(requirement) {
+                    found.push(dependency);
+                }
+            }
+            continue;
+        }
+        if in_list {
+            if trimmed.starts_with(']') {
+                in_list = false;
+                continue;
+            }
+            if let Some(dependency) = parse_requirement(trimmed) {
+                found.push(dependency);
+            }
+        }
+    }
+    found
+}
+
+/// `"requests>=2.32.5"` becomes name `requests`, version `>=2.32.5`.
+fn parse_requirement(raw: &str) -> Option<Dependency> {
+    let requirement = raw.trim().trim_end_matches(',').trim_matches('"').trim();
+    if requirement.is_empty() || requirement.starts_with('#') {
+        return None;
+    }
+    let split = requirement
+        .find(|c: char| "<>=!~[ ".contains(c))
+        .unwrap_or(requirement.len());
+    let (name, version) = requirement.split_at(split);
+    (!name.is_empty()).then(|| Dependency {
+        name: name.to_string(),
+        version: version.trim().to_string(),
+    })
+}
+
+/// The `.dependencies` block of a build.zig.zon. The hash zig writes
+/// carries `name-version-digest`, which is where the version shown comes
+/// from — the manifest records no version field of its own.
+fn parse_build_zon(text: &str) -> Vec<Dependency> {
+    let Some(start) = text.find(".dependencies") else {
+        return Vec::new();
+    };
+    let mut found = Vec::new();
+    let mut depth = 0i32;
+    let mut current: Option<String> = None;
+    for line in text[start..].lines().skip(1) {
+        let trimmed = line.trim();
+        // An entry opens at the block's first level: `.name = .{`.
+        if depth == 0 {
+            if let Some(name) = trimmed
+                .strip_prefix('.')
+                .and_then(|rest| rest.split('=').next())
+                .map(str::trim)
+                .filter(|name| !name.is_empty() && trimmed.ends_with(".{"))
+            {
+                current = Some(name.to_string());
+                depth = 1;
+                found.push(Dependency {
+                    name: name.to_string(),
+                    version: String::new(),
+                });
+                continue;
+            }
+            // `},` at this level closes the whole dependencies block.
+            if trimmed.starts_with('}') {
+                break;
+            }
+            continue;
+        }
+        if trimmed.starts_with('}') {
+            depth = 0;
+            current = None;
+            continue;
+        }
+        // `.hash = "clap-0.12.0-oBaj…"` — the middle field is the version.
+        if let (Some(name), Some(hash)) = (
+            current.as_ref(),
+            trimmed
+                .strip_prefix(".hash")
+                .and_then(|rest| rest.split('"').nth(1)),
+        ) {
+            let version = hash.split('-').nth(1).unwrap_or_default();
+            if let Some(entry) = found.iter_mut().find(|entry| &entry.name == name) {
+                entry.version = version.to_string();
+            }
+        }
+    }
+    found
+}
+
+/// Removes one dependency from a build.zig.zon, returning the new text.
+/// Used where the toolchain offers no remove command.
+pub fn manifest_without(language: Language, text: &str, name: &str) -> Option<String> {
+    if language != Language::Zig {
+        return None;
+    }
+    let opener = format!(".{name} = .{{");
+    let mut out = String::with_capacity(text.len());
+    let mut skipping = false;
+    let mut depth = 0i32;
+    for line in text.lines() {
+        if !skipping && line.trim().starts_with(&opener) {
+            skipping = true;
+            depth = 1;
+            continue;
+        }
+        if skipping {
+            depth += line.matches('{').count() as i32;
+            depth -= line.matches('}').count() as i32;
+            if depth <= 0 {
+                skipping = false;
+            }
+            continue;
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    (out != text).then_some(out)
 }
 
 fn strip_quotes(value: &str) -> String {
@@ -313,7 +485,104 @@ require (
         assert!(parse_manifest(Language::Rust, "").is_empty());
         // Languages without a package manager have no support entry.
         assert!(support(Language::C).is_none());
-        assert!(support(Language::Zig).is_none());
+        assert!(parse_manifest(Language::Zig, "not a zon").is_empty());
+    }
+
+    const ZON: &str = r#".{
+    .name = .atomis_session,
+    .version = "0.0.0",
+    .dependencies = .{
+        .clap = .{
+            .url = "git+https://github.com/Hejsil/zig-clap#e91d66b",
+            .hash = "clap-0.12.0-oBajB2LpAQD1BQpAukHcuwhIUoHWYNy2DzU6lDW2v2N8",
+        },
+        .zul = .{
+            .url = "git+https://github.com/karlseguin/zul",
+            .hash = "zul-0.1.0-abcdefghijklmnop",
+        },
+    },
+    .fingerprint = 0x5e5012a62cd7f022,
+    .paths = .{ "build.zig", "src" },
+}
+"#;
+
+    #[test]
+    fn reads_zon_dependencies_with_the_version_from_the_hash() {
+        assert_eq!(
+            parse_manifest(Language::Zig, ZON),
+            vec![
+                Dependency {
+                    name: "clap".into(),
+                    version: "0.12.0".into()
+                },
+                Dependency {
+                    name: "zul".into(),
+                    version: "0.1.0".into()
+                },
+            ]
+        );
+        // Neither .paths nor .fingerprint are dependencies.
+        let empty = parse_manifest(Language::Zig, ".{ .name = .x, .paths = .{ \"build.zig\" } }");
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn removing_from_the_zon_drops_only_that_entry() {
+        let without = manifest_without(Language::Zig, ZON, "clap").expect("edited");
+        assert!(!without.contains("clap"));
+        assert!(without.contains(".zul = .{"));
+        // The rest of the manifest survives intact.
+        assert!(without.contains(".fingerprint = 0x5e5012a62cd7f022"));
+        assert!(without.contains(".paths = .{ \"build.zig\", \"src\" }"));
+        assert_eq!(
+            parse_manifest(Language::Zig, &without),
+            vec![Dependency {
+                name: "zul".into(),
+                version: "0.1.0".into()
+            }]
+        );
+        // A name that is not there changes nothing.
+        assert!(manifest_without(Language::Zig, ZON, "absent").is_none());
+        // Other languages have their own remove command.
+        assert!(manifest_without(Language::Rust, ZON, "clap").is_none());
+    }
+
+    #[test]
+    fn reads_the_requirements_uv_writes() {
+        let manifest = r#"
+[project]
+name = "atomis-session"
+requires-python = ">=3.9"
+dependencies = [
+    "requests>=2.32.5",
+    "httpx[http2]==0.27",
+    # a comment
+]
+
+[tool.uv]
+dev-dependencies = ["pytest"]
+"#;
+        let found = parse_manifest(Language::Py, manifest);
+        assert_eq!(
+            found
+                .iter()
+                .map(|dep| (dep.name.as_str(), dep.version.as_str()))
+                .collect::<Vec<_>>(),
+            vec![("requests", ">=2.32.5"), ("httpx", "[http2]==0.27")]
+        );
+        // requires-python is not a dependency, and neither is [tool.uv].
+        assert!(found.iter().all(|dep| dep.name != "requires-python" && dep.name != "pytest"));
+    }
+
+    #[test]
+    fn reads_a_single_line_dependency_list() {
+        let found = parse_manifest(
+            Language::Py,
+            "[project]\ndependencies = [\"rich\", \"typer>=0.12\"]\n",
+        );
+        assert_eq!(found.len(), 2);
+        assert_eq!(found[0].name, "rich");
+        assert_eq!(found[1].version, ">=0.12");
     }
 
     #[test]

@@ -43,6 +43,7 @@ const entries = [
 	"ts/session-template",
 	"python/instrumenter",
 	"python/runtime",
+	"python/session-template",
 	"python/test-runner",
 	"cfamily/instrumenter",
 	"cfamily/runtime",

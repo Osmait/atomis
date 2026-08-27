@@ -50,6 +50,8 @@ function renderTree(
 			failsByFile={new Map([["src/utils/helper.zig", 2]])}
 			focused={false}
 			revealKey="test"
+			scratch={false}
+			workspaceName="AoC 2026"
 			rows={rows}
 			srcCollapsed={false}
 			treeSel={0}

@@ -1,0 +1,8 @@
+# Atomis keeps your dependencies here. `uv add <package>` writes to the
+# list below and installs into the workspace's own .venv, so nothing
+# reaches your global site-packages.
+[project]
+name = "atomis-session"
+version = "0.0.0"
+requires-python = ">=3.9"
+dependencies = []

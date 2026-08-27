@@ -199,7 +199,37 @@ async fn run_deps_command(
         (policy, _) => policy.clone(),
     };
 
-    let template = if installing { support.add } else { support.remove };
+    // Removing where the toolchain has no command for it (zig) is a
+    // manifest edit, not a process.
+    if !installing && support.remove.is_none() {
+        let path = session.root.join(support.manifest);
+        let text = tokio::fs::read_to_string(&path)
+            .await
+            .map_err(|error| error.to_string())?;
+        let state = match crate::deps::manifest_without(language, &text, &name) {
+            Some(updated) => {
+                tokio::fs::write(&path, updated)
+                    .await
+                    .map_err(|error| error.to_string())?;
+                crate::protocol::DepsState::Idle
+            }
+            None => crate::protocol::DepsState::Failed,
+        };
+        send_deps_catalog(session, outbox).await;
+        let _ = outbox.send(ServerEvent::DepsState {
+            state,
+            name: Some(name),
+            error: (state == crate::protocol::DepsState::Failed)
+                .then(|| "not found in the manifest".to_string()),
+        });
+        return Ok(());
+    }
+
+    let template = if installing {
+        support.add
+    } else {
+        support.remove.unwrap_or(support.add)
+    };
     let (command, leading) = template.split_first().ok_or("empty command")?;
     let mut args: Vec<String> = leading.iter().map(|arg| (*arg).to_string()).collect();
     args.push(if installing {
@@ -406,6 +436,7 @@ async fn handle_message(
             timeout_ms,
             manual_probe_ids,
             sandbox,
+            network,
             ..
         } => {
             *session.settings.lock().await = SessionSettings {
@@ -418,6 +449,7 @@ async fn handle_message(
                 sandbox: sandbox.unwrap_or_else(|| {
                     crate::sandbox::detect_support().available()
                 }),
+                network: network.unwrap_or(false),
             };
             Ok(())
         }

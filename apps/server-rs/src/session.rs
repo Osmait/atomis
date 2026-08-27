@@ -28,6 +28,9 @@ pub struct SessionSettings {
     /// Confine every process this session spawns to its workspace. On by
     /// default wherever the kernel can enforce it.
     pub sandbox: bool,
+    /// Let the program itself open outbound connections. Off by default:
+    /// a playground that can phone home is a different tool.
+    pub network: bool,
 }
 
 impl Default for SessionSettings {
@@ -38,6 +41,7 @@ impl Default for SessionSettings {
             debounce_ms: 400,
             timeout_ms: 2000,
             sandbox: crate::sandbox::detect_support().available(),
+            network: false,
             manual_probe_ids: Vec::new(),
         }
     }
@@ -86,9 +90,17 @@ impl Session {
         &self,
         settings: &SessionSettings,
     ) -> Option<std::sync::Arc<crate::sandbox::SandboxPolicy>> {
-        settings
-            .sandbox
-            .then(|| std::sync::Arc::clone(&self.sandbox_policy))
+        if !settings.sandbox {
+            return None;
+        }
+        if settings.network {
+            // Widening happens here, once, so every spawn of the session
+            // agrees on what the program is allowed to reach.
+            return Some(std::sync::Arc::new(crate::sandbox::with_outbound_network(
+                &self.sandbox_policy,
+            )));
+        }
+        Some(std::sync::Arc::clone(&self.sandbox_policy))
     }
 
     pub async fn current(&self) -> Snapshot {

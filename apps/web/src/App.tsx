@@ -1238,6 +1238,11 @@ export function App(): React.JSX.Element {
 		: session.sandboxSupport === "files"
 			? "workspace-only files"
 			: "workspace-only files · no TCP";
+	const networkHint = !sandboxAvailable
+		? "your code already runs unconfined here"
+		: settings.sandbox
+			? "your code may call out; files stay confined"
+			: "sandbox off — the network is already open";
 	const drawerToneFor = (testId: string): string =>
 		caseTone(testsDone, testResults.get(testId));
 
@@ -1278,6 +1283,8 @@ export function App(): React.JSX.Element {
 							project.setSrcCollapsed((previous) => !previous)
 						}
 						revealKey={session.sessionId}
+						scratch={!session.workspace}
+						workspaceName={session.workspace?.name ?? "Scratch session"}
 						rows={treeRows}
 						srcCollapsed={project.srcCollapsed}
 						treeSel={treeSel}
@@ -1631,6 +1638,17 @@ export function App(): React.JSX.Element {
 								sendSettings({
 									...settings,
 									sandbox: !settings.sandbox,
+								}),
+						},
+						{
+							label: "Allow network",
+							hint: networkHint,
+							on: settings.network,
+							disabled: !settings.sandbox && sandboxAvailable,
+							act: () =>
+								sendSettings({
+									...settings,
+									network: !settings.network,
 								}),
 						},
 						{

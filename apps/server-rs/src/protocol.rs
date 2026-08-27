@@ -321,6 +321,8 @@ pub enum RuntimeClientMessage {
         manual_probe_ids: Vec<String>,
         #[serde(default)]
         sandbox: Option<bool>,
+        #[serde(default)]
+        network: Option<bool>,
     },
     #[serde(rename = "deps.list")]
     DepsList {

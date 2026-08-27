@@ -90,9 +90,21 @@ pub struct SandboxPolicy {
     pub devices: Vec<PathBuf>,
     /// The real user home, kept so toolchain roots can still be pointed at.
     pub home: Option<PathBuf>,
-    /// TCP ports the process may CONNECT to. Empty means no network at all.
-    /// Binding is never allowed: a confined process may fetch, never serve.
-    pub allow_connect_ports: Vec<u16>,
+    /// What the process may do with the network. Binding is never allowed
+    /// in any mode: a confined process may call out, never serve.
+    pub network: NetworkAccess,
+}
+
+/// Outbound network a sandboxed process is granted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NetworkAccess {
+    /// No TCP at all — the default for everything Atomis runs.
+    None,
+    /// Outbound TCP to these ports only, for dependency installs.
+    Ports(Vec<u16>),
+    /// Any outbound TCP, for user code that asks for it. Listening stays
+    /// denied, so a program can call an API but never accept a connection.
+    Outbound,
 }
 
 /// System locations every toolchain needs to exec and load libraries from.
@@ -133,7 +145,7 @@ pub fn policy_for(workspace: &Path, project_root: &Path, home: Option<&Path>) ->
         read_only,
         devices: DEVICES.iter().map(PathBuf::from).collect(),
         home: home.map(Path::to_path_buf),
-        allow_connect_ports: Vec::new(),
+        network: NetworkAccess::None,
     }
 }
 
@@ -146,7 +158,17 @@ pub const FETCH_PORTS: &[u16] = &[443, 80];
 /// port, every other port — stays exactly as restricted.
 pub fn with_fetch_network(policy: &SandboxPolicy) -> SandboxPolicy {
     SandboxPolicy {
-        allow_connect_ports: FETCH_PORTS.to_vec(),
+        network: NetworkAccess::Ports(FETCH_PORTS.to_vec()),
+        ..policy.clone()
+    }
+}
+
+/// The same policy with outbound TCP opened for the program itself, which
+/// is what "Allow network" grants: HTTP clients work, the filesystem stays
+/// confined to the workspace, and nothing can listen.
+pub fn with_outbound_network(policy: &SandboxPolicy) -> SandboxPolicy {
+    SandboxPolicy {
+        network: NetworkAccess::Outbound,
         ..policy.clone()
     }
 }
@@ -187,7 +209,7 @@ pub fn child_env(policy: &SandboxPolicy) -> Vec<(String, String)> {
 
 #[cfg(target_os = "linux")]
 mod imp {
-    use super::{SandboxPolicy, SandboxSupport};
+    use super::{NetworkAccess, SandboxPolicy, SandboxSupport};
     use landlock::{
         path_beneath_rules, Access, AccessFs, AccessNet, CompatLevel, Compatible, NetPort, Ruleset,
         RulesetAttr, RulesetCreatedAttr, RulesetError, ABI,
@@ -220,16 +242,23 @@ mod imp {
             .set_compatibility(CompatLevel::BestEffort)
             .handle_access(AccessFs::from_all(abi))
             .map_err(|error| error.to_string())?;
+        // Handling an access with no rule denies it. Outbound access is
+        // therefore granted by NOT handling ConnectTcp at all, while
+        // BindTcp stays handled and ruleless in every mode.
+        let mut connect_ports: Vec<u16> = Vec::new();
         if support == SandboxSupport::FilesAndNetwork {
+            let handled = match &policy.network {
+                NetworkAccess::Outbound => AccessNet::BindTcp.into(),
+                NetworkAccess::Ports(ports) => {
+                    connect_ports = ports.clone();
+                    AccessNet::from_all(abi)
+                }
+                NetworkAccess::None => AccessNet::from_all(abi),
+            };
             ruleset = ruleset
-                .handle_access(AccessNet::from_all(abi))
+                .handle_access(handled)
                 .map_err(|error| error.to_string())?;
         }
-        let connect_ports: Vec<u16> = if support == SandboxSupport::FilesAndNetwork {
-            policy.allow_connect_ports.clone()
-        } else {
-            Vec::new()
-        };
         let created = ruleset
             .create()
             .map_err(|error| error.to_string())?
@@ -590,9 +619,39 @@ mod tests {
             !run_sandboxed(&base, &["python3", "-c", &connect(443)]),
             "the grant must not leak into the normal policy"
         );
-        assert!(
-            base.allow_connect_ports.is_empty(),
+        assert_eq!(
+            base.network,
+            NetworkAccess::None,
             "with_fetch_network must not mutate the policy it copies"
+        );
+
+        // "Allow network" is broader on purpose — any outbound port, since
+        // an API can live anywhere — but still cannot listen.
+        let outbound = with_outbound_network(&base);
+        assert!(
+            run_sandboxed(&outbound, &["python3", "-c", &connect(443)]),
+            "outbound HTTPS must work for user code"
+        );
+        assert!(
+            !run_sandboxed(
+                &outbound,
+                &[
+                    "python3",
+                    "-c",
+                    "import socket;s=socket.socket();s.bind(('127.0.0.1',0))",
+                ],
+            ),
+            "granting outbound access must not let a program listen"
+        );
+        assert!(
+            !run_sandboxed(
+                &outbound,
+                &[
+                    "/bin/cat",
+                    workspace.parent().expect("parent").to_str().expect("path"),
+                ],
+            ),
+            "the filesystem stays confined even with the network open"
         );
         std::fs::remove_dir_all(&workspace).ok();
     }

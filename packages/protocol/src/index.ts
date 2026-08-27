@@ -264,6 +264,8 @@ const settings = z
 		manualProbeIds: z.array(z.string().min(1).max(128)).max(1000),
 		/** Confine spawned processes to the workspace (Linux/Landlock). */
 		sandbox: z.boolean().optional(),
+		/** Let the program open outbound connections while confined. */
+		network: z.boolean().optional(),
 	})
 	.strict();
 

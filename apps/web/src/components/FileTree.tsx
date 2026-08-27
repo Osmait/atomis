@@ -18,6 +18,10 @@ interface FileTreeProps {
 	failsByFile: ReadonlyMap<string, number>;
 	/** Changing this replays the unfold animation (one workspace = one key). */
 	revealKey: string;
+	/** Name of the open workspace, shown as the sidebar's title. */
+	workspaceName: string;
+	/** True for the throwaway session, which reads differently. */
+	scratch: boolean;
 	onToggleSrc: () => void;
 	onSelect: (path: string) => void;
 	onToggleFolder: (path: string) => void;
@@ -98,6 +102,17 @@ export function FileTree(props: FileTreeProps): React.JSX.Element {
 
 	return (
 		<aside className={`tree-card${props.focused ? " kb-zone" : ""}`}>
+			{/* The sidebar is titled by the workspace, where an IDE puts the
+			    project — and the title is the switcher. */}
+			<button
+				className={`workspace-bar${props.scratch ? " scratch" : ""}`}
+				onClick={props.onSwitchWorkspace}
+				title="Switch workspace"
+			>
+				<Lucide icon={props.scratch ? "flask-conical" : "folder-open"} size={14} />
+				<span className="workspace-bar-name">{props.workspaceName}</span>
+				<Lucide icon="chevrons-up-down" size={13} />
+			</button>
 			<div
 				className="file-tree"
 				onContextMenu={(event) => {

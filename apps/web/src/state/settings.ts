@@ -16,6 +16,8 @@ export interface Settings {
 	manualProbeIds: string[];
 	/** Confine spawned processes to the workspace (server-enforced). */
 	sandbox: boolean;
+	/** Let the program itself reach the network from inside the sandbox. */
+	network: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -27,6 +29,7 @@ export const DEFAULT_SETTINGS: Settings = {
 	// The session response reports what the kernel supports; until then
 	// assume it is on, so a run never escapes the sandbox by racing it.
 	sandbox: true,
+	network: false,
 };
 
 export interface LayoutState {
