@@ -32,6 +32,24 @@ sidecar Node, un solo lenguaje en el desktop, menos RAM.
 6. **Swap** — apuntar Vite proxy y el sidecar del desktop al binario Rust,
    correr la suite e2e completa, retirar apps/server.
 
+## Estado (2026-08-26)
+
+- Fases 1–5 completas: protocolo, sesiones/HTTP, runtime WS (document
+  store, scheduler, supervisor con fd 3, lectores NDJSON, parser de
+  marcadores), los 7 runners y el proxy LSP.
+- **La suite Playwright completa (23/23) pasa contra el server Rust**
+  (harness: `ZIGLIVE_PORT=4319 cargo run` + `ZIGLIVE_WEB_PORT=5175
+  ZIGLIVE_PROXY=http://127.0.0.1:4319 vite` + `ZIGLIVE_BASE_URL` en
+  Playwright; el server acepta ese origen vía `ZIGLIVE_DEV_ORIGIN`).
+- La respuesta de `POST /api/sessions` es byte-idéntica a la de Node tras
+  normalizar ids (incluido el orden ICU de archivos).
+- El sidecar del desktop ya usa el binario Rust (5 MB, antes ~90 MB de
+  Node SEA); mismos env vars y línea `ZIGLIVE_LISTENING`.
+- `pnpm dev:rs` levanta cargo + vite para desarrollo contra Rust.
+- Pendiente para retirar apps/server: pruebas de uso real, portar los
+  vitest unitarios que sigan aportando (la e2e ya cubre la paridad), y
+  el swap del proxy de Vite por defecto.
+
 ## Reglas
 
 - Cada fase se valida con los e2e existentes apuntando `VITE_PROXY_TARGET`

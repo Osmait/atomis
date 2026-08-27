@@ -3,6 +3,12 @@
 
 #![allow(dead_code)]
 
+pub mod cfamily;
+pub mod common;
+pub mod go;
+pub mod py;
+pub mod rust;
+pub mod ts;
 pub mod zig;
 pub mod zig_diag;
 
@@ -158,7 +164,24 @@ pub async fn run_language(
 ) -> Option<RunnerOutcome> {
     match language {
         Language::Zig => Some(zig::run(session, snapshot, settings, cancel, events).await),
-        _ => None,
+        Language::Rust => Some(rust::run(session, snapshot, settings, cancel, events).await),
+        Language::Go => Some(go::run(session, snapshot, settings, cancel, events).await),
+        Language::Ts => Some(ts::run(session, snapshot, settings, cancel, events).await),
+        Language::Py => Some(py::run(session, snapshot, settings, cancel, events).await),
+        Language::C => Some(
+            cfamily::run(session, snapshot, settings, cancel, events, cfamily::C_CONFIG).await,
+        ),
+        Language::Cpp => Some(
+            cfamily::run(
+                session,
+                snapshot,
+                settings,
+                cancel,
+                events,
+                cfamily::CPP_CONFIG,
+            )
+            .await,
+        ),
     }
 }
 
