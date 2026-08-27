@@ -101,6 +101,10 @@ jobs:
           workspaces: |
             apps/server-rs
             rust/instrumenter
+      - name: Install clangd (the cpp spec asserts LSP hover)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clangd
       - name: Install ZLS ${{ env.ZIG_VERSION }}
         run: |
           curl -fsSL "$ZLS_TARBALL" -o /tmp/zls.tar.xz
