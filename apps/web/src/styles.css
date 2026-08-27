@@ -1542,6 +1542,35 @@ input:focus-visible,
 	text-align: center;
 }
 
+.startup-logo {
+	border-radius: 22%;
+	height: 96px;
+	width: 96px;
+}
+
+/* While the doctor runs, the mark breathes so the wait reads as work. */
+.startup-logo.pulsing {
+	animation: logo-breathe 2.4s ease-in-out infinite;
+}
+
+@keyframes logo-breathe {
+	0%,
+	100% {
+		opacity: 0.75;
+		transform: scale(0.97);
+	}
+	50% {
+		opacity: 1;
+		transform: scale(1);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.startup-logo.pulsing {
+		animation: none;
+	}
+}
+
 .startup h1 {
 	color: var(--mauve);
 	margin: 0;

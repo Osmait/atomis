@@ -1123,6 +1123,7 @@ export function App(): React.JSX.Element {
 	if (startupError)
 		return (
 			<main className="startup">
+				<img alt="" className="startup-logo" src="/logo.png" />
 				<h1>Atomis</h1>
 				<h2>Environment error</h2>
 				<pre>{startupError}</pre>
@@ -1135,6 +1136,7 @@ export function App(): React.JSX.Element {
 	if (!session)
 		return (
 			<main className="startup">
+				<img alt="" className="startup-logo pulsing" src="/logo.png" />
 				<h1>Atomis</h1>
 				<p>Running environment doctor…</p>
 			</main>

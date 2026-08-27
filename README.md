@@ -1,4 +1,7 @@
+<img src="apps/web/public/logo.png" alt="" width="96" align="left" />
+
 # Atomis
+
 
 A loopback-only **Zig, Rust, Go, TypeScript/JavaScript, Python, C and C++** playground inspired by RunJS: Monaco + real language servers (ZLS / rust-analyzer), cancellable native compilation/execution, per-test results, and inline local values produced by AST instrumentation without changing visible code.
 
