@@ -34,6 +34,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+          targets: aarch64-apple-darwin
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: atomis
@@ -46,6 +47,8 @@ jobs:
         run: pnpm lint
       - name: Typecheck (packages + e2e)
         run: pnpm typecheck
+      - name: Cross-check the server for macOS (release builds on Darwin)
+        run: cargo check --manifest-path apps/server-rs/Cargo.toml --target aarch64-apple-darwin
 
   test:
     name: Unit + instrumenter tests
