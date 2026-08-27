@@ -123,7 +123,7 @@ export function installVimExtensions(): void {
 	};
 
 	normal("gd", "atomisGoToDefinition", "editor.action.revealDefinition");
-	normal("gr", "atomisGoToReferences", "editor.action.goToReferences");
+	normal("gr", "atomisGoToReferences", "editor.action.referenceSearch.trigger");
 	vim.defineAction("atomisHover", (cm) => {
 		const editor = cm.editor;
 		setTimeout(() => editor?.trigger("vim", "editor.action.showHover", null), 80);

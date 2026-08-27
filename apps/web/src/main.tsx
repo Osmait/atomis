@@ -10,7 +10,7 @@ import "monaco-editor/editor/contrib/folding/browser/folding";
 import "monaco-editor/editor/contrib/format/browser/formatActions";
 import "monaco-editor/editor/contrib/gotoSymbol/browser/goToCommands";
 import "monaco-editor/editor/contrib/gotoSymbol/browser/link/goToDefinitionAtPosition";
-import "monaco-editor/editor/contrib/gotoSymbol/browser/peek/referencesController";
+import "monaco-editor/editor/standalone/browser/referenceSearch/standaloneReferenceSearch";
 import "monaco-editor/editor/contrib/hover/browser/hoverContribution";
 import "monaco-editor/editor/contrib/inlayHints/browser/inlayHintsContribution";
 import "monaco-editor/editor/contrib/linesOperations/browser/linesOperations";

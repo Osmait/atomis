@@ -1388,3 +1388,82 @@ test("vim gets quick-scope targets and editor-integrated commands", async ({
 	await expect(page.locator(".qs-match")).toHaveCount(0);
 	await page.keyboard.press("Escape");
 });
+
+test("vim LSP keys, folds and workspace ex commands", async ({ page }) => {
+	await openClean(page);
+	await setToggle(page, "Vim Mode", true);
+	await page.locator(".monaco-editor").click();
+	await page.keyboard.press("Escape");
+
+	// Folds through Monaco's folding contribution.
+	await page.keyboard.type("zM");
+	await expect(
+		page.locator(".codicon-folding-collapsed").first(),
+	).toBeVisible();
+	await page.keyboard.type("zR");
+	await expect(page.locator(".codicon-folding-collapsed")).toHaveCount(0);
+
+	// gd: land on the applyTax call (search hits the definition first;
+	// * jumps forward to the test-name string, then the real call).
+	await page.keyboard.type("gg/applyTax.price");
+	await page.keyboard.press("Enter");
+	await expect(page.locator(".cursor-status")).toHaveText("12:4");
+	await page.keyboard.type("**");
+	await expect(page.locator(".cursor-status")).toHaveText("18:47");
+	await page.keyboard.type("gd");
+	await expect(page.locator(".cursor-status")).toHaveText("12:4", {
+		timeout: 15_000,
+	});
+
+	// K: hover documentation for the symbol under the cursor.
+	await page.keyboard.press("K");
+	await expect(page.locator(".monaco-hover:not(.hidden)")).toContainText(
+		"applyTax",
+		{ timeout: 15_000 },
+	);
+	await page.keyboard.press("Escape");
+
+	// Visual gc comments the selected line and gcc restores it.
+	await page.keyboard.type("ggVgc");
+	await expect(page.locator(".view-lines")).toContainText("// const std");
+	await page.keyboard.type("gcc");
+	await expect(page.locator(".view-lines")).not.toContainText("// const std");
+
+	// gr opens the references peek for the symbol under the cursor
+	// (12G lands on fn, w on applyTax).
+	await page.keyboard.type("12Gw");
+	await expect(page.locator(".cursor-status")).toHaveText("12:4");
+	await page.keyboard.type("gr");
+	await expect(page.locator(".zone-widget")).toBeVisible({
+		timeout: 15_000,
+	});
+	await page.keyboard.press("Escape");
+	await expect(page.locator(".zone-widget")).toHaveCount(0);
+
+	// gss wraps the whole line; undo restores it.
+	await page.keyboard.type("gg");
+	await page.keyboard.type('gss"');
+	await expect(page.locator(".view-lines")).toContainText(
+		'"const std = @import("std");"',
+	);
+	await page.keyboard.type("u");
+	await expect(page.locator(".view-lines")).not.toContainText(
+		'"const std = @import("std");"',
+	);
+
+	// :e creates and opens a file; :bd closes its tab; :only keeps one.
+	await page.keyboard.type(":e util.zig");
+	await page.keyboard.press("Enter");
+	await expect(page.locator(".buffer-tab")).toHaveCount(2);
+	await expect(page.locator(".buffer-tab.active")).toContainText("util.zig");
+	await page.keyboard.type(":bd");
+	await page.keyboard.press("Enter");
+	await expect(page.locator(".buffer-tab")).toHaveCount(1);
+	await expect(page.locator(".buffer-tab.active")).toContainText("main.zig");
+	await page.keyboard.type(":e util.zig");
+	await page.keyboard.press("Enter");
+	await expect(page.locator(".buffer-tab")).toHaveCount(2);
+	await page.keyboard.type(":only");
+	await page.keyboard.press("Enter");
+	await expect(page.locator(".buffer-tab")).toHaveCount(1);
+});
