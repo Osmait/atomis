@@ -1,0 +1,23 @@
+[package]
+name = "ziglive-server"
+version = "0.1.0"
+edition = "2021"
+description = "ZigLive orchestrator rewrite: axum/tokio, same WS protocol as apps/server"
+
+[dependencies]
+axum = { version = "0.8", features = ["ws"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "signal", "net", "io-util", "sync", "time", "fs"] }
+tokio-util = "0.7"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+tower-http = { version = "0.6", features = ["fs"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+libc = "0.2"
+rand = "0.8"
+regex = "1"
+futures-util = "0.3"
+
+[profile.release]
+lto = true
+strip = true

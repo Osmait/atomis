@@ -1,0 +1,357 @@
+import { useCallback, useRef, useState } from "react";
+import type { Monaco } from "@monaco-editor/react";
+import type { CreateSessionResponse, Language } from "@ziglive/protocol";
+import type * as MonacoApi from "monaco-editor";
+import { ENTRY_FILES, languageForPath } from "../languages.js";
+import type { LspClient } from "../lsp/LspClient.js";
+import {
+	isValidProjectPath,
+	normalizeFolderName,
+} from "../state/paths.js";
+import { saveLanguage } from "../state/settings.js";
+import { closeTab as computeCloseTab } from "../state/tabs.js";
+import type { LogSourceLocation, ProjectFile } from "../types.js";
+
+export interface TreeDraft {
+	kind: "file" | "folder" | "rename";
+	base: string;
+	original?: string;
+}
+
+export interface TreeContextMenuState {
+	x: number;
+	y: number;
+	path?: string;
+	folder?: string;
+}
+
+interface ProjectFilesOptions {
+	session: CreateSessionResponse | undefined;
+	sendRuntime: (message: object) => void;
+	versionRef: React.RefObject<number>;
+	entryRef: React.RefObject<string>;
+	activeLanguageRef: React.RefObject<Language>;
+	filesRef: React.RefObject<ProjectFile[]>;
+	setFiles: (files: ProjectFile[]) => void;
+	lspClientsRef: React.RefObject<Partial<Record<Language, LspClient>>>;
+	monacoRef: React.RefObject<Monaco | undefined>;
+	openInLsp: (path: string, model: MonacoApi.editor.ITextModel) => void;
+	pinnedLogLocationRef: React.RefObject<LogSourceLocation | undefined>;
+	logSourceDecorationsRef: React.RefObject<
+		MonacoApi.editor.IEditorDecorationsCollection | undefined
+	>;
+	setStatus: (status: string) => void;
+}
+
+/**
+ * File and tab management: the active file, open tabs, folder collapse
+ * state, and the create/rename/delete operations (with their inline tree
+ * drafts) that keep the local mirror, Monaco, the LSPs and the server in
+ * sync.
+ */
+export function useProjectFiles(options: ProjectFilesOptions) {
+	const {
+		session,
+		sendRuntime,
+		versionRef,
+		entryRef,
+		activeLanguageRef,
+		filesRef,
+		setFiles,
+		lspClientsRef,
+		monacoRef,
+		openInLsp,
+		pinnedLogLocationRef,
+		logSourceDecorationsRef,
+		setStatus,
+	} = options;
+	const [activePath, setActivePath] = useState(entryRef.current);
+	const activePathRef = useRef(entryRef.current);
+	const [openTabs, setOpenTabs] = useState([entryRef.current]);
+	const openTabsRef = useRef(openTabs);
+	openTabsRef.current = openTabs;
+	const [treeDraft, setTreeDraft] = useState<TreeDraft | undefined>(undefined);
+	const [treeDraftInvalid, setTreeDraftInvalid] = useState(false);
+	const [treeDraftValue, setTreeDraftValue] = useState("");
+	const [treeContextMenu, setTreeContextMenu] = useState<
+		TreeContextMenuState | undefined
+	>(undefined);
+	const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(
+		new Set(),
+	);
+	const [pendingFolders, setPendingFolders] = useState<string[]>([]);
+	const [srcCollapsed, setSrcCollapsed] = useState(false);
+
+	const selectFile = useCallback(
+		(path: string): void => {
+			const file = filesRef.current.find(
+				(candidate) => candidate.path === path,
+			);
+			if (!file) return;
+			activePathRef.current = path;
+			setActivePath(path);
+			setOpenTabs((previous) =>
+				previous.includes(path) ? previous : [...previous, path],
+			);
+			pinnedLogLocationRef.current = undefined;
+			logSourceDecorationsRef.current?.clear();
+			const language = languageForPath(path);
+			if (language) {
+				activeLanguageRef.current = language;
+				saveLanguage(language);
+			}
+			setTimeout(() => {
+				const model = monacoRef.current?.editor.getModel(
+					monacoRef.current.Uri.parse(file.uri),
+				);
+				if (model) openInLsp(path, model);
+			}, 0);
+		},
+		[
+			activeLanguageRef,
+			filesRef,
+			logSourceDecorationsRef,
+			monacoRef,
+			openInLsp,
+			pinnedLogLocationRef,
+		],
+	);
+
+	const closeTab = useCallback(
+		(path: string): void => {
+			const closed = computeCloseTab(
+				openTabsRef.current,
+				path,
+				activePathRef.current,
+				entryRef.current,
+			);
+			setOpenTabs(closed.tabs);
+			if (closed.nextActive) selectFile(closed.nextActive);
+		},
+		[entryRef, selectFile],
+	);
+
+	const closeOtherTabs = useCallback((): void => {
+		setOpenTabs([activePathRef.current]);
+	}, []);
+
+	const createFileNamed = useCallback(
+		(path: string): boolean => {
+			if (!session) return false;
+			if (!isValidProjectPath(path)) {
+				setStatus("Ruta de archivo inválida");
+				return false;
+			}
+			if (filesRef.current.some((file) => file.path === path)) {
+				setStatus(`El archivo ${path} ya existe`);
+				return false;
+			}
+			const base = session.documentUri.slice(
+				0,
+				session.documentUri.lastIndexOf("/") + 1,
+			);
+			const file = { path, uri: new URL(path, base).href, source: "" };
+			const nextFiles = [...filesRef.current, file].toSorted(
+				(left, right) => left.path.localeCompare(right.path),
+			);
+			filesRef.current = nextFiles;
+			setFiles(nextFiles);
+			const version = ++versionRef.current;
+			sendRuntime({
+				type: "file.create",
+				sessionId: session.sessionId,
+				version,
+				path,
+				source: "",
+			});
+			activePathRef.current = path;
+			setActivePath(path);
+			setOpenTabs((previous) => [...previous, path]);
+			return true;
+		},
+		[filesRef, sendRuntime, session, setFiles, setStatus, versionRef],
+	);
+
+	// VS Code-style inline creation: the tree shows an input row instead of
+	// a browser prompt. `base` is the folder prefix ("" for the root).
+	const createFile = useCallback((prefix = ""): void => {
+		setTreeDraftInvalid(false);
+		setTreeDraftValue("");
+		setSrcCollapsed(false);
+		setTreeDraft({ kind: "file", base: prefix });
+	}, []);
+
+	const createFolder = useCallback((base = ""): void => {
+		setTreeDraftInvalid(false);
+		setTreeDraftValue("");
+		setSrcCollapsed(false);
+		setTreeDraft({ kind: "folder", base });
+	}, []);
+
+	const createFolderNamed = useCallback(
+		(raw: string): boolean => {
+			const folder = normalizeFolderName(raw);
+			if (!isValidProjectPath(folder)) {
+				setStatus("Nombre de carpeta inválido");
+				return false;
+			}
+			setPendingFolders((previous) =>
+				previous.includes(folder) ? previous : [...previous, folder],
+			);
+			return true;
+		},
+		[setStatus],
+	);
+
+	const toggleFolder = useCallback((path: string): void => {
+		setCollapsedFolders((previous) => {
+			const next = new Set(previous);
+			if (next.has(path)) next.delete(path);
+			else next.add(path);
+			return next;
+		});
+	}, []);
+
+	const renameFileTo = useCallback(
+		(path: string, newPath: string): boolean => {
+			if (!session || ENTRY_FILES.has(path)) return false;
+			if (!newPath || newPath === path) return true;
+			if (!isValidProjectPath(newPath)) {
+				setStatus("Ruta de archivo inválida");
+				return false;
+			}
+			if (filesRef.current.some((file) => file.path === newPath)) {
+				setStatus(`El archivo ${newPath} ya existe`);
+				return false;
+			}
+			const current = filesRef.current.find((file) => file.path === path);
+			if (!current) return false;
+			const base = session.documentUri.slice(
+				0,
+				session.documentUri.lastIndexOf("/") + 1,
+			);
+			const renamed = {
+				...current,
+				path: newPath,
+				uri: new URL(newPath, base).href,
+			};
+			filesRef.current = filesRef.current.map((file) =>
+				file.path === path ? renamed : file,
+			);
+			setFiles(filesRef.current);
+			setOpenTabs((previous) =>
+				previous.map((tab) => (tab === path ? newPath : tab)),
+			);
+			if (activePathRef.current === path) {
+				activePathRef.current = newPath;
+				setActivePath(newPath);
+			}
+			const oldLanguage = languageForPath(path);
+			if (oldLanguage) lspClientsRef.current[oldLanguage]?.close(current.uri);
+			const version = ++versionRef.current;
+			sendRuntime({
+				type: "file.rename",
+				sessionId: session.sessionId,
+				version,
+				path,
+				newPath,
+			});
+			return true;
+		},
+		[filesRef, lspClientsRef, sendRuntime, session, setFiles, setStatus, versionRef],
+	);
+
+	const renameFile = useCallback((path: string): void => {
+		if (ENTRY_FILES.has(path)) return;
+		setTreeDraftInvalid(false);
+		setTreeDraftValue(path);
+		setSrcCollapsed(false);
+		setTreeDraft({ kind: "rename", base: "", original: path });
+	}, []);
+
+	const commitTreeDraft = useCallback(
+		(value: string): void => {
+			const draft = treeDraft;
+			if (!draft) return;
+			const name = value.trim();
+			if (!name) {
+				setTreeDraft(undefined);
+				return;
+			}
+			let ok = false;
+			if (draft.kind === "file") ok = createFileNamed(draft.base + name);
+			else if (draft.kind === "folder")
+				ok = createFolderNamed(draft.base + name);
+			else if (draft.original) ok = renameFileTo(draft.original, name);
+			if (ok) setTreeDraft(undefined);
+			else setTreeDraftInvalid(true);
+		},
+		[treeDraft, createFileNamed, createFolderNamed, renameFileTo],
+	);
+
+	const deleteFile = useCallback(
+		(path: string): void => {
+			if (!session || ENTRY_FILES.has(path)) return;
+			if (!window.confirm(`¿Eliminar src/${path}?`)) return;
+			const current = filesRef.current.find((file) => file.path === path);
+			if (!current) return;
+			filesRef.current = filesRef.current.filter((file) => file.path !== path);
+			setFiles(filesRef.current);
+			setOpenTabs((previous) => previous.filter((tab) => tab !== path));
+			if (activePathRef.current === path) {
+				activePathRef.current = entryRef.current;
+				setActivePath(entryRef.current);
+			}
+			const language = languageForPath(path);
+			if (language) lspClientsRef.current[language]?.close(current.uri);
+			monacoRef.current?.editor
+				.getModel(monacoRef.current.Uri.parse(current.uri))
+				?.dispose();
+			const version = ++versionRef.current;
+			sendRuntime({
+				type: "file.delete",
+				sessionId: session.sessionId,
+				version,
+				path,
+			});
+		},
+		[entryRef, filesRef, lspClientsRef, monacoRef, sendRuntime, session, setFiles, versionRef],
+	);
+
+	/** Session bootstrap: reset to the created session's entry file. */
+	const resetToEntry = useCallback((entry: string): void => {
+		activePathRef.current = entry;
+		setActivePath(entry);
+		setOpenTabs([entry]);
+	}, []);
+
+	return {
+		activePath,
+		activePathRef,
+		openTabs,
+		openTabsRef,
+		treeDraft,
+		setTreeDraft,
+		treeDraftInvalid,
+		setTreeDraftInvalid,
+		treeDraftValue,
+		setTreeDraftValue,
+		treeContextMenu,
+		setTreeContextMenu,
+		collapsedFolders,
+		pendingFolders,
+		srcCollapsed,
+		setSrcCollapsed,
+		selectFile,
+		closeTab,
+		closeOtherTabs,
+		createFile,
+		createFolder,
+		createFileNamed,
+		renameFile,
+		deleteFile,
+		commitTreeDraft,
+		toggleFolder,
+		resetToEntry,
+	};
+}

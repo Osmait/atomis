@@ -88,13 +88,12 @@ export function bitsForType(
 /** True when the type name is a signed integer (affects chr/dec rendering). */
 export function typeIsSigned(typeName: string): boolean {
 	const name = typeName.trim();
-	if (/^u/.test(name)) return false;
-	if (/^unsigned/.test(name)) return false;
+	if (name.startsWith("u")) return false;
 	return true;
 }
 
 const group = (text: string, size: number): string =>
-	text.replace(new RegExp(`(.{${size}})(?=.)`, "g"), "$1_");
+	text.replaceAll(new RegExp(`(.{${size}})(?=.)`, "g"), "$1_");
 
 function unsignedValue(value: bigint, bits: number): bigint {
 	return value < 0n ? value + (1n << BigInt(bits)) : value;
@@ -122,7 +121,7 @@ export function formatInt(
 	if (fmt === "oct") return `0o${unsigned.toString(8)}`;
 	if (fmt === "chr")
 		return unsigned >= 32n && unsigned < 127n
-			? `'${String.fromCharCode(Number(unsigned))}'`
+			? `'${String.fromCodePoint(Number(unsigned))}'`
 			: `\\x${unsigned.toString(16)}`;
 	return value.toString();
 }
@@ -212,7 +211,7 @@ export interface PreviewSource {
 	bits?: number;
 	sizeBytes?: number;
 	alignBytes?: number;
-	fields?: readonly unknown[];
+	fields?: readonly object[];
 }
 
 /**

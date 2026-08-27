@@ -13,11 +13,19 @@ export default defineConfig({
 	},
 	server: {
 		host: "127.0.0.1",
-		port: 5173,
+		port: Number(process.env.ZIGLIVE_WEB_PORT ?? 5173),
 		strictPort: true,
 		proxy: {
-			"/api": { target: "http://127.0.0.1:4317" },
-			"/ws": { target: "ws://127.0.0.1:4317", ws: true },
+			"/api": {
+				target: process.env.ZIGLIVE_PROXY ?? "http://127.0.0.1:4317",
+			},
+			"/ws": {
+				target: (process.env.ZIGLIVE_PROXY ?? "http://127.0.0.1:4317").replace(
+					"http",
+					"ws",
+				),
+				ws: true,
+			},
 		},
 	},
 	build: { outDir: "dist", sourcemap: true },

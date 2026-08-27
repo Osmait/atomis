@@ -1,0 +1,88 @@
+{
+	"$schema": "./node_modules/oxlint/configuration_schema.json",
+	"plugins": [
+		"typescript",
+		"react",
+		"unicorn",
+		"oxc",
+		"import"
+	],
+	"env": {
+		"browser": true,
+		"node": true,
+		"es2023": true
+	},
+	"categories": {
+		"correctness": "error",
+		"suspicious": "error",
+		"perf": "error",
+		"pedantic": "error"
+	},
+	"rules": {
+		"react/react-in-jsx-scope": "off",
+		"eslint/no-negated-condition": "off",
+		"unicorn/no-negated-condition": "off",
+		"unicorn/no-useless-undefined": "off",
+		"unicorn/no-nested-ternary": "off",
+		"unicorn/prefer-query-selector": "off",
+		"unicorn/prefer-at": "off",
+		"unicorn/explicit-length-check": "off",
+		"eslint/require-unicode-regexp": "off",
+		"eslint/no-nested-ternary": "off",
+		"import/no-unassigned-import": "off",
+		"import/max-dependencies": "off",
+		"import/no-named-as-default": "off",
+		"eslint/max-lines-per-function": "off",
+		"eslint/max-lines": "off",
+		"eslint/max-depth": "off",
+		"react/refs": "off",
+		"react/exhaustive-effect-dependencies": "off",
+		"react/no-array-index-key": "off",
+		"react/memo-dependencies": "off",
+		"react/preserve-manual-memoization": "off",
+		"react/set-state-in-effect": "off",
+		"oxc/no-map-spread": "off",
+		"typescript/no-explicit-any": "error",
+		"typescript/no-restricted-types": [
+			"error",
+			{
+				"types": {
+					"unknown": {
+						"message": "unknown prohibido: usa un tipo concreto, un gen\u00e9rico o JsonValue (lsp/protocol)"
+					}
+				}
+			}
+		]
+	},
+	"overrides": [
+		{
+			"files": [
+				"apps/web/src/main.tsx"
+			],
+			"rules": {
+				"import/default": "off"
+			}
+		},
+		{
+			"files": [
+				"**/*.test.ts",
+				"**/*.test.tsx"
+			],
+			"rules": {
+				"typescript/no-non-null-assertion": "off"
+			}
+		},
+		{
+			"files": [
+				"tests/**"
+			],
+			"rules": {
+				"eslint/no-await-in-loop": "off"
+			}
+		}
+	],
+	"ignorePatterns": [
+		"dist",
+		"node_modules"
+	]
+}

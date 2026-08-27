@@ -16,7 +16,7 @@ interface CommandPaletteProps {
 function validCreatePath(path: string): boolean {
 	if (path.startsWith("/") || path.includes("\\") || path.length > 240)
 		return false;
-	if ([...path].some((char) => char.charCodeAt(0) < 0x20)) return false;
+	if ([...path].some((char) => (char.codePointAt(0) ?? 0) < 0x20)) return false;
 	return path
 		.split("/")
 		.every((part) => part.length > 0 && part !== "." && part !== "..");

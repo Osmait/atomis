@@ -105,3 +105,21 @@ export function languageForPath(path: string): Language | undefined {
 export function registerAllLanguages(monaco: typeof Monaco): void {
 	for (const pack of Object.values(WEB_LANGUAGE_PACKS)) pack.register(monaco);
 }
+
+/**
+ * Monaco language id for any project path: session languages by extension
+ * (plain `.js`/`.mjs` files edit as javascript), plus the asset types the
+ * tree can hold.
+ */
+export function monacoLanguageFor(path: string): string {
+	const language = languageForPath(path);
+	if (language)
+		return /\.(js|mjs|cjs)$/.test(path)
+			? "javascript"
+			: WEB_LANGUAGE_PACKS[language].monacoId;
+	if (path.endsWith(".json")) return "json";
+	if (path.endsWith(".md")) return "markdown";
+	if (path.endsWith(".h")) return "c";
+	if (path.endsWith(".hpp")) return "cpp";
+	return "plaintext";
+}

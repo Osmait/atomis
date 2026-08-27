@@ -221,8 +221,17 @@ export function instrument(source, options) {
 				(child) => child?.kind === "VarDecl",
 			);
 			if (varDecls.length === 1 && varDecls[0].name) {
-				if (varDecls[0].init !== undefined)
-					recordProbe(varDecls[0], range.end, undefined);
+				// clang ≤18 drops the recovered initializer of an unknown-type
+				// VarDecl from the JSON dump entirely (newer clangs keep a
+				// RecoveryExpr and the init marker), so fall back to the
+				// statement text to tell `T x = …;` from `T x;`.
+				const statementText = source.slice(range.begin, range.end);
+				const afterName = statementText.slice(
+					statementText.indexOf(varDecls[0].name),
+				);
+				const initialized =
+					varDecls[0].init !== undefined || /[={]/.test(afterName);
+				if (initialized) recordProbe(varDecls[0], range.end, undefined);
 				else
 					recordProbe(
 						varDecls[0],
