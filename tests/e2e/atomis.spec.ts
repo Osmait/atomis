@@ -1346,8 +1346,13 @@ test("vim gets quick-scope targets and editor-integrated commands", async ({
 	await page.locator(".monaco-editor").click();
 	await page.keyboard.press("Escape");
 	await page.keyboard.type("gg");
-	// Quick-scope: f/t landing spots are underlined while in NORMAL mode.
+	// Quick-scope: the editor stays clean until f awaits its character…
+	await expect(page.locator(".qs-primary")).toHaveCount(0);
+	await page.keyboard.press("f");
 	await expect(page.locator(".qs-primary").first()).toBeVisible();
+	// …and jumping (or any other key) clears the hints again.
+	await page.keyboard.press("d");
+	await expect(page.locator(".qs-primary")).toHaveCount(0);
 
 	// gcc toggles the comment through Monaco's action.
 	await page.keyboard.type("gcc");
@@ -1355,9 +1360,9 @@ test("vim gets quick-scope targets and editor-integrated commands", async ({
 	await page.keyboard.type("gcc");
 	await expect(page.locator(".view-lines")).not.toContainText("// const std");
 
-	// Insert mode must keep the quick-scope overlay away.
+	// Insert mode must never arm the overlay, even on an f keypress.
 	await page.keyboard.type("i");
+	await page.keyboard.press("f");
 	await expect(page.locator(".qs-primary")).toHaveCount(0);
 	await page.keyboard.press("Escape");
-	await expect(page.locator(".qs-primary").first()).toBeVisible();
 });
