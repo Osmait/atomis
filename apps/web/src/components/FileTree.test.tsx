@@ -32,6 +32,8 @@ function renderTree(
 		onRenameActive: vi.fn(),
 		onDeleteActive: vi.fn(),
 		onHideTree: vi.fn(),
+		onLoadDemo: vi.fn(),
+		onClearWorkspace: vi.fn(),
 		onDraftChange: vi.fn(),
 		onDraftCommit: vi.fn(),
 		onDraftCancel: vi.fn(),
@@ -89,6 +91,16 @@ describe("FileTree", () => {
 		expect(rename.disabled).toBe(true);
 		fireEvent.click(screen.getByText("New file"));
 		expect(handlers.onCreateFile).toHaveBeenCalledWith();
+	});
+
+	it("offers demo and clear workspace actions in the menu", () => {
+		const handlers = renderTree();
+		fireEvent.click(screen.getByLabelText("Tree actions"));
+		fireEvent.click(screen.getByText("Load demo workspace"));
+		expect(handlers.onLoadDemo).toHaveBeenCalled();
+		fireEvent.click(screen.getByLabelText("Tree actions"));
+		fireEvent.click(screen.getByText("Clear workspace"));
+		expect(handlers.onClearWorkspace).toHaveBeenCalled();
 	});
 
 	it("commits the inline draft with Enter and cancels with Escape", () => {

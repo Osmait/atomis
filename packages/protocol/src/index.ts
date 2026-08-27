@@ -144,8 +144,14 @@ export interface CreateSessionResponse {
 	degraded: Partial<Record<string, string>>;
 }
 
+export const workspaceScaffolds = ["demo", "minimal"] as const;
+export type WorkspaceScaffold = (typeof workspaceScaffolds)[number];
+
 export const createSessionRequestSchema = z
-	.object({ language: z.enum(languages).default("zig") })
+	.object({
+		language: z.enum(languages).default("zig"),
+		scaffold: z.enum(workspaceScaffolds).default("demo"),
+	})
 	.strict();
 
 /** Byte-accurate layout of one struct field, for the low-level peek panel. */

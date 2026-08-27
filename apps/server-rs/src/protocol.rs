@@ -182,10 +182,21 @@ pub struct CreateSessionResponse {
     pub degraded: serde_json::Map<String, serde_json::Value>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WorkspaceScaffold {
+    /// Every supported language's example files (the original workspace).
+    #[default]
+    Demo,
+    /// Only the chosen language's entry file.
+    Minimal,
+}
+
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct CreateSessionRequest {
     pub language: Option<Language>,
+    pub scaffold: Option<WorkspaceScaffold>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
