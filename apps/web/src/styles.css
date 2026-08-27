@@ -1279,6 +1279,22 @@ input:focus-visible,
 	color: var(--dim) !important;
 }
 
+.inline-log {
+	color: var(--dim) !important;
+	font-style: italic;
+	opacity: 0.9;
+}
+
+.inline-log.err {
+	color: var(--red) !important;
+	opacity: 0.85;
+}
+
+.inline-log.stale {
+	text-decoration: line-through;
+	opacity: 0.6;
+}
+
 .manual-probe {
 	cursor: pointer;
 	border-radius: 50%;

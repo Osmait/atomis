@@ -82,6 +82,7 @@ import {
 import { toggleProbe, type InlineValue } from "./state/runtimeState.js";
 import {
 	loadEntrySource,
+	loadInlineLogs,
 	loadLanguage,
 	loadLayout,
 	loadScaffold,
@@ -89,6 +90,7 @@ import {
 	loadValueFmt,
 	loadVimMode,
 	saveEntrySource,
+	saveInlineLogs,
 	saveLayout,
 	saveScaffold,
 	saveSettings,
@@ -144,6 +146,7 @@ export function App(): React.JSX.Element {
 	>({});
 	const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 });
 	const [vimEnabled, setVimEnabled] = useState(loadVimMode);
+	const [inlineLogs, setInlineLogs] = useState(loadInlineLogs);
 	const [editorContextMenu, setEditorContextMenu] = useState<{
 		x: number;
 		y: number;
@@ -179,6 +182,9 @@ export function App(): React.JSX.Element {
 		MonacoApi.editor.IEditorDecorationsCollection | undefined
 	>(undefined);
 	const testLensWidgetsRef = useRef<MonacoApi.editor.IContentWidget[]>([]);
+	const inlineLogDecorationsRef = useRef<
+		MonacoApi.editor.IEditorDecorationsCollection | undefined
+	>(undefined);
 	const versionRef = useRef(1);
 	const filesRef = useRef<ProjectFile[]>([]);
 	const lastRunLanguageRef = useRef<Language | null>(null);
@@ -600,6 +606,7 @@ export function App(): React.JSX.Element {
 			errorLensDecorationsRef.current = editor.createDecorationsCollection();
 			logSourceDecorationsRef.current = editor.createDecorationsCollection();
 			testLensDecorationsRef.current = editor.createDecorationsCollection();
+			inlineLogDecorationsRef.current = editor.createDecorationsCollection();
 			setCursorPosition({
 				line: editor.getPosition()?.lineNumber ?? 1,
 				column: editor.getPosition()?.column ?? 1,
@@ -755,6 +762,7 @@ export function App(): React.JSX.Element {
 		errorLensWidgetsRef,
 		testLensDecorationsRef,
 		testLensWidgetsRef,
+		inlineLogDecorationsRef,
 		entryRef,
 		activePath,
 		catalog,
@@ -765,6 +773,8 @@ export function App(): React.JSX.Element {
 		allProblems,
 		tests,
 		testResults,
+		output,
+		inlineLogs,
 	});
 
 	useEffect(
@@ -1374,6 +1384,17 @@ export function App(): React.JSX.Element {
 									autoInspect: !settings.autoInspect,
 								});
 								setTimeout(run, 0);
+							},
+						},
+						{
+							label: "Inline logs",
+							hint: "log output next to its line",
+							on: inlineLogs,
+							act: () => {
+								setInlineLogs((previous) => {
+									saveInlineLogs(!previous);
+									return !previous;
+								});
 							},
 						},
 						{

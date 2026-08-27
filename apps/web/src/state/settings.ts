@@ -46,6 +46,7 @@ const VALUE_FMT_KEY = "atomis.value-fmt.v1";
 const VIM_MODE_KEY = "atomis.vim-mode.v1";
 const LANGUAGE_KEY = "atomis.language.v1";
 const SCAFFOLD_KEY = "atomis.scaffold.v1";
+const INLINE_LOGS_KEY = "atomis.inline-logs.v1";
 const SOURCE_KEY = "atomis.source.v1";
 
 export function loadSettings(): Settings {
@@ -123,6 +124,15 @@ export function loadScaffold(): WorkspaceScaffold {
 
 export function saveScaffold(scaffold: WorkspaceScaffold): void {
 	writeStoredItem(SCAFFOLD_KEY, scaffold);
+}
+
+/** Console Ninja-style inline logs in the editor (on by default). */
+export function loadInlineLogs(): boolean {
+	return readStoredItem(INLINE_LOGS_KEY) !== "false";
+}
+
+export function saveInlineLogs(enabled: boolean): void {
+	writeStoredItem(INLINE_LOGS_KEY, String(enabled));
 }
 
 /** Last entry-file source, restored when the session starts without files. */

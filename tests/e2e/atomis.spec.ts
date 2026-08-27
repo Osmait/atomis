@@ -1317,3 +1317,23 @@ test("workspace starts minimal, loads the demo and clears back", async ({
 	});
 	await expect(page.locator(".tree-file").first()).toContainText("main.zig");
 });
+
+test("inline logs render output beside its line and toggle off", async ({
+	page,
+}) => {
+	await openClean(page);
+	await replaceEditor(
+		page,
+		'const std = @import("std");\n\npub fn main() void {\n\tvar i: usize = 0;\n\twhile (i < 4) : (i += 1) {\n\t\tstd.debug.print("tick {d}\\n", .{i});\n\t}\n}\n',
+	);
+	await expect(page.locator(".state-succeeded")).toBeVisible({
+		timeout: 60_000,
+	});
+	// Console Ninja-style ghost text: latest value plus the hit count.
+	await expect(page.locator(".inline-log")).toContainText("tick 3 ×4");
+
+	await setToggle(page, "Inline logs", false);
+	await expect(page.locator(".inline-log")).toHaveCount(0);
+	await setToggle(page, "Inline logs", true);
+	await expect(page.locator(".inline-log")).toContainText("tick 3 ×4");
+});
