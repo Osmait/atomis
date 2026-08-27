@@ -363,12 +363,12 @@ export const defaultCTestSource = `#include <assert.h>
 
 int apply_tax(int price, int tax);
 
-// Las funciones test_* corren tras main(): mira el panel de tests →
-void test_apply_tax_suma_el_impuesto(void) {
+// test_* functions run after main(): check the tests panel →
+void test_apply_tax_adds_the_tax(void) {
 	assert(apply_tax(40, 3) == 43);
 }
 
-void test_apply_tax_con_tasa_cero(void) {
+void test_apply_tax_with_zero_tax(void) {
 	assert(apply_tax(40, 0) == 40);
 }
 `;
@@ -395,12 +395,12 @@ export const defaultCppTestSource = `#include <cassert>
 
 int apply_tax(int price, int tax);
 
-// Las funciones test_* corren tras main(): mira el panel de tests →
-void test_apply_tax_suma_el_impuesto() {
+// test_* functions run after main(): check the tests panel →
+void test_apply_tax_adds_the_tax() {
 	assert(apply_tax(40, 3) == 43);
 }
 
-void test_apply_tax_con_tasa_cero() {
+void test_apply_tax_with_zero_tax() {
 	assert(apply_tax(40, 0) == 40);
 }
 `;
@@ -420,12 +420,12 @@ print("total:", values[2])
 export const defaultPyTestSource = `from main import apply_tax
 
 
-# Las funciones test_* corren tras el programa: mira el panel →
-def test_apply_tax_suma_el_impuesto():
+# test_* functions run after the program: check the panel →
+def test_apply_tax_adds_the_tax():
     assert apply_tax(40, 3) == 43
 
 
-def test_apply_tax_con_tasa_cero():
+def test_apply_tax_with_zero_tax():
     assert apply_tax(40, 0) == 40
 `;
 
@@ -445,12 +445,12 @@ export const defaultTsTestSource = `import { test } from "node:test";
 import assert from "node:assert/strict";
 import { applyTax } from "./main.ts";
 
-// Los tests de node:test corren tras el programa: mira el panel →
-test("applyTax suma el impuesto", () => {
+// node:test tests run after the program: check the panel →
+test("applyTax adds the tax", () => {
 	assert.equal(applyTax(40, 3), 43);
 });
 
-test("applyTax con tasa cero", () => {
+test("applyTax with zero tax", () => {
 	assert.equal(applyTax(40, 0), 40);
 });
 `;
@@ -477,14 +477,14 @@ export const defaultGoTestSource = `package main
 
 import "testing"
 
-// Las funciones TestXxx corren tras main(): mira el panel de tests →
-func TestApplyTaxSumaElImpuesto(t *testing.T) {
+// TestXxx functions run after main(): check the tests panel →
+func TestApplyTaxAddsTheTax(t *testing.T) {
 	if applyTax(40, 3) != 43 {
 		t.Fatalf("esperado 43, recibido %d", applyTax(40, 3))
 	}
 }
 
-func TestApplyTaxConTasaCero(t *testing.T) {
+func TestApplyTaxWithZeroTax(t *testing.T) {
 	if applyTax(40, 0) != 40 {
 		t.Fatalf("esperado 40, recibido %d", applyTax(40, 0))
 	}
@@ -504,14 +504,14 @@ fn apply_tax(price: i32, tax: i32) -> i32 {
     price + tax
 }
 
-// Los bloques #[test] corren tras main(): mira el panel de tests →
+// #[test] blocks run after main(): check the tests panel →
 #[test]
-fn apply_tax_suma_el_impuesto() {
+fn apply_tax_adds_the_tax() {
     assert_eq!(43, apply_tax(40, 3));
 }
 
 #[test]
-fn apply_tax_con_tasa_cero() {
+fn apply_tax_with_zero_tax() {
     assert_eq!(40, apply_tax(40, 0));
 }
 `;
@@ -531,12 +531,12 @@ fn applyTax(price: i32, tax: i32) i32 {
     return price + tax;
 }
 
-// Los bloques test se ejecutan tras main(): mira el panel de tests →
-test "applyTax suma el impuesto" {
+// Test blocks run after main(): check the tests panel →
+test "applyTax adds the tax" {
     try std.testing.expectEqual(@as(i32, 43), applyTax(40, 3));
 }
 
-test "applyTax con tasa cero" {
+test "applyTax with zero tax" {
     try std.testing.expectEqual(@as(i32, 40), applyTax(40, 0));
 }
 `;

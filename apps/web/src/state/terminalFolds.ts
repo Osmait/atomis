@@ -54,13 +54,13 @@ export function groupOutput(entries: readonly TerminalEntry[]): TerminalRow[] {
 			if (end - index >= LOOP_FOLD_MIN) {
 				const location = entry.sourceLocation;
 				const loopSuffix = location?.loop
-					? ` · bucle ${location.loop.variable}`
+					? ` · loop ${location.loop.variable}`
 					: "";
 				const start = index;
 				rows.push({
 					kind: "fold",
 					key: `loop:${key}:${start}`,
-					label: `traza · ${key}${loopSuffix}`,
+					label: `trace · ${key}${loopSuffix}`,
 					entries: entries
 						.slice(start, end)
 						.map((grouped, offset) => ({
@@ -91,7 +91,7 @@ export function groupOutput(entries: readonly TerminalEntry[]): TerminalRow[] {
 				rows.push({
 					kind: "fold",
 					key: `stack:${start}`,
-					label: "traza del panic",
+					label: "panic trace",
 					entries: entries
 						.slice(start, end)
 						.map((grouped, offset) => ({

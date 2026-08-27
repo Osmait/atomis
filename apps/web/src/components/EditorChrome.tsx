@@ -29,7 +29,7 @@ export function EditorChrome(props: EditorChromeProps): React.JSX.Element {
 				<button
 					className="tree-restore"
 					onClick={props.onShowTree}
-					title="Mostrar árbol (⌘B)"
+					title="Show tree (⌘B)"
 				>
 					<Lucide icon="panel-left" size={14} />
 				</button>
@@ -60,7 +60,7 @@ export function EditorChrome(props: EditorChromeProps): React.JSX.Element {
 							}}
 							role="button"
 							tabIndex={-1}
-							title="Cerrar tab"
+							title="Close tab"
 						>
 							✕
 						</span>
@@ -69,7 +69,7 @@ export function EditorChrome(props: EditorChromeProps): React.JSX.Element {
 				<button
 					className="tab-add"
 					onClick={props.onOpenPalette}
-					title="Buscar archivo (⌘K)"
+					title="Find file (⌘K)"
 				>
 					+
 				</button>
@@ -81,8 +81,8 @@ export function EditorChrome(props: EditorChromeProps): React.JSX.Element {
 					onClick={props.onToggleAutoRun}
 					title={
 						props.autoRun
-							? "Auto Run activo — clic para pausar"
-							: "Auto Run pausado — clic para activar"
+							? "Auto Run on — click to pause"
+							: "Auto Run paused — click to enable"
 					}
 				>
 					auto
@@ -90,16 +90,16 @@ export function EditorChrome(props: EditorChromeProps): React.JSX.Element {
 				<button
 					className="chrome-icon"
 					onClick={props.onOpenSettings}
-					title="Ajustes (⌘,)"
+					title="Settings (⌘,)"
 				>
 					<Lucide icon="settings" size={14} />
 				</button>
 				<button
-					aria-label={props.active ? "Detener" : "Run"}
+					aria-label={props.active ? "Stop" : "Run"}
 					className={`run-button${props.active ? " running" : ""}`}
 					disabled={props.runDisabled}
 					onClick={props.active ? props.onStop : props.onRun}
-					title={props.active ? "Detener" : "Run (⌘↵)"}
+					title={props.active ? "Stop" : "Run (⌘↵)"}
 				>
 					{props.active ? (
 						<span className="spin">⟳</span>

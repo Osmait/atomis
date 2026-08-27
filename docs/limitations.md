@@ -29,18 +29,18 @@
   literal operand and a previous value of the same variable is known.
 - Heap timelines, leak/peak accounting per allocation and freed-pointer
   tracking from the design mock require allocator hooks and are not built.
-- Addresses (`dirección`) are not reported: probes observe copies, so the
+- Addresses are not reported: probes observe copies, so the
   copy's address would be misleading rather than informative.
 
-## Red y procesos del código del usuario
+## Network and user-code processes
 
-- **No hay sandbox**: el código se ejecuta localmente con los permisos del
-  usuario (la UI lo advierte al crear la sesión). Un programa puede abrir
-  sockets, leer archivos o usar la red durante su ejecución.
-- **Los servidores no sobreviven**: cualquier proceso que bloquee (un
-  servidor TCP/HTTP, `serve_forever`, un `listen`) muere al agotar el
-  timeout de ejecución (2 s por defecto, máximo 10 s): SIGTERM al process
-  group completo y SIGKILL 250 ms después. El e2e verifica que el puerto
-  queda libre tras el kill en Node y Python.
-- Lo que sí está bloqueado son las descargas de dependencias durante los
-  builds: `CARGO_NET_OFFLINE=true` y `GOPROXY=off` en cargo/go.
+- **There is no sandbox**: code runs locally with the user's permissions
+  (the UI warns about this when the session is created). A program can open
+  sockets, read files or use the network while it runs.
+- **Servers do not survive**: any blocking process (a TCP/HTTP server,
+  `serve_forever`, a `listen`) dies when the execution timeout expires
+  (2 s by default, 10 s max): SIGTERM to the whole process group and
+  SIGKILL 250 ms later. The e2e suite verifies the port is free after the
+  kill in both Node and Python.
+- What IS blocked are dependency downloads during builds:
+  `CARGO_NET_OFFLINE=true` and `GOPROXY=off` for cargo/go.

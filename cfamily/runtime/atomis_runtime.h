@@ -114,7 +114,7 @@ static void __atomis_probe_ptr(const char *id, int line, int col,
 static void __atomis_probe_any(const char *id, int line, int col,
                                 const char *name, const char *type,
                                 int size, int align, ...) {
-	__atomis_emit(id, line, col, name, "?", "<sin preview>", size, align, 0);
+	__atomis_emit(id, line, col, name, "?", "<no preview>", size, align, 0);
 	(void)type;
 }
 

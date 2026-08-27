@@ -110,7 +110,7 @@ describe("labels", () => {
 				busy: false,
 				failingCount: 0,
 			}),
-		).toBe("esta ejecución no tiene tests");
+		).toBe("this run has no tests");
 		expect(
 			drawerSubLabel({
 				testCount: 2,
@@ -119,7 +119,7 @@ describe("labels", () => {
 				failingCount: 0,
 				executionMs: 5.25,
 			}),
-		).toBe("todos pasando · 5.3ms");
+		).toBe("all passing · 5.3ms");
 	});
 
 	it("summarizes the zen pill", () => {

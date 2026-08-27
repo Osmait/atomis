@@ -378,7 +378,7 @@ impl SessionManager {
                 if !lsp {
                     let message = if lsp_version == "unavailable" {
                         format!(
-                            "{} no instalado · editor sin autocompletado (opcional)",
+                            "{} not installed · editor completion disabled (optional)",
                             lsp_check.expected
                         )
                     } else {

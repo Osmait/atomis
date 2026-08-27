@@ -7,7 +7,7 @@ import { join, resolve } from "node:path";
 const root = resolve(import.meta.dirname, "..");
 const request = process.argv[2];
 if (!request) {
-	console.error("uso: node scripts/bump-version.mjs patch|minor|major|X.Y.Z");
+	console.error("usage: node scripts/bump-version.mjs patch|minor|major|X.Y.Z");
 	process.exit(1);
 }
 
@@ -24,7 +24,7 @@ else {
 	else if (request === "minor") next = `${major}.${minor + 1}.0`;
 	else if (request === "patch") next = `${major}.${minor}.${patch + 1}`;
 	else {
-		console.error(`bump desconocido: ${request}`);
+		console.error(`unknown bump: ${request}`);
 		process.exit(1);
 	}
 }
@@ -61,7 +61,7 @@ for (const { toml, lock, name } of cargoPackages) {
 		`version = "${next}"`,
 	);
 	if (bumped === source) {
-		console.error(`sin línea de versión en ${toml}`);
+		console.error(`no version line in ${toml}`);
 		process.exit(1);
 	}
 	writeFileSync(tomlPath, bumped);
@@ -74,5 +74,5 @@ for (const { toml, lock, name } of cargoPackages) {
 	writeFileSync(lockPath, lockBumped);
 }
 
-console.error(`versión: ${current} → ${next}`);
+console.error(`version: ${current} → ${next}`);
 console.log(next);

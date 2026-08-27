@@ -129,14 +129,14 @@ test("project tree supports imports, embedFile, and runtime input files", async 
 	page,
 }) => {
 	await openClean(page);
-	await treeAction(page, "Crear archivo");
+	await treeAction(page, "New file");
 	await fillTreeDraft(page, "solver.zig");
 	await replaceEditor(
 		page,
 		'const std = @import("std");\npub fn answer() usize {\n    std.debug.print("solver module\\n", .{});\n    return @embedFile("input.txt").len;\n}\n',
 	);
 
-	await treeAction(page, "Crear archivo");
+	await treeAction(page, "New file");
 	await fillTreeDraft(page, "input.txt");
 	await replaceEditor(page, "abcd\n");
 
@@ -160,22 +160,22 @@ pub fn main(init: std.process.Init) !void {
 		.filter({ hasText: "solver module" });
 	await expect(moduleLog).toHaveAttribute(
 		"title",
-		/Generado por src\/solver\.zig:/,
+		/Emitted by src\/solver\.zig:/,
 	);
 	await moduleLog.click();
 	await expect(page.locator(".global-status")).toContainText("src/solver.zig");
 	await expect(page.locator(".log-source-line")).toBeVisible();
 
-	await treeAction(page, "Crear archivo");
+	await treeAction(page, "New file");
 	await fillTreeDraft(page, "notes.tmp");
 	await replaceEditor(page, "temporary");
-	await treeAction(page, "Renombrar archivo");
+	await treeAction(page, "Rename file");
 	await fillTreeDraft(page, "data/notes.txt");
 	await expect(
 		page.getByRole("button", { name: "data/notes.txt" }),
 	).toBeVisible();
 	page.once("dialog", (dialog) => dialog.accept());
-	await treeAction(page, "Eliminar archivo");
+	await treeAction(page, "Delete file");
 	await expect(
 		page.getByRole("button", { name: "data/notes.txt" }),
 	).toHaveCount(0);
@@ -296,11 +296,11 @@ test("each run clears the terminal and colors only failures red", async ({
 	const secondIteration = sourcedLogs.filter({ hasText: "iteration 1" });
 	await expect(secondIteration).toHaveAttribute(
 		"title",
-		/Generado por src\/main\.zig:4:9 · ejecución #2/,
+		/Emitted by src\/main\.zig:4:9 · execution #2/,
 	);
 	await secondIteration.hover();
 	await expect(secondIteration.locator(".log-origin-tooltip")).toContainText(
-		"src/main.zig:4:9 · ejecución #2 · bucle 3:5 · i=1",
+		"src/main.zig:4:9 · execution #2 · loop 3:5 · i=1",
 	);
 	await expect(page.locator(".log-source-line")).toBeVisible();
 	await expect(page.locator(".log-loop-line")).toBeVisible();
@@ -324,7 +324,7 @@ test("each run clears the terminal and colors only failures red", async ({
 	const compactFirst = compactLogs.filter({ hasText: "compact 0" });
 	await compactFirst.hover();
 	await expect(compactFirst.locator(".log-origin-tooltip")).toContainText(
-		/src\/main\.zig:3:\d+ · ejecución #1 · bucle 3:5 · i=0/,
+		/src\/main\.zig:3:\d+ · execution #1 · loop 3:5 · i=0/,
 	);
 	await expect(page.locator(".log-source-line")).toBeVisible();
 });
@@ -353,7 +353,7 @@ pub fn main() void {
 `,
 	);
 	await expect(page.locator(".state-runtime_error")).toBeVisible();
-	await openTermView(page, "Salida");
+	await openTermView(page, "Output");
 	const terminal = page.locator(".panel-content");
 	await expect(
 		terminal.locator("pre.program").filter({ hasText: "before panic" }),
@@ -401,7 +401,7 @@ test("zig test runner reports cases, error lens and tree badges", async ({
 		[
 			'const std = @import("std");',
 			"pub fn main() void {}",
-			'test "suma basica" { try std.testing.expectEqual(@as(i32, 4), 2 + 2); }',
+			'test "basic sum" { try std.testing.expectEqual(@as(i32, 4), 2 + 2); }',
 			'test "falla esperada" { try std.testing.expectEqual(@as(u64, 366), 365); }',
 			'test "se salta" { return error.SkipZigTest; }',
 			"",
@@ -414,9 +414,9 @@ test("zig test runner reports cases, error lens and tree badges", async ({
 	const cases = page.locator(".tests-drawer");
 	await expect(cases).toBeVisible();
 	await expect(cases.locator(".drawer-score")).toHaveText("2/3");
-	await expect(cases.locator(".drawer-sub")).toContainText("1 fallando");
+	await expect(cases.locator(".drawer-sub")).toContainText("1 failing");
 	await expect(
-		cases.locator(".case-row").filter({ hasText: "suma basica" }),
+		cases.locator(".case-row").filter({ hasText: "basic sum" }),
 	).toBeVisible();
 	await expect(
 		cases.locator(".case-item.failed").filter({ hasText: "falla esperada" }),
@@ -429,8 +429,8 @@ test("zig test runner reports cases, error lens and tree badges", async ({
 		page.locator(".tree-badge.fails").filter({ hasText: "1" }),
 	).toBeVisible();
 
-	// run history lives in the drawer's Historial tab
-	await cases.locator(".drawer-tabs button", { hasText: "Historial" }).click();
+	// run history lives in the drawer's History tab
+	await cases.locator(".drawer-tabs button", { hasText: "History" }).click();
 	await expect(page.locator(".history-row").first()).toBeVisible();
 	await cases.locator(".drawer-tabs button", { hasText: "Tests" }).click();
 
@@ -460,13 +460,13 @@ test("command palette opens files and zen mode hides the chrome", async ({
 }) => {
 	await openClean(page);
 	await expect(page.locator(".state-succeeded")).toBeVisible();
-	await treeAction(page, "Crear archivo");
+	await treeAction(page, "New file");
 	await fillTreeDraft(page, "utils/helper.zig");
 	await replaceEditor(page, "pub fn helper() void {}\n");
 	await page.keyboard.press("ControlOrMeta+K");
 	const palette = page.locator(".palette");
 	await expect(palette).toBeVisible();
-	await palette.getByLabel("Buscar archivo").fill("main.zig");
+	await palette.getByLabel("Find file").fill("main.zig");
 	await page.keyboard.press("Enter");
 	await expect(palette).toHaveCount(0);
 	await expect(page.locator(".global-status")).toContainText("src/main.zig");
@@ -528,7 +528,7 @@ test("rust sessions run with inline values and tests", async ({ page }) => {
 
 	// size_of_val layout reaches the peek panel
 	await page.getByText("40 : i32", { exact: true }).click();
-	await expect(page.locator(".peek-kv", { hasText: "tamaño" })).toContainText(
+	await expect(page.locator(".peek-kv", { hasText: "size" })).toContainText(
 		"4 B",
 	);
 	await expect(page.locator(".peek-kv", { hasText: "hex" })).toContainText(
@@ -553,7 +553,7 @@ test("rust compile errors, panics and failing tests map to visible lines", async
 	await expect(page.getByText(/mismatched types/).first()).toBeVisible();
 	await expect(page.getByText(/src\/main\.rs · compiler · Ln 2/)).toBeVisible();
 
-	await openTermView(page, "Salida");
+	await openTermView(page, "Output");
 	await replaceEditor(
 		page,
 		'fn main() {\n    for i in 0..3 {\n        println!("iter {i}");\n    }\n    panic!("boom");\n}\n\n#[test]\nfn falla() {\n    assert_eq!(1, 2);\n}\n',
@@ -563,7 +563,7 @@ test("rust compile errors, panics and failing tests map to visible lines", async
 	});
 	// the failing test auto-opens the drawer: verify, then close it to
 	// reach the output underneath
-	await expect(page.locator(".drawer-sub")).toContainText("1 fallando", {
+	await expect(page.locator(".drawer-sub")).toContainText("1 failing", {
 		timeout: 40_000,
 	});
 	await expect(page.locator(".case-message")).toContainText(
@@ -581,11 +581,11 @@ test("rust compile errors, panics and failing tests map to visible lines", async
 		.filter({ hasText: "iter 1" });
 	await expect(sourced).toHaveAttribute(
 		"title",
-		/Generado por src\/main\.rs:3:9 · ejecución #2/,
+		/Emitted by src\/main\.rs:3:9 · execution #2/,
 	);
 	await sourced.hover();
 	await expect(sourced.locator(".log-origin-tooltip")).toContainText(
-		"bucle 2:5 · i=1",
+		"loop 2:5 · i=1",
 	);
 });
 
@@ -680,7 +680,7 @@ test("multi-file imports run in every language", async ({ page }) => {
 	];
 	for (const flow of flows) {
 		if (!available(flow.gate)) continue;
-		await treeAction(page, "Crear archivo");
+		await treeAction(page, "New file");
 		await fillTreeDraft(page, flow.helper[0]);
 		await replaceEditor(page, flow.helper[1]);
 		await page.getByRole("button", { name: flow.entry, exact: true }).click();
@@ -762,7 +762,7 @@ test("leader key navigates tree and terminal app-wide", async ({ page }) => {
 	await page.keyboard.press(" ");
 	await expect(page.locator(".mode-chip")).toHaveText("LEADER");
 	await page.keyboard.press("e");
-	await expect(page.locator(".mode-chip")).toHaveText("ÁRBOL");
+	await expect(page.locator(".mode-chip")).toHaveText("TREE");
 	await expect(page.locator(".tree-card")).toHaveClass(/kb-zone/);
 
 	// j/k move the selection; Enter opens and returns to the editor
@@ -770,12 +770,12 @@ test("leader key navigates tree and terminal app-wide", async ({ page }) => {
 	await page.keyboard.press("j");
 	await expect(page.locator(".kb-sel")).toBeVisible();
 	await page.keyboard.press("Enter");
-	await expect(page.locator(".mode-chip")).not.toHaveText("ÁRBOL");
+	await expect(page.locator(".mode-chip")).not.toHaveText("TREE");
 
 	// leader e on a focused tree closes it
 	await page.keyboard.press(" ");
 	await page.keyboard.press("e");
-	await expect(page.locator(".mode-chip")).toHaveText("ÁRBOL");
+	await expect(page.locator(".mode-chip")).toHaveText("TREE");
 	await page.keyboard.press(" ");
 	await page.keyboard.press("e");
 	await expect(page.locator(".tree-card")).toHaveCount(0);
@@ -785,10 +785,10 @@ test("leader key navigates tree and terminal app-wide", async ({ page }) => {
 	// leader h/l move focus across panels: editor → tree → editor → terminal
 	await page.keyboard.press(" ");
 	await page.keyboard.press("h");
-	await expect(page.locator(".mode-chip")).toHaveText("ÁRBOL");
+	await expect(page.locator(".mode-chip")).toHaveText("TREE");
 	await page.keyboard.press(" ");
 	await page.keyboard.press("l");
-	await expect(page.locator(".mode-chip")).not.toHaveText("ÁRBOL");
+	await expect(page.locator(".mode-chip")).not.toHaveText("TREE");
 	await page.keyboard.press(" ");
 	await page.keyboard.press("l");
 	await expect(page.locator(".mode-chip")).toHaveText("TERMINAL");
@@ -857,7 +857,7 @@ test("low-level peek: bits, bitops, struct layout and value formats", async ({
 	await expect(page.locator(".peek-panel")).toBeVisible();
 	await expect(page.locator(".peek-bit")).toHaveCount(8);
 	await expect(page.locator(".peek-bitop-row")).toHaveCount(3);
-	await expect(page.locator(".peek-kv", { hasText: "tamaño" })).toContainText(
+	await expect(page.locator(".peek-kv", { hasText: "size" })).toContainText(
 		"1 B",
 	);
 	await expect(page.locator(".peek-kv", { hasText: "hex" })).toContainText(
@@ -920,7 +920,7 @@ test("folders group files and collapse in the tree", async ({ page }) => {
 	await expect(page.locator(".state-succeeded")).toBeVisible();
 	await page.keyboard.press("ControlOrMeta+K");
 	await page
-		.getByRole("textbox", { name: "Buscar archivo" })
+		.getByRole("textbox", { name: "Find file" })
 		.fill("utils/helper.zig");
 	await page.keyboard.press("Enter");
 	await expect(page.locator(".global-status")).toContainText(
@@ -940,7 +940,7 @@ test("folders group files and collapse in the tree", async ({ page }) => {
 		page.getByRole("button", { name: "utils/helper.zig" }),
 	).toBeVisible();
 
-	await treeAction(page, "Crear carpeta");
+	await treeAction(page, "New folder");
 	await fillTreeDraft(page, "aoc");
 	const aocRow = page
 		.locator(".tree-folder-row")
@@ -964,7 +964,7 @@ test("folders group files and collapse in the tree", async ({ page }) => {
 	await page.locator(".tree-folder-row").first().click({ button: "right" });
 	await expect(page.locator(".tree-context-menu")).toBeVisible();
 	await page
-		.getByRole("menuitem", { name: /Nuevo archivo en/ })
+		.getByRole("menuitem", { name: /New file en/ })
 		.click();
 	await expect(page.locator(".tree-draft input")).toBeVisible();
 	await page.keyboard.press("Escape");
@@ -973,7 +973,7 @@ test("folders group files and collapse in the tree", async ({ page }) => {
 	// right-click a file: rename/delete available
 	await page.locator(".tree-file").first().click({ button: "right" });
 	await expect(
-		page.getByRole("menuitem", { name: "Renombrar", exact: true }),
+		page.getByRole("menuitem", { name: "Rename", exact: true }),
 	).toBeVisible();
 	await page.keyboard.press("Escape");
 	await expect(page.locator(".tree-context-menu")).toHaveCount(0);
@@ -1016,7 +1016,7 @@ test("go sessions run with inline values, tests and mapped diagnostics", async (
 
 	// reflect-derived layout reaches the peek panel (go int = 8 B / 64 bits)
 	await page.getByText("40 : int", { exact: true }).click();
-	await expect(page.locator(".peek-kv", { hasText: "tamaño" })).toContainText(
+	await expect(page.locator(".peek-kv", { hasText: "size" })).toContainText(
 		"8 B",
 	);
 	await expect(page.locator(".peek-bit")).toHaveCount(64);
@@ -1047,7 +1047,7 @@ test("go sessions run with inline values, tests and mapped diagnostics", async (
 		page.getByText(/src\/main\.go · compiler · Ln 6/).first(),
 	).toBeVisible();
 
-	await openTermView(page, "Salida");
+	await openTermView(page, "Output");
 	await replaceEditor(
 		page,
 		'package main\n\nimport "fmt"\n\nfunc main() {\n\tfmt.Println("antes")\n\tpanic("boom")\n}\n',
@@ -1090,13 +1090,13 @@ test("ts sessions run with inline values, tests and non-blocking type errors", a
 	// A type error surfaces as a diagnostic but the program still runs.
 	await replaceEditor(
 		page,
-		'const bad: number = "no";\nconsole.log("sigue corriendo:", bad);\n',
+		'const bad: number = "no";\nconsole.log("still running:", bad);\n',
 	);
 	await expect(page.locator(".state-succeeded")).toBeVisible({
 		timeout: 60_000,
 	});
 	await expect(page.locator(".panel-content")).toContainText(
-		"sigue corriendo: no",
+		"still running: no",
 	);
 	await openTermView(page, /Problems/);
 	await expect(
@@ -1104,7 +1104,7 @@ test("ts sessions run with inline values, tests and non-blocking type errors", a
 	).toBeVisible();
 
 	// An uncaught throw is a runtime error with a mapped location.
-	await openTermView(page, "Salida");
+	await openTermView(page, "Output");
 	await replaceEditor(
 		page,
 		'console.log("antes");\nthrow new Error("boom esperado");\n',
@@ -1265,7 +1265,7 @@ test("cpp sessions run with stream previews and failing asserts", async ({
 		page,
 		"#include <cassert>\n\nint apply_tax(int price, int tax);\n\nvoid test_falla() {\n\tassert(apply_tax(40, 0) == 41);\n}\n",
 	);
-	await expect(page.locator(".drawer-sub")).toContainText("1 fallando", {
+	await expect(page.locator(".drawer-sub")).toContainText("1 failing", {
 		timeout: 60_000,
 	});
 	await expect(page.locator(".case-message")).toContainText(/Assertion|assert/);

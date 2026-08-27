@@ -24,7 +24,7 @@ interface TestsDrawerProps {
 }
 
 /** The expanded tests drawer: big score, per-test rows with jump-to-line and
- * failure details, and the last runs under the Historial tab. */
+ * failure details, and the last runs under the History tab. */
 export function TestsDrawer(props: TestsDrawerProps): React.JSX.Element {
 	const { tests, testResults } = props;
 	return (
@@ -32,7 +32,7 @@ export function TestsDrawer(props: TestsDrawerProps): React.JSX.Element {
 			<button
 				className="drawer-handle"
 				onClick={props.onClose}
-				title="Ocultar tests (⌘T)"
+				title="Hide tests (⌘T)"
 			>
 				<span />
 			</button>
@@ -62,13 +62,13 @@ export function TestsDrawer(props: TestsDrawerProps): React.JSX.Element {
 						className={props.drawerTab === "hist" ? "active" : ""}
 						onClick={() => props.onDrawerTab("hist")}
 					>
-						Historial
+						History
 					</button>
 				</span>
 				<button
 					className="drawer-close"
 					onClick={props.onClose}
-					title="Cerrar (⌘T)"
+					title="Close (⌘T)"
 				>
 					<Lucide icon="chevron-down" size={14} />
 				</button>
@@ -87,7 +87,7 @@ export function TestsDrawer(props: TestsDrawerProps): React.JSX.Element {
 						</div>
 					))}
 					{!props.history.length && (
-						<div className="empty-state">sin corridas todavía</div>
+						<div className="empty-state">no runs yet</div>
 					)}
 				</div>
 			) : (
@@ -152,9 +152,9 @@ export function TestsDrawer(props: TestsDrawerProps): React.JSX.Element {
 										)}
 										<div className="case-actions">
 											<button onClick={() => props.onJump(test)}>
-												ir a L{test.line}
+												go to L{test.line}
 											</button>
-											<button onClick={props.onRun}>correr tests</button>
+											<button onClick={props.onRun}>run tests</button>
 										</div>
 									</div>
 								)}
@@ -182,7 +182,7 @@ export function TestsDrawer(props: TestsDrawerProps): React.JSX.Element {
 						))}
 					<div className="cases-hint">
 						{tests.length
-							? `${props.hintSource} · clic para ir a la línea`
+							? `${props.hintSource} · click to jump to its line`
 							: props.hintEmpty}
 					</div>
 				</div>

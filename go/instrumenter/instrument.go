@@ -140,7 +140,7 @@ func (c *collector) visitStmt(stmt ast.Stmt) {
 		if len(node.Lhs) != 1 {
 			ident, ok := node.Lhs[0].(*ast.Ident)
 			if ok && ident.Name != "_" {
-				c.recordProbe(ident, node.End(), "declaración múltiple")
+				c.recordProbe(ident, node.End(), "multiple declaration")
 			}
 			return
 		}
@@ -164,7 +164,7 @@ func (c *collector) visitStmt(stmt ast.Stmt) {
 				continue
 			}
 			if len(value.Values) == 0 {
-				c.recordProbe(ident, node.End(), "declaración sin inicializador")
+				c.recordProbe(ident, node.End(), "declaration without initializer")
 				continue
 			}
 			c.recordProbe(ident, node.End(), "")

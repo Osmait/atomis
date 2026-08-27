@@ -50,7 +50,7 @@ const entries = [
 for (const entry of entries) {
 	const source = join(root, entry);
 	if (!existsSync(source)) {
-		console.warn(`⚠ recurso ausente (saltado): ${entry}`);
+		console.warn(`⚠ missing resource (skipped): ${entry}`);
 		continue;
 	}
 	cpSync(source, join(resources, entry), { recursive: true });

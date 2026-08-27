@@ -74,18 +74,18 @@ export function SettingsModal({
 				onClick={(event) => event.stopPropagation()}
 				onKeyDown={() => {}}
 				role="dialog"
-				aria-label="Ajustes"
+				aria-label="Settings"
 			>
 				<header className="settings-header">
 					<Lucide icon="settings" size={15} />
-					<span>Ajustes</span>
-					<button className="settings-close" onClick={onClose} title="Cerrar">
+					<span>Settings</span>
+					<button className="settings-close" onClick={onClose} title="Close">
 						<Lucide icon="x" size={14} />
 					</button>
 				</header>
 
 				<section className="settings-section">
-					<div className="settings-title">Comportamiento</div>
+					<div className="settings-title">Behaviour</div>
 					{toggles.map((toggle) => (
 						<button
 							className="settings-toggle"
@@ -105,7 +105,7 @@ export function SettingsModal({
 				</section>
 
 				<section className="settings-section">
-					<div className="settings-title">Valores en línea</div>
+					<div className="settings-title">Inline values</div>
 					<div className="settings-pills fmt-switch">
 						{VALUE_FMTS.map((fmt, index) => (
 							<button
@@ -121,7 +121,7 @@ export function SettingsModal({
 				</section>
 
 				<section className="settings-section">
-					<div className="settings-title">Tema</div>
+					<div className="settings-title">Theme</div>
 					<div className="settings-pills">
 						{APP_THEMES.map((entry) => (
 							<button
@@ -140,7 +140,7 @@ export function SettingsModal({
 				</section>
 
 				<section className="settings-section">
-					<div className="settings-title">Tipografía</div>
+					<div className="settings-title">Typography</div>
 					<div className="settings-pills">
 						{APP_FONTS.map((font, index) => (
 							<button
@@ -154,7 +154,7 @@ export function SettingsModal({
 						))}
 					</div>
 					<div className="settings-sizes">
-						<span>Tamaño</span>
+						<span>Size</span>
 						{APP_SIZES.map((size, index) => (
 							<button
 								className={sizeIndex === index ? "active" : ""}
@@ -168,11 +168,11 @@ export function SettingsModal({
 				</section>
 
 				<section className="settings-section">
-					<div className="settings-title">Teclado</div>
+					<div className="settings-title">Keyboard</div>
 					<div className="settings-toggle-hint">
-						leader+e árbol · leader+t terminal · leader+h/l cambia de panel ·
-						leader+o cierra otras pestañas · Shift+H/L cambia de pestaña ·
-						j/k navegan
+						leader+e tree · leader+t terminal · leader+h/l switches panel ·
+						leader+o closes the other tabs · Shift+H/L cycles tabs ·
+						j/k navigate
 					</div>
 					<div className="settings-pills">
 						{LEADER_OPTIONS.map((option) => (

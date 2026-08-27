@@ -33,7 +33,7 @@ describe("StatusBar", () => {
 		expect(screen.getByText("src/main.zig")).toBeTruthy();
 		expect(screen.getByText("+3")).toBeTruthy();
 		expect(screen.getByText("4:7")).toBeTruthy();
-		expect(screen.getByText("listo").className).toContain("state-succeeded");
+		expect(screen.getByText("ready").className).toContain("state-succeeded");
 	});
 
 	it("prioritizes LEADER over the zone and the zone over vim", () => {
@@ -41,7 +41,7 @@ describe("StatusBar", () => {
 		expect(screen.getByText("LEADER").className).toContain("mode-zone");
 		cleanup();
 		renderBar({ focusZone: "tree" });
-		expect(screen.getByText("ÁRBOL")).toBeTruthy();
+		expect(screen.getByText("TREE")).toBeTruthy();
 		cleanup();
 		renderBar({ focusZone: "term" });
 		expect(screen.getByText("TERMINAL")).toBeTruthy();

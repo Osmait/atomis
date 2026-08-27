@@ -32,7 +32,7 @@ export function StatusBar(props: StatusBarProps): React.JSX.Element {
 				{props.leaderPending
 					? "LEADER"
 					: props.focusZone === "tree"
-						? "ÁRBOL"
+						? "TREE"
 						: props.focusZone === "term"
 							? "TERMINAL"
 							: props.vimModeLabel}
@@ -83,7 +83,7 @@ export function ZenPill(props: ZenPillProps): React.JSX.Element {
 				<Lucide icon={props.active ? "square" : "play"} size={12} /> Run
 			</button>
 			<button className="zen-exit" onClick={props.onExit}>
-				salir ⌘.
+				exit ⌘.
 			</button>
 		</div>
 	);
