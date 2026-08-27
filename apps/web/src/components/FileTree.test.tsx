@@ -33,6 +33,7 @@ function renderTree(
 		onDeleteActive: vi.fn(),
 		onHideTree: vi.fn(),
 		onLoadDemo: vi.fn(),
+		onSwitchWorkspace: vi.fn(),
 		onClearWorkspace: vi.fn(),
 		onDraftChange: vi.fn(),
 		onDraftCommit: vi.fn(),

@@ -146,6 +146,8 @@ export interface CreateSessionResponse {
 	sandboxSupport?: SandboxSupport;
 	/** Whether the session starts sandboxed. */
 	sandbox?: boolean;
+	/** Set when the session is attached to a persistent workspace. */
+	workspace?: WorkspaceMeta;
 }
 
 export const sandboxSupports = [
@@ -162,8 +164,19 @@ export const createSessionRequestSchema = z
 	.object({
 		language: z.enum(languages).default("zig"),
 		scaffold: z.enum(workspaceScaffolds).default("demo"),
+		/** Attach to a persistent workspace instead of a throwaway session. */
+		workspace: z.string().length(32).optional(),
 	})
 	.strict();
+
+/** A persistent workspace: files (and its toolchain caches) survive. */
+export interface WorkspaceMeta {
+	id: string;
+	name: string;
+	language: Language;
+	createdAt: number;
+	updatedAt: number;
+}
 
 /** Byte-accurate layout of one struct field, for the low-level peek panel. */
 export interface ProbeFieldLayout {

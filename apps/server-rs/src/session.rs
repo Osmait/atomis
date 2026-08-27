@@ -74,6 +74,9 @@ pub struct Session {
     pub runtime_connected: AtomicBool,
     /// Allowlist handed to every child process while the sandbox is on.
     pub sandbox_policy: std::sync::Arc<crate::sandbox::SandboxPolicy>,
+    /// Set when the session is attached to a persistent workspace, whose
+    /// directory must survive the disconnect that ends the session.
+    pub workspace_id: Option<String>,
 }
 
 impl Session {
@@ -346,10 +349,27 @@ impl SessionManager {
         &self,
         preferred: Language,
         scaffold: crate::protocol::WorkspaceScaffold,
+        workspace: Option<String>,
     ) -> Result<CreateSessionResponse, String> {
         let id = random_hex(16);
         let token = random_base64url(32);
-        let root = self.root.join(&id);
+        // A persistent workspace keeps its own directory; an ephemeral
+        // session gets a fresh one under the temp root.
+        let workspace_meta = match &workspace {
+            Some(workspace_id) => {
+                let dir = crate::workspace::workspace_dir(workspace_id)
+                    .ok_or("Invalid workspace id")?;
+                let meta = crate::workspace::read_meta(&dir)
+                    .await
+                    .ok_or("Unknown workspace")?;
+                Some((dir, meta))
+            }
+            None => None,
+        };
+        let root = match &workspace_meta {
+            Some((dir, _)) => dir.clone(),
+            None => self.root.join(&id),
+        };
         let source_root = root.join("src");
         for dir in [
             &source_root,
@@ -428,6 +448,10 @@ impl SessionManager {
                 .await
                 .map_err(|e| format!("scaffold {}: {e}", pack.id.as_str()))?;
         }
+        let preferred = workspace_meta
+            .as_ref()
+            .map(|(_, meta)| meta.language)
+            .unwrap_or(preferred);
         let language = if included.iter().any(|p| p.id == preferred) {
             preferred
         } else {
@@ -437,6 +461,10 @@ impl SessionManager {
         // example; minimal starts with just the chosen language's entry.
         // Language templates outside src/ are staged either way, so files
         // of any supported language can be created and run later.
+        let existing = match &workspace_meta {
+            Some(_) => crate::workspace::read_sources(&source_root).await,
+            None => Vec::new(),
+        };
         let mut sources: Vec<(String, String)> = Vec::new();
         let minimal = scaffold == crate::protocol::WorkspaceScaffold::Minimal;
         for pack in &included {
@@ -455,13 +483,19 @@ impl SessionManager {
                 }
             }
         }
-        for (entry, source) in &sources {
-            tokio::fs::write(source_root.join(entry), source)
-                .await
-                .map_err(|e| e.to_string())?;
-            tokio::fs::write(root.join("generated").join(entry), source)
-                .await
-                .map_err(|e| e.to_string())?;
+        // Attaching to a workspace that already has sources never rewrites
+        // them; only a brand new one gets the scaffold.
+        if !existing.is_empty() {
+            sources = existing;
+        } else {
+            for (entry, source) in &sources {
+                tokio::fs::write(source_root.join(entry), source)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                tokio::fs::write(root.join("generated").join(entry), source)
+                    .await
+                    .map_err(|e| e.to_string())?;
+            }
         }
         let primary_entry = packs::pack(language).entry_file.to_string();
         let mut entry_paths = vec![primary_entry.clone()];
@@ -513,7 +547,11 @@ impl SessionManager {
             support,
             runtime_connected: AtomicBool::new(false),
             sandbox_policy,
+            workspace_id: workspace.clone(),
         });
+        if let Some(workspace_id) = &workspace {
+            crate::workspace::touch(workspace_id).await;
+        }
         self.sessions.lock().await.insert(id.clone(), session);
 
         let run_of = |lang: &str| -> String {
@@ -548,6 +586,7 @@ impl SessionManager {
             degraded,
             sandbox_support: crate::sandbox::detect_support().as_str().to_string(),
             sandbox: crate::sandbox::detect_support().available(),
+            workspace: workspace_meta.map(|(_, meta)| meta),
         })
     }
 
@@ -570,6 +609,11 @@ impl SessionManager {
     pub async fn destroy(&self, id: &str) {
         let session = self.sessions.lock().await.remove(id);
         if let Some(session) = session {
+            if let Some(workspace_id) = &session.workspace_id {
+                // Persistent: the files stay, only the in-memory session goes.
+                crate::workspace::touch(workspace_id).await;
+                return;
+            }
             let _ = tokio::fs::remove_dir_all(&session.root).await;
         }
     }

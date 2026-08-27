@@ -10,6 +10,8 @@ interface StatusBarProps {
 	vimModeLabel: string;
 	vimStatusRef: React.RefObject<HTMLDivElement | null>;
 	valuesCount: number;
+	workspaceName: string;
+	onWorkspace: () => void;
 	runState: RunState;
 	activePath: string;
 	degradedMessages: string[];
@@ -40,9 +42,13 @@ export function StatusBar(props: StatusBarProps): React.JSX.Element {
 			<div className="vim-mode-slot">
 				<div className="vim-status" ref={props.vimStatusRef} />
 			</div>
-			<span className="branch-status">
-				⎇ main <b>+{props.valuesCount}</b>
-			</span>
+			<button
+				className="branch-status"
+				onClick={props.onWorkspace}
+				title="Switch workspace"
+			>
+				⌂ {props.workspaceName} <b>+{props.valuesCount}</b>
+			</button>
 			<span className={`run-state state-${props.runState}`}>
 				{RUN_STATE_LABELS[props.runState]}
 			</span>

@@ -230,7 +230,30 @@ export function useRuntimeEvents(options: RuntimeEventsOptions) {
 		],
 	);
 
+	/// Clears everything the previous session produced. Used when the app
+	/// switches workspaces without reloading the page.
+	const reset = useCallback((): void => {
+		setRunState("idle");
+		setCatalog([]);
+		catalogRef.current = [];
+		setValues(new Map());
+		setStale(false);
+		setOutput([]);
+		setDiagnostics({});
+		setResult(undefined);
+		setTests([]);
+		setTestResults(new Map());
+		setTestSummary(undefined);
+		testSummaryRef.current = undefined;
+		setHistory([]);
+		setDrawer(false);
+		setOpenFolds(new Set());
+		lastRunFailedRef.current = false;
+		runNoRef.current = 0;
+	}, []);
+
 	return {
+		reset,
 		runState,
 		catalog,
 		catalogRef,

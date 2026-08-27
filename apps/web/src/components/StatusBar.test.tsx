@@ -21,6 +21,8 @@ function renderBar(
 			valuesCount={3}
 			vimModeLabel="NORMAL"
 			vimStatusRef={createRef<HTMLDivElement>()}
+			workspaceName="scratch"
+			onWorkspace={() => {}}
 			{...overrides}
 		/>,
 	);

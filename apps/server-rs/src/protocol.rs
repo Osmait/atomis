@@ -185,6 +185,9 @@ pub struct CreateSessionResponse {
     pub sandbox_support: String,
     /// Whether new sessions start sandboxed (true wherever it is available).
     pub sandbox: bool,
+    /// The persistent workspace this session is attached to, if any.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<crate::workspace::WorkspaceMeta>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
@@ -202,6 +205,8 @@ pub enum WorkspaceScaffold {
 pub struct CreateSessionRequest {
     pub language: Option<Language>,
     pub scaffold: Option<WorkspaceScaffold>,
+    /// Attach to a persistent workspace instead of a throwaway session.
+    pub workspace: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

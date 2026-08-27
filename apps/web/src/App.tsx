@@ -30,6 +30,7 @@ import { PeekPanel } from "./components/PeekPanel.js";
 import { SettingsModal } from "./components/SettingsModal.js";
 import { StatusBar, ZenPill } from "./components/StatusBar.js";
 import { Terminal, type TerminalTab } from "./components/Terminal.js";
+import { WorkspacePicker } from "./components/WorkspacePicker.js";
 import { TestsDrawer } from "./components/TestsDrawer.js";
 import {
 	installVimExtensions,
@@ -105,6 +106,15 @@ import {
 	type Settings,
 } from "./state/settings.js";
 import { groupOutput } from "./state/terminalFolds.js";
+import {
+	createWorkspace,
+	deleteWorkspace,
+	listWorkspaces,
+	loadActiveWorkspace,
+	renameWorkspace,
+	saveActiveWorkspace,
+} from "./state/workspaces.js";
+import type { WorkspaceMeta } from "@atomis/protocol";
 import type { LogSourceLocation, ProjectFile } from "./types.js";
 
 interface VimModeWithCommands {
@@ -158,6 +168,11 @@ export function App(): React.JSX.Element {
 	}>();
 	const [layout, setLayout] = useState<LayoutState>(loadLayout);
 	const [paletteOpen, setPaletteOpen] = useState(false);
+	const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
+	const [workspaces, setWorkspaces] = useState<WorkspaceMeta[]>([]);
+	const [workspaceBusy, setWorkspaceBusy] = useState(false);
+	const [switching, setSwitching] = useState(false);
+	const [workspaceError, setWorkspaceError] = useState<string>();
 	const [vimModeLabel, setVimModeLabel] = useState("NORMAL");
 	const vimModeRef = useRef("NORMAL");
 	vimModeRef.current = vimModeLabel;
@@ -213,6 +228,7 @@ export function App(): React.JSX.Element {
 		setStatus,
 	});
 	const {
+		reset: resetRuntime,
 		runState,
 		catalog,
 		catalogRef,
@@ -383,18 +399,34 @@ export function App(): React.JSX.Element {
 	});
 	const { peek, setPeek, peekOverride, setPeekOverride, peekNode } = peekPanel;
 
-	// ── Session bootstrap ──
-	useEffect(() => {
-		const boot = async (): Promise<void> => {
+	// ── Session lifecycle ──
+	// Opening a session is the same work on first load and on every
+	// workspace switch: tear the old one down, ask for a new one, and let
+	// the socket/LSP effects rebuild themselves around it.
+	const requestSession = useCallback(
+		(workspace: string | undefined): Promise<Response> =>
+			fetch("/api/sessions", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({
+					language: loadLanguage(),
+					scaffold: loadScaffold(),
+					...(workspace ? { workspace } : {}),
+				}),
+			}),
+		[],
+	);
+
+	const openSession = useCallback(
+		async (workspace: string | undefined): Promise<void> => {
 			try {
-				const response = await fetch("/api/sessions", {
-					method: "POST",
-					headers: { "content-type": "application/json" },
-					body: JSON.stringify({
-						language: loadLanguage(),
-						scaffold: loadScaffold(),
-					}),
-				});
+				let response = await requestSession(workspace);
+				// A stored workspace that no longer exists falls back to a
+				// scratch session rather than failing the boot.
+				if (!response.ok && workspace) {
+					saveActiveWorkspace(undefined);
+					response = await requestSession(undefined);
+				}
 				if (!response.ok)
 					throw new Error(`Session creation failed (${response.status})`);
 				const created = (await response.json()) as CreateSessionResponse;
@@ -427,11 +459,19 @@ export function App(): React.JSX.Element {
 				setStartupError(
 					error instanceof Error ? error.message : String(error),
 				);
+			} finally {
+				setSwitching(false);
 			}
-		};
-		void boot();
-		// resetToEntry is a stable callback: this still runs exactly once.
-	}, [resetToEntry]);
+		},
+		[requestSession, resetToEntry],
+	);
+
+	const bootedRef = useRef(false);
+	useEffect(() => {
+		if (bootedRef.current) return;
+		bootedRef.current = true;
+		void openSession(loadActiveWorkspace());
+	}, [openSession]);
 
 	const sendSettings = useCallback(
 		(next: Settings): void => {
@@ -631,43 +671,6 @@ export function App(): React.JSX.Element {
 				}),
 			);
 
-			const runtimeSocket = new WebSocket(websocketUrl("/ws/runtime", session));
-			runtimeRef.current = runtimeSocket;
-			runtimeSocket.addEventListener("open", () => {
-				sendRuntime({
-					type: "settings.update",
-					sessionId: session.sessionId,
-					...settingsRef.current,
-				});
-				const mainSource =
-					filesRef.current.find((file) => file.path === entryRef.current)
-						?.source ?? session.initialSource;
-				if (mainSource !== session.initialSource) {
-					versionRef.current = 2;
-					sendRuntime({
-						type: "document.update",
-						sessionId: session.sessionId,
-						version: 2,
-						path: entryRef.current,
-						source: mainSource,
-					});
-				}
-			});
-			runtimeSocket.addEventListener("message", (message) => {
-				try {
-					handleRuntimeEvent(
-						JSON.parse(String(message.data)) as never,
-					);
-				} catch (error) {
-					setStatus(
-						`Runtime protocol error: ${error instanceof Error ? error.message : String(error)}`,
-					);
-				}
-			});
-			runtimeSocket.addEventListener("close", () =>
-				setStatus("Runtime disconnected"),
-			);
-
 			openInLsp(activePathRef.current, model);
 
 			editor.onKeyDown((event) => {
@@ -757,11 +760,9 @@ export function App(): React.JSX.Element {
 		[
 			activePathRef,
 			catalogRef,
-			handleRuntimeEvent,
 			setFocusZone,
 			openInLsp,
 			run,
-			sendRuntime,
 			sendSettings,
 			session,
 			setPeek,
@@ -792,6 +793,62 @@ export function App(): React.JSX.Element {
 		vimModeLabel,
 		activePath,
 	});
+
+	useEffect(() => {
+		if (!session) return;
+		const socket = new WebSocket(websocketUrl("/ws/runtime", session));
+		runtimeRef.current = socket;
+		socket.addEventListener("open", () => {
+			sendRuntime({
+				type: "settings.update",
+				sessionId: session.sessionId,
+				...settingsRef.current,
+			});
+			const mainSource =
+				filesRef.current.find((file) => file.path === entryRef.current)
+					?.source ?? session.initialSource;
+			if (mainSource !== session.initialSource) {
+				versionRef.current = 2;
+				sendRuntime({
+					type: "document.update",
+					sessionId: session.sessionId,
+					version: 2,
+					path: entryRef.current,
+					source: mainSource,
+				});
+			}
+		});
+		socket.addEventListener("message", (message) => {
+			try {
+				handleRuntimeEvent(JSON.parse(String(message.data)) as never);
+			} catch (error) {
+				setStatus(
+					`Runtime protocol error: ${error instanceof Error ? error.message : String(error)}`,
+				);
+			}
+		});
+		socket.addEventListener("close", () => setStatus("Runtime disconnected"));
+		return () => {
+			// Closing here stops the old session's events from reaching the
+			// new one; the server tears its side down on disconnect.
+			socket.close();
+			if (runtimeRef.current === socket) runtimeRef.current = undefined;
+		};
+	}, [handleRuntimeEvent, sendRuntime, session]);
+
+	// Monaco models are keyed by absolute session paths, so the previous
+	// workspace's models would linger after a switch. Drop anything that is
+	// not under the current session's source root.
+	useEffect(() => {
+		const monaco = monacoRef.current;
+		if (!monaco || !session) return;
+		const root = session.documentUri.slice(
+			0,
+			session.documentUri.lastIndexOf("/") + 1,
+		);
+		for (const model of monaco.editor.getModels())
+			if (!model.uri.toString().startsWith(root)) model.dispose();
+	}, [session]);
 
 	useEditorDecorations({
 		editorRef,
@@ -978,6 +1035,62 @@ export function App(): React.JSX.Element {
 		window.location.reload();
 	}, [activePathRef]);
 
+	const refreshWorkspaces = useCallback(async (): Promise<void> => {
+		try {
+			setWorkspaces(await listWorkspaces());
+		} catch (error) {
+			setWorkspaceError(
+				error instanceof Error ? error.message : String(error),
+			);
+		}
+	}, []);
+
+	const openWorkspacePicker = useCallback((): void => {
+		setWorkspaceError(undefined);
+		setWorkspacePickerOpen(true);
+		void refreshWorkspaces();
+	}, [refreshWorkspaces]);
+
+	// Switching workspace swaps every file on disk, so the session is
+	// rebuilt — but in place: the page never reloads. Tear down what is
+	// bound to the old session, then open the new one; the socket, LSP and
+	// model effects rebuild themselves around it.
+	const switchToWorkspace = useCallback(
+		(id: string | undefined): void => {
+			saveActiveWorkspace(id);
+			setWorkspacePickerOpen(false);
+			setSwitching(true);
+			for (const client of Object.values(lspClientsRef.current))
+				client?.dispose();
+			lspClientsRef.current = {};
+			runtimeRef.current?.close();
+			resetRuntime();
+			setCapabilities({});
+			setPeek(null);
+			setStatus("Opening workspace…");
+			versionRef.current = 1;
+			void openSession(id);
+		},
+		[openSession, resetRuntime, setPeek],
+	);
+
+	const runWorkspaceAction = useCallback(
+		async (action: () => Promise<void>): Promise<void> => {
+			setWorkspaceBusy(true);
+			setWorkspaceError(undefined);
+			try {
+				await action();
+			} catch (error) {
+				setWorkspaceError(
+					error instanceof Error ? error.message : String(error),
+				);
+			} finally {
+				setWorkspaceBusy(false);
+			}
+		},
+		[],
+	);
+
 	const onEntryClick = useCallback(
 		(location: LogSourceLocation): void => {
 			const path = (location.path ?? `src/${entryRef.current}`).replace(
@@ -1104,7 +1217,7 @@ export function App(): React.JSX.Element {
 
 	return (
 		<main
-			className={`app-shell${zen ? " zen" : ""} dock-${dockEffective}${layout.termMax ? " term-max" : ""}`}
+			className={`app-shell${zen ? " zen" : ""} dock-${dockEffective}${layout.termMax ? " term-max" : ""}${switching ? " switching" : ""}`}
 			data-theme={appearance.theme}
 			style={{ fontFamily: APP_FONTS[appearance.fontIndex]?.css }}
 		>
@@ -1129,6 +1242,7 @@ export function App(): React.JSX.Element {
 						onDraftCommit={project.commitTreeDraft}
 						onHideTree={() => updateLayout({ treeOpen: false })}
 						onLoadDemo={loadDemoWorkspace}
+						onSwitchWorkspace={openWorkspacePicker}
 						onClearWorkspace={clearWorkspace}
 						onOpenContextMenu={project.setTreeContextMenu}
 						onRenameActive={() => project.renameFile(activePathRef.current)}
@@ -1315,6 +1429,8 @@ export function App(): React.JSX.Element {
 
 			<StatusBar
 				activePath={activePath}
+				onWorkspace={openWorkspacePicker}
+				workspaceName={session.workspace?.name ?? "scratch"}
 				cursor={cursorPosition}
 				degradedMessages={degradedMessages}
 				focusZone={focusZone}
@@ -1470,6 +1586,47 @@ export function App(): React.JSX.Element {
 						},
 					]}
 					valueFmt={valueFmt}
+				/>
+			)}
+			{workspacePickerOpen && (
+				<WorkspacePicker
+					activeId={session.workspace?.id}
+					busy={workspaceBusy}
+					language={activeLanguage}
+					onClose={() => setWorkspacePickerOpen(false)}
+					onCreate={(name) =>
+						void runWorkspaceAction(async () => {
+							const created = await createWorkspace({
+								name,
+								language: activeLanguage,
+								scaffold: loadScaffold(),
+							});
+							switchToWorkspace(created.id);
+						})
+					}
+					onDelete={(id) =>
+						void runWorkspaceAction(async () => {
+							if (
+								!window.confirm(
+									"Delete this workspace and every file in it?",
+								)
+							)
+								return;
+							await deleteWorkspace(id);
+							if (id === session.workspace?.id) switchToWorkspace(undefined);
+							else await refreshWorkspaces();
+						})
+					}
+					onOpen={switchToWorkspace}
+					onRename={(id, name) =>
+						void runWorkspaceAction(async () => {
+							await renameWorkspace(id, name);
+							await refreshWorkspaces();
+						})
+					}
+					onScratch={() => switchToWorkspace(undefined)}
+					workspaces={workspaces}
+					{...(workspaceError ? { error: workspaceError } : {})}
 				/>
 			)}
 			{paletteOpen && (

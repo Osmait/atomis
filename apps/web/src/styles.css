@@ -113,7 +113,10 @@ input:focus-visible,
 	padding: 0;
 	background: var(--panel-border);
 	font-size: 13px;
-	transition: background 0.18s ease;
+	transition:
+		background 0.18s ease,
+		opacity 140ms ease,
+		filter 140ms ease;
 }
 
 .app-shell.zen {
@@ -1277,6 +1280,91 @@ input:focus-visible,
 .inline-value.stale {
 	text-decoration: line-through;
 	color: var(--dim) !important;
+}
+
+/* Workspace switch: the shell dims briefly instead of reloading. */
+.app-shell.switching {
+	filter: saturate(0.6);
+	opacity: 0.45;
+	pointer-events: none;
+}
+
+.workspace-picker .palette-results {
+	max-height: 320px;
+}
+
+.workspace-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.workspace-open {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 2px;
+	background: none;
+	border: 0;
+	color: inherit;
+	cursor: pointer;
+	font: inherit;
+	padding: 2px 0;
+	text-align: left;
+}
+
+.workspace-name {
+	color: var(--text);
+}
+
+.workspace-meta {
+	color: var(--dim);
+	font-size: 11px;
+}
+
+.workspace-actions {
+	display: flex;
+	gap: 4px;
+	opacity: 0;
+}
+
+.workspace-row:hover .workspace-actions,
+.workspace-row.selected .workspace-actions {
+	opacity: 1;
+}
+
+.workspace-actions button {
+	background: none;
+	border: 0;
+	color: var(--dim);
+	cursor: pointer;
+	padding: 2px;
+}
+
+.workspace-actions button:hover {
+	color: var(--mauve);
+}
+
+.workspace-scratch {
+	background: none;
+	border: 0;
+	color: inherit;
+	cursor: pointer;
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	font: inherit;
+	gap: 2px;
+	text-align: left;
+	width: 100%;
+}
+
+.workspace-error {
+	color: var(--red);
+	font-size: 11px;
+	margin: 0;
+	padding: 4px 12px;
 }
 
 .qs-match {

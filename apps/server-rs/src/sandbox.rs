@@ -474,6 +474,48 @@ mod tests {
         std::fs::remove_dir_all(&workspace).ok();
     }
 
+    /// Persistent workspaces live under ~/.local/share, and ~/.local is in
+    /// the read-only allowlist. Landlock resolves by the closest matching
+    /// rule, so the workspace rule must win over the enclosing one — if it
+    /// ever stops winning, persistent workspaces silently become read-only.
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn a_workspace_inside_a_read_only_tree_stays_writable() {
+        if !detect_support().available() {
+            return;
+        }
+        let home = std::env::temp_dir().join(format!("atomis-home-{}", std::process::id()));
+        let workspace = home.join(".local/share/atomis/workspaces/w1");
+        std::fs::create_dir_all(&workspace).expect("workspace");
+        let mut policy = policy_for(&workspace, Path::new("/usr"), Some(&home));
+        // policy_for only lists toolchain subtrees; add the enclosing
+        // read-only rule this test is about.
+        policy.read_only.push(home.join(".local"));
+        assert!(
+            run_sandboxed(
+                &policy,
+                &[
+                    "/bin/sh",
+                    "-c",
+                    &format!("echo ok > {}/file.txt", workspace.to_str().expect("path")),
+                ],
+            ),
+            "the workspace rule must override the read-only ancestor"
+        );
+        assert!(
+            !run_sandboxed(
+                &policy,
+                &[
+                    "/bin/sh",
+                    "-c",
+                    &format!("echo x > {}/.local/share/atomis/other", home.to_str().expect("path")),
+                ],
+            ),
+            "the rest of the read-only tree must stay read-only"
+        );
+        std::fs::remove_dir_all(&home).ok();
+    }
+
     #[test]
     fn support_levels_map_to_stable_names() {
         assert_eq!(SandboxSupport::FilesAndNetwork.as_str(), "files+network");

@@ -1540,3 +1540,73 @@ pub fn main(init: std.process.Init) void {
 	});
 	await setToggle(page, "Sandbox", true);
 });
+
+test("persistent workspaces keep their files across reloads", async ({
+	page,
+}) => {
+	await openClean(page);
+	const name = `spec-${Date.now()}`;
+
+	// Create one from the tree menu's switcher; the app reloads into it.
+	await treeAction(page, "Switch workspace…");
+	await page.getByLabel("New workspace name").fill(name);
+	await page.getByRole("button", { name: "create" }).click();
+	await expect(page.locator(".file-tree")).toBeVisible();
+	await expect(page.locator(".branch-status")).toContainText(name, {
+		timeout: 30_000,
+	});
+
+	// A file created here must survive a full reload.
+	await treeAction(page, "New file");
+	await fillTreeDraft(page, "persisted.zig");
+	await replaceEditor(page, "const kept = 41;\n");
+	await expect(page.locator(".buffer-tab.active")).toContainText(
+		"persisted.zig",
+	);
+	await page.waitForTimeout(500);
+	await page.reload();
+	await expect(page.locator(".file-tree")).toBeVisible();
+	await expect(page.locator(".branch-status")).toContainText(name);
+	await expect(page.getByLabel("persisted.zig")).toBeVisible();
+	await page.getByLabel("persisted.zig").click();
+	await expect(page.locator(".view-lines")).toContainText("const kept = 41;");
+
+	// Switching is an in-place swap, not a page reload: a marker planted on
+	// window must survive it, and the runtime must still be live afterwards.
+	await page.evaluate(() => {
+		(window as unknown as { atomisSpaProbe?: number }).atomisSpaProbe = 7;
+	});
+
+	// A scratch session is a different, empty place…
+	await treeAction(page, "Switch workspace…");
+	await page.getByText("Scratch session").click();
+	await expect(page.locator(".branch-status")).toContainText("scratch", {
+		timeout: 30_000,
+	});
+	await expect(page.getByLabel("persisted.zig")).toHaveCount(0);
+	expect(
+		await page.evaluate(
+			() => (window as unknown as { atomisSpaProbe?: number }).atomisSpaProbe,
+		),
+	).toBe(7);
+	// The rebuilt socket still runs code in the new session.
+	await replaceEditor(page, 'const std = @import("std");\n\npub fn main() void {\n\tconst after_switch: i32 = 5;\n\t_ = after_switch;\n}\n');
+	await expect(page.locator(".state-succeeded")).toBeVisible({
+		timeout: 60_000,
+	});
+	await expect(page.getByText("5 : i32", { exact: true })).toBeVisible();
+
+	// …and the workspace is still listed, with its files, until deleted.
+	await treeAction(page, "Switch workspace…");
+	await page.getByText(name).click();
+	await expect(page.getByLabel("persisted.zig")).toBeVisible({
+		timeout: 30_000,
+	});
+
+	page.on("dialog", (dialog) => void dialog.accept());
+	await treeAction(page, "Switch workspace…");
+	await page.getByLabel(`Delete ${name}`).click();
+	await expect(page.locator(".branch-status")).toContainText("scratch", {
+		timeout: 30_000,
+	});
+});

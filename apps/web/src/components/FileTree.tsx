@@ -25,6 +25,7 @@ interface FileTreeProps {
 	onDeleteActive: () => void;
 	onHideTree: () => void;
 	onLoadDemo: () => void;
+	onSwitchWorkspace: () => void;
 	onClearWorkspace: () => void;
 	onDraftChange: (value: string) => void;
 	onDraftCommit: (value: string) => void;
@@ -177,6 +178,16 @@ export function FileTree(props: FileTreeProps): React.JSX.Element {
 							<span>Delete file</span>
 						</button>
 						<span className="term-menu-sep" />
+						<button
+							onClick={() => {
+								setMenuOpen(false);
+								props.onSwitchWorkspace();
+							}}
+							role="menuitem"
+						>
+							<Lucide icon="folder-plus" size={13} />
+							<span>Switch workspace…</span>
+						</button>
 						<button
 							onClick={() => {
 								setMenuOpen(false);
