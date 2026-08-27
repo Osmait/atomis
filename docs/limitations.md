@@ -45,12 +45,16 @@
   `unsupported`) and `pnpm run doctor` shows it. macOS and older kernels get
   no enforcement; the toggle is disabled there.
 - **Cost**: the enforcement itself is free — a warm run measures the same
-  sandboxed or not (93 ms vs 94 ms for the Zig sample). What the sandbox
-  does cost is a cold start: toolchain caches are redirected into the
-  workspace, so the first compile of a session cannot reuse the user's
-  global cache (6.2 s vs 1.6 s for Zig; every later run in that session is
-  identical). Sharing one cache across sessions would remove it, at the
-  price of letting one session poison another's build artifacts.
+  sandboxed or not (93 ms vs 94 ms for the Zig sample). Toolchain caches are
+  redirected into the workspace, so a session never writes to the user's
+  own caches. Zig's *global* cache is the one exception: rebuilding the
+  standard library costs every new session about 3.4 s (1.1 s when it is
+  shared), and paying that on every scratch session was worse than the
+  alternative — so it lives in `$XDG_CACHE_HOME/atomis/toolchains/zig` and
+  every session of the same user shares it. The price is that one sandboxed
+  run can influence another's build artifacts; it cannot reach anything
+  else, since the poisoned code would run under the same restrictions.
+  Everything else — dependencies included — stays per workspace.
 - **Allow network** (Settings, off by default) lets the program itself open
   outbound TCP while everything else stays confined: it can call an API,
   it still cannot read your home or listen on a port. Turning the sandbox

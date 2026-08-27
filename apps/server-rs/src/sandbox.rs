@@ -129,8 +129,27 @@ const HOME_READ_ONLY: &[&str] = &[
     ".cache",
 ];
 
-/// Assembles the allowlist for one session. Pure: paths are not touched
-/// here, `prepare` filters out the ones that do not exist.
+/// Where the compiler cache shared by every session lives:
+/// `$XDG_CACHE_HOME/atomis/toolchains`, falling back to `~/.cache`.
+/// Overridable with ATOMIS_TOOLCHAIN_CACHE for tests and packaged builds.
+pub fn toolchain_cache_root() -> PathBuf {
+    if let Some(explicit) = std::env::var_os("ATOMIS_TOOLCHAIN_CACHE") {
+        return PathBuf::from(explicit);
+    }
+    std::env::var_os("XDG_CACHE_HOME")
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .map(PathBuf::from)
+                .map(|home| home.join(".cache"))
+        })
+        .unwrap_or_else(std::env::temp_dir)
+        .join("atomis/toolchains")
+}
+
+/// Assembles the allowlist for one session. The only path touched here is
+/// the shared compiler cache, which has to exist to be granted; `prepare`
+/// filters out the rest if they do not.
 pub fn policy_for(workspace: &Path, project_root: &Path, home: Option<&Path>) -> SandboxPolicy {
     let mut read_only: Vec<PathBuf> = SYSTEM_READ_ONLY.iter().map(PathBuf::from).collect();
     read_only.push(project_root.to_path_buf());
@@ -139,9 +158,14 @@ pub fn policy_for(workspace: &Path, project_root: &Path, home: Option<&Path>) ->
             read_only.push(home.join(entry));
         }
     }
+    let mut read_write = vec![workspace.to_path_buf()];
+    let cache = toolchain_cache_root();
+    if std::fs::create_dir_all(&cache).is_ok() {
+        read_write.push(cache);
+    }
     SandboxPolicy {
         workspace: workspace.to_path_buf(),
-        read_write: vec![workspace.to_path_buf()],
+        read_write,
         read_only,
         devices: DEVICES.iter().map(PathBuf::from).collect(),
         home: home.map(Path::to_path_buf),
@@ -244,12 +268,33 @@ pub fn child_env(policy: &SandboxPolicy) -> Vec<(String, String)> {
             .to_string_lossy()
             .into_owned()
     };
+    // Only granted when the policy actually allows writing there.
+    let shared = {
+        let cache = toolchain_cache_root();
+        policy
+            .read_write
+            .iter()
+            .any(|allowed| cache.starts_with(allowed))
+            .then_some(cache)
+    };
     let mut env = vec![
         // A private HOME catches every stray ~/.something write.
         ("HOME".to_string(), at("")),
         ("XDG_CACHE_HOME".to_string(), at(".cache")),
         ("TMPDIR".to_string(), at(".tmp")),
-        ("ZIG_GLOBAL_CACHE_DIR".to_string(), at(".zig-global-cache")),
+        // Zig's global cache is the one that has to outlive a session: it
+        // holds the compiled standard library, and rebuilding it costs
+        // every new session about three seconds — on a slow machine, much
+        // more. It is content-addressed and derived from the user's own
+        // code, so it is shared between sessions of the same user; nothing
+        // that reads it can reach past the sandbox either way.
+        (
+            "ZIG_GLOBAL_CACHE_DIR".to_string(),
+            shared
+                .as_ref()
+                .map(|root| root.join("zig").to_string_lossy().into_owned())
+                .unwrap_or_else(|| at(".zig-global-cache")),
+        ),
         ("ZIG_LOCAL_CACHE_DIR".to_string(), at(".zig-cache")),
         ("CARGO_HOME".to_string(), at(".cargo-home")),
         ("GOPATH".to_string(), at(".gopath")),
@@ -397,8 +442,13 @@ mod tests {
             Path::new("/srv/atomis"),
             Some(Path::new("/home/dev")),
         );
-        assert_eq!(policy.read_write, vec![PathBuf::from("/tmp/atomis/abc")]);
+        // The workspace, plus the compiler cache every session shares.
+        assert_eq!(policy.read_write[0], PathBuf::from("/tmp/atomis/abc"));
         assert_eq!(policy.workspace, PathBuf::from("/tmp/atomis/abc"));
+        let cache = &policy.read_write[1];
+        assert!(cache.ends_with("atomis/toolchains"));
+        assert!(!cache.starts_with("/tmp/atomis/abc"));
+        assert_eq!(policy.read_write.len(), 2);
         // The project root ships instrumenters, runtimes and templates.
         assert!(policy.read_only.contains(&PathBuf::from("/srv/atomis")));
         assert!(policy.read_only.contains(&PathBuf::from("/home/dev/.cargo")));
@@ -618,12 +668,17 @@ mod tests {
             Some(Path::new("/home/dev")),
         );
         let env: std::collections::HashMap<_, _> = child_env(&policy).into_iter().collect();
-        // Every cache lands inside the only writable tree…
+        // Zig's global cache is the one exception: rebuilding the standard
+        // library per session costs seconds, so it is shared and lives
+        // outside every workspace.
+        assert!(env["ZIG_GLOBAL_CACHE_DIR"].ends_with("atomis/toolchains/zig"));
+        assert!(!env["ZIG_GLOBAL_CACHE_DIR"].starts_with("/tmp/atomis/abc"));
+        // Everything else lands inside the only writable tree…
         for key in [
             "HOME",
             "XDG_CACHE_HOME",
             "TMPDIR",
-            "ZIG_GLOBAL_CACHE_DIR",
+            "ZIG_LOCAL_CACHE_DIR",
             "CARGO_HOME",
             "GOPATH",
             "PYTHONPYCACHEPREFIX",
