@@ -1350,9 +1350,17 @@ test("vim gets quick-scope targets and editor-integrated commands", async ({
 	await expect(page.locator(".qs-primary")).toHaveCount(0);
 	await page.keyboard.press("f");
 	await expect(page.locator(".qs-primary").first()).toBeVisible();
-	// …and jumping (or any other key) clears the hints again.
-	await page.keyboard.press("d");
+	// …typing the character shows every match of THAT character while
+	// the jump can be repeated with ; — line 1 has several t's…
+	await page.keyboard.press("t");
 	await expect(page.locator(".qs-primary")).toHaveCount(0);
+	expect(await page.locator(".qs-match").count()).toBeGreaterThan(0);
+	await page.keyboard.press(";");
+	expect(await page.locator(".qs-match").count()).toBeGreaterThan(0);
+	// …and any other key clears the overlay.
+	await page.keyboard.press("j");
+	await expect(page.locator(".qs-match")).toHaveCount(0);
+	await page.keyboard.type("gg");
 
 	// gcc toggles the comment through Monaco's action.
 	await page.keyboard.type("gcc");

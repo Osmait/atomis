@@ -92,3 +92,12 @@ export function quickScopeTargets(
 	// scanning the word left to right.
 	return targets;
 }
+
+/** 1-based columns of every occurrence of `char` on the line. */
+export function charMatchColumns(lineText: string, char: string): number[] {
+	if (char.length !== 1) return [];
+	const columns: number[] = [];
+	for (let index = 0; index < lineText.length; index++)
+		if (lineText[index] === char) columns.push(index + 1);
+	return columns;
+}

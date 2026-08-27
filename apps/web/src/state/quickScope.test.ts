@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { quickScopeTargets } from "./quickScope.js";
+import { charMatchColumns, quickScopeTargets } from "./quickScope.js";
 
 describe("quickScopeTargets", () => {
 	it("marks each following word's first uniquely reachable character", () => {
@@ -44,5 +44,13 @@ describe("quickScopeTargets", () => {
 	it("returns nothing on an empty or cursor-only line", () => {
 		expect(quickScopeTargets("", 1)).toEqual({ primary: [], secondary: [] });
 		expect(quickScopeTargets("word", 1).primary).toEqual([]);
+	});
+});
+
+describe("charMatchColumns", () => {
+	it("lists every occurrence of the chosen character", () => {
+		expect(charMatchColumns("const std = std;", "s")).toEqual([4, 7, 13]);
+		expect(charMatchColumns("abc", "z")).toEqual([]);
+		expect(charMatchColumns("abc", "ab")).toEqual([]);
 	});
 });

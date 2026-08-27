@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import type * as MonacoApi from "monaco-editor";
-import { quickScopeTargets } from "../state/quickScope.js";
+import {
+	charMatchColumns,
+	quickScopeTargets,
+} from "../state/quickScope.js";
 
 interface QuickScopeOptions {
 	editorRef: React.RefObject<
@@ -12,15 +15,24 @@ interface QuickScopeOptions {
 	activePath: string;
 }
 
+type Phase =
+	| { kind: "idle" }
+	| { kind: "awaiting"; direction: "right" | "left" }
+	| { kind: "active"; char: string };
+
 /**
- * Quick-scope highlighting for f/F/t/T, in its highlight-on-keys flavour:
- * the targets light up only while the motion awaits its character (f/t for
- * the right side, F/T for the left), and any other key clears them — so
- * the editor stays clean until the hint is actually useful.
+ * Two-phase f/F/t/T assistance:
+ * - while the motion awaits its character, each word on the jump's side
+ *   shows the char a single press lands on (quick-scope);
+ * - once the character is typed, every occurrence of THAT character on the
+ *   line stays highlighted (clever-f), so `;`/`,` repeats are visible.
+ * Any other key clears the overlay; insert mode never arms it.
  */
 export function useQuickScope(options: QuickScopeOptions): void {
 	const { editorRef, cursor, vimEnabled, vimModeLabel, activePath } = options;
-	const [pending, setPending] = useState<"right" | "left" | null>(null);
+	const [phase, setPhase] = useState<Phase>({ kind: "idle" });
+	const phaseRef = useRef<Phase>(phase);
+	phaseRef.current = phase;
 	const decorationsRef = useRef<
 		MonacoApi.editor.IEditorDecorationsCollection | undefined
 	>(undefined);
@@ -35,11 +47,30 @@ export function useQuickScope(options: QuickScopeOptions): void {
 				!event.browserEvent.ctrlKey &&
 				!event.browserEvent.metaKey &&
 				!event.browserEvent.altKey;
-			if (armed && plain && (key === "f" || key === "t"))
-				setPending("right");
-			else if (armed && plain && (key === "F" || key === "T"))
-				setPending("left");
-			else setPending(null);
+			const current = phaseRef.current;
+			if (!armed || !plain) {
+				if (current.kind !== "idle") setPhase({ kind: "idle" });
+				return;
+			}
+			if (current.kind === "awaiting") {
+				setPhase(
+					key.length === 1
+						? { kind: "active", char: key }
+						: { kind: "idle" },
+				);
+				return;
+			}
+			if (key === "f" || key === "t") {
+				setPhase({ kind: "awaiting", direction: "right" });
+				return;
+			}
+			if (key === "F" || key === "T") {
+				setPhase({ kind: "awaiting", direction: "left" });
+				return;
+			}
+			if (current.kind === "active" && (key === ";" || key === ","))
+				return;
+			if (current.kind !== "idle") setPhase({ kind: "idle" });
 		});
 		return () => listener.dispose();
 	}, [cursor, editorRef, vimEnabled, vimModeLabel]);
@@ -52,7 +83,7 @@ export function useQuickScope(options: QuickScopeOptions): void {
 		const model = editor.getModel();
 		if (
 			!model ||
-			!pending ||
+			phase.kind === "idle" ||
 			!vimEnabled ||
 			vimModeLabel !== "NORMAL" ||
 			cursor.line > model.getLineCount()
@@ -60,17 +91,12 @@ export function useQuickScope(options: QuickScopeOptions): void {
 			decorations.set([]);
 			return;
 		}
-		const targets = quickScopeTargets(
-			model.getLineContent(cursor.line),
-			cursor.column,
-		);
-		const wanted = (column: number): boolean =>
-			pending === "right" ? column > cursor.column : column < cursor.column;
+		const lineText = model.getLineContent(cursor.line);
 		const decorate = (
 			columns: number[],
 			className: string,
 		): MonacoApi.editor.IModelDeltaDecoration[] =>
-			columns.filter((column) => wanted(column)).map((column) => ({
+			columns.map((column) => ({
 				range: {
 					startLineNumber: cursor.line,
 					startColumn: column,
@@ -79,9 +105,31 @@ export function useQuickScope(options: QuickScopeOptions): void {
 				} as MonacoApi.Range,
 				options: { inlineClassName: className },
 			}));
+		if (phase.kind === "active") {
+			decorations.set(
+				decorate(
+					charMatchColumns(lineText, phase.char).filter(
+						(column) => column !== cursor.column,
+					),
+					"qs-match",
+				),
+			);
+			return;
+		}
+		const targets = quickScopeTargets(lineText, cursor.column);
+		const wanted = (column: number): boolean =>
+			phase.direction === "right"
+				? column > cursor.column
+				: column < cursor.column;
 		decorations.set([
-			...decorate(targets.primary, "qs-primary"),
-			...decorate(targets.secondary, "qs-secondary"),
+			...decorate(
+				targets.primary.filter((column) => wanted(column)),
+				"qs-primary",
+			),
+			...decorate(
+				targets.secondary.filter((column) => wanted(column)),
+				"qs-secondary",
+			),
 		]);
-	}, [activePath, cursor, editorRef, pending, vimEnabled, vimModeLabel]);
+	}, [activePath, cursor, editorRef, phase, vimEnabled, vimModeLabel]);
 }

@@ -1292,6 +1292,13 @@ input:focus-visible,
 	text-underline-offset: 2px;
 }
 
+.qs-match {
+	color: var(--yellow) !important;
+	font-weight: 700;
+	text-decoration: underline;
+	text-underline-offset: 2px;
+}
+
 .inline-log {
 	color: var(--dim) !important;
 	font-style: italic;
