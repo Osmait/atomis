@@ -33,6 +33,7 @@ function renderTree(
 		onDeleteActive: vi.fn(),
 		onHideTree: vi.fn(),
 		onLoadDemo: vi.fn(),
+		onSwitchWorkspace: vi.fn(),
 		onClearWorkspace: vi.fn(),
 		onDraftChange: vi.fn(),
 		onDraftCommit: vi.fn(),
@@ -48,6 +49,9 @@ function renderTree(
 			draftValue=""
 			failsByFile={new Map([["src/utils/helper.zig", 2]])}
 			focused={false}
+			revealKey="test"
+			scratch={false}
+			workspaceName="AoC 2026"
 			rows={rows}
 			srcCollapsed={false}
 			treeSel={0}

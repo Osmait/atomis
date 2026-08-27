@@ -20,6 +20,7 @@ import {
 	type VimAdapterInstance,
 } from "monaco-vim";
 import { CommandPalette } from "./components/CommandPalette.js";
+import { DepsPanel } from "./components/DepsPanel.js";
 import {
 	EditorContextMenu,
 	TreeContextMenu,
@@ -30,13 +31,19 @@ import { PeekPanel } from "./components/PeekPanel.js";
 import { SettingsModal } from "./components/SettingsModal.js";
 import { StatusBar, ZenPill } from "./components/StatusBar.js";
 import { Terminal, type TerminalTab } from "./components/Terminal.js";
+import { WorkspacePicker } from "./components/WorkspacePicker.js";
 import { TestsDrawer } from "./components/TestsDrawer.js";
+import {
+	installVimExtensions,
+	updateVimAppCommands,
+} from "./editor/vimExtensions.js";
 import { useDismissable } from "./hooks/useDismissable.js";
 import { useEditorDecorations } from "./hooks/useEditorDecorations.js";
 import { useGlobalShortcuts } from "./hooks/useGlobalShortcuts.js";
 import { useKeyboardNav, type TreeNavRow } from "./hooks/useKeyboardNav.js";
 import { useMediaLayout } from "./hooks/useMediaLayout.js";
 import { usePeekPanel } from "./hooks/usePeekPanel.js";
+import { useQuickScope } from "./hooks/useQuickScope.js";
 import { useProjectFiles } from "./hooks/useProjectFiles.js";
 import { useRuntimeEvents } from "./hooks/useRuntimeEvents.js";
 import {
@@ -81,7 +88,14 @@ import {
 } from "./state/runSummary.js";
 import { toggleProbe, type InlineValue } from "./state/runtimeState.js";
 import {
+	loadChrome,
+	saveChrome,
+	tabsVisible,
+	type ChromeSettings,
+} from "./state/chrome.js";
+import {
 	loadEntrySource,
+	loadInlineLogs,
 	loadLanguage,
 	loadLayout,
 	loadScaffold,
@@ -89,6 +103,7 @@ import {
 	loadValueFmt,
 	loadVimMode,
 	saveEntrySource,
+	saveInlineLogs,
 	saveLayout,
 	saveScaffold,
 	saveSettings,
@@ -98,6 +113,15 @@ import {
 	type Settings,
 } from "./state/settings.js";
 import { groupOutput } from "./state/terminalFolds.js";
+import {
+	createWorkspace,
+	deleteWorkspace,
+	listWorkspaces,
+	loadActiveWorkspace,
+	renameWorkspace,
+	saveActiveWorkspace,
+} from "./state/workspaces.js";
+import type { WorkspaceMeta } from "@atomis/protocol";
 import type { LogSourceLocation, ProjectFile } from "./types.js";
 
 interface VimModeWithCommands {
@@ -144,12 +168,19 @@ export function App(): React.JSX.Element {
 	>({});
 	const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 });
 	const [vimEnabled, setVimEnabled] = useState(loadVimMode);
+	const [inlineLogs, setInlineLogs] = useState(loadInlineLogs);
 	const [editorContextMenu, setEditorContextMenu] = useState<{
 		x: number;
 		y: number;
 	}>();
 	const [layout, setLayout] = useState<LayoutState>(loadLayout);
+	const [chrome, setChrome] = useState<ChromeSettings>(loadChrome);
 	const [paletteOpen, setPaletteOpen] = useState(false);
+	const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
+	const [workspaces, setWorkspaces] = useState<WorkspaceMeta[]>([]);
+	const [workspaceBusy, setWorkspaceBusy] = useState(false);
+	const [switching, setSwitching] = useState(false);
+	const [workspaceError, setWorkspaceError] = useState<string>();
 	const [vimModeLabel, setVimModeLabel] = useState("NORMAL");
 	const vimModeRef = useRef("NORMAL");
 	vimModeRef.current = vimModeLabel;
@@ -179,6 +210,9 @@ export function App(): React.JSX.Element {
 		MonacoApi.editor.IEditorDecorationsCollection | undefined
 	>(undefined);
 	const testLensWidgetsRef = useRef<MonacoApi.editor.IContentWidget[]>([]);
+	const inlineLogDecorationsRef = useRef<
+		MonacoApi.editor.IEditorDecorationsCollection | undefined
+	>(undefined);
 	const versionRef = useRef(1);
 	const filesRef = useRef<ProjectFile[]>([]);
 	const lastRunLanguageRef = useRef<Language | null>(null);
@@ -202,6 +236,7 @@ export function App(): React.JSX.Element {
 		setStatus,
 	});
 	const {
+		reset: resetRuntime,
 		runState,
 		catalog,
 		catalogRef,
@@ -219,6 +254,14 @@ export function App(): React.JSX.Element {
 		history,
 		drawer,
 		setDrawer,
+		deps,
+		depsSupported,
+		depsManifest,
+		depsHint,
+		depsUntrusted,
+		depsState,
+		depsError,
+		depsOutput,
 		openFolds,
 		setOpenFolds,
 		handleRuntimeEvent,
@@ -341,6 +384,13 @@ export function App(): React.JSX.Element {
 		() => updateLayout({ zen: !layoutRef.current.zen }),
 		[updateLayout],
 	);
+	const updateChrome = useCallback((patch: Partial<ChromeSettings>): void => {
+		setChrome((previous) => {
+			const next = { ...previous, ...patch };
+			saveChrome(next);
+			return next;
+		});
+	}, []);
 
 	const nav = useKeyboardNav({
 		appearanceRef,
@@ -372,18 +422,34 @@ export function App(): React.JSX.Element {
 	});
 	const { peek, setPeek, peekOverride, setPeekOverride, peekNode } = peekPanel;
 
-	// ── Session bootstrap ──
-	useEffect(() => {
-		const boot = async (): Promise<void> => {
+	// ── Session lifecycle ──
+	// Opening a session is the same work on first load and on every
+	// workspace switch: tear the old one down, ask for a new one, and let
+	// the socket/LSP effects rebuild themselves around it.
+	const requestSession = useCallback(
+		(workspace: string | undefined): Promise<Response> =>
+			fetch("/api/sessions", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({
+					language: loadLanguage(),
+					scaffold: loadScaffold(),
+					...(workspace ? { workspace } : {}),
+				}),
+			}),
+		[],
+	);
+
+	const openSession = useCallback(
+		async (workspace: string | undefined): Promise<void> => {
 			try {
-				const response = await fetch("/api/sessions", {
-					method: "POST",
-					headers: { "content-type": "application/json" },
-					body: JSON.stringify({
-						language: loadLanguage(),
-						scaffold: loadScaffold(),
-					}),
-				});
+				let response = await requestSession(workspace);
+				// A stored workspace that no longer exists falls back to a
+				// scratch session rather than failing the boot.
+				if (!response.ok && workspace) {
+					saveActiveWorkspace(undefined);
+					response = await requestSession(undefined);
+				}
 				if (!response.ok)
 					throw new Error(`Session creation failed (${response.status})`);
 				const created = (await response.json()) as CreateSessionResponse;
@@ -404,15 +470,31 @@ export function App(): React.JSX.Element {
 				filesRef.current = projectFiles;
 				setFiles(projectFiles);
 				setSession(created);
+				// The kernel decides whether the sandbox can be honoured;
+				// a stored preference never turns it on where it cannot run.
+				if (created.sandboxSupport === "unsupported")
+					setSettings((previous) => {
+						const next = { ...previous, sandbox: false };
+						settingsRef.current = next;
+						return next;
+					});
 			} catch (error) {
 				setStartupError(
 					error instanceof Error ? error.message : String(error),
 				);
+			} finally {
+				setSwitching(false);
 			}
-		};
-		void boot();
-		// resetToEntry is a stable callback: this still runs exactly once.
-	}, [resetToEntry]);
+		},
+		[requestSession, resetToEntry],
+	);
+
+	const bootedRef = useRef(false);
+	useEffect(() => {
+		if (bootedRef.current) return;
+		bootedRef.current = true;
+		void openSession(loadActiveWorkspace());
+	}, [openSession]);
 
 	const sendSettings = useCallback(
 		(next: Settings): void => {
@@ -600,6 +682,7 @@ export function App(): React.JSX.Element {
 			errorLensDecorationsRef.current = editor.createDecorationsCollection();
 			logSourceDecorationsRef.current = editor.createDecorationsCollection();
 			testLensDecorationsRef.current = editor.createDecorationsCollection();
+			inlineLogDecorationsRef.current = editor.createDecorationsCollection();
 			setCursorPosition({
 				line: editor.getPosition()?.lineNumber ?? 1,
 				column: editor.getPosition()?.column ?? 1,
@@ -609,43 +692,6 @@ export function App(): React.JSX.Element {
 					line: nextPosition.lineNumber,
 					column: nextPosition.column,
 				}),
-			);
-
-			const runtimeSocket = new WebSocket(websocketUrl("/ws/runtime", session));
-			runtimeRef.current = runtimeSocket;
-			runtimeSocket.addEventListener("open", () => {
-				sendRuntime({
-					type: "settings.update",
-					sessionId: session.sessionId,
-					...settingsRef.current,
-				});
-				const mainSource =
-					filesRef.current.find((file) => file.path === entryRef.current)
-						?.source ?? session.initialSource;
-				if (mainSource !== session.initialSource) {
-					versionRef.current = 2;
-					sendRuntime({
-						type: "document.update",
-						sessionId: session.sessionId,
-						version: 2,
-						path: entryRef.current,
-						source: mainSource,
-					});
-				}
-			});
-			runtimeSocket.addEventListener("message", (message) => {
-				try {
-					handleRuntimeEvent(
-						JSON.parse(String(message.data)) as never,
-					);
-				} catch (error) {
-					setStatus(
-						`Runtime protocol error: ${error instanceof Error ? error.message : String(error)}`,
-					);
-				}
-			});
-			runtimeSocket.addEventListener("close", () =>
-				setStatus("Runtime disconnected"),
 			);
 
 			openInLsp(activePathRef.current, model);
@@ -678,6 +724,7 @@ export function App(): React.JSX.Element {
 				vimCommands.Vim.unmap(shortcut);
 			vimCommands.Vim.unmap("<C-c>", "insert");
 			vimCommands.Vim.defineEx("write", "w", run);
+			installVimExtensions();
 			if (vimEnabledRef.current && vimStatusRef.current)
 				vimRef.current = initVimMode(
 					editor,
@@ -736,16 +783,95 @@ export function App(): React.JSX.Element {
 		[
 			activePathRef,
 			catalogRef,
-			handleRuntimeEvent,
 			setFocusZone,
 			openInLsp,
 			run,
-			sendRuntime,
 			sendSettings,
 			session,
 			setPeek,
 		],
 	);
+
+	useEffect(() => {
+		updateVimAppCommands({
+			run,
+			openOrCreateFile: (name) => {
+				if (!name) {
+					setPaletteOpen(true);
+					return;
+				}
+				if (filesRef.current.some((file) => file.path === name))
+					selectFile(name);
+				else project.createFileNamed(name);
+			},
+			closeActiveTab: () => project.closeTab(activePathRef.current),
+			closeOtherTabs: project.closeOtherTabs,
+		});
+	}, [activePathRef, project, run, selectFile]);
+
+	useQuickScope({
+		editorRef,
+		cursor: cursorPosition,
+		vimEnabled,
+		vimModeLabel,
+		activePath,
+	});
+
+	useEffect(() => {
+		if (!session) return;
+		const socket = new WebSocket(websocketUrl("/ws/runtime", session));
+		runtimeRef.current = socket;
+		socket.addEventListener("open", () => {
+			sendRuntime({
+				type: "settings.update",
+				sessionId: session.sessionId,
+				...settingsRef.current,
+			});
+			const mainSource =
+				filesRef.current.find((file) => file.path === entryRef.current)
+					?.source ?? session.initialSource;
+			if (mainSource !== session.initialSource) {
+				versionRef.current = 2;
+				sendRuntime({
+					type: "document.update",
+					sessionId: session.sessionId,
+					version: 2,
+					path: entryRef.current,
+					source: mainSource,
+				});
+			}
+		});
+		socket.addEventListener("message", (message) => {
+			try {
+				handleRuntimeEvent(JSON.parse(String(message.data)) as never);
+			} catch (error) {
+				setStatus(
+					`Runtime protocol error: ${error instanceof Error ? error.message : String(error)}`,
+				);
+			}
+		});
+		socket.addEventListener("close", () => setStatus("Runtime disconnected"));
+		return () => {
+			// Closing here stops the old session's events from reaching the
+			// new one; the server tears its side down on disconnect.
+			socket.close();
+			if (runtimeRef.current === socket) runtimeRef.current = undefined;
+		};
+	}, [handleRuntimeEvent, sendRuntime, session]);
+
+	// Monaco models are keyed by absolute session paths, so the previous
+	// workspace's models would linger after a switch. Drop anything that is
+	// not under the current session's source root.
+	useEffect(() => {
+		const monaco = monacoRef.current;
+		if (!monaco || !session) return;
+		const root = session.documentUri.slice(
+			0,
+			session.documentUri.lastIndexOf("/") + 1,
+		);
+		for (const model of monaco.editor.getModels())
+			if (!model.uri.toString().startsWith(root)) model.dispose();
+	}, [session]);
 
 	useEditorDecorations({
 		editorRef,
@@ -755,6 +881,7 @@ export function App(): React.JSX.Element {
 		errorLensWidgetsRef,
 		testLensDecorationsRef,
 		testLensWidgetsRef,
+		inlineLogDecorationsRef,
 		entryRef,
 		activePath,
 		catalog,
@@ -765,6 +892,8 @@ export function App(): React.JSX.Element {
 		allProblems,
 		tests,
 		testResults,
+		output,
+		inlineLogs,
 	});
 
 	useEffect(
@@ -929,6 +1058,77 @@ export function App(): React.JSX.Element {
 		window.location.reload();
 	}, [activePathRef]);
 
+	const refreshWorkspaces = useCallback(async (): Promise<void> => {
+		try {
+			setWorkspaces(await listWorkspaces());
+		} catch (error) {
+			setWorkspaceError(
+				error instanceof Error ? error.message : String(error),
+			);
+		}
+	}, []);
+
+	const openWorkspacePicker = useCallback((): void => {
+		setWorkspaceError(undefined);
+		setWorkspacePickerOpen(true);
+		void refreshWorkspaces();
+	}, [refreshWorkspaces]);
+
+	// Switching workspace swaps every file on disk, so the session is
+	// rebuilt — but in place: the page never reloads. Tear down what is
+	// bound to the old session, then open the new one; the socket, LSP and
+	// model effects rebuild themselves around it.
+	const switchToWorkspace = useCallback(
+		(id: string | undefined): void => {
+			setWorkspacePickerOpen(false);
+			// Re-opening the workspace you are already in would throw away a
+			// live session (and flash the tree) to arrive exactly where you
+			// started.
+			if (id === sessionRef.current?.workspace?.id) return;
+			saveActiveWorkspace(id);
+			setSwitching(true);
+			for (const client of Object.values(lspClientsRef.current))
+				client?.dispose();
+			lspClientsRef.current = {};
+			runtimeRef.current?.close();
+			resetRuntime();
+			setCapabilities({});
+			setPeek(null);
+			setStatus("Opening workspace…");
+			versionRef.current = 1;
+			void openSession(id);
+		},
+		[openSession, resetRuntime, setPeek],
+	);
+
+	const runWorkspaceAction = useCallback(
+		async (action: () => Promise<void>): Promise<void> => {
+			setWorkspaceBusy(true);
+			setWorkspaceError(undefined);
+			try {
+				await action();
+			} catch (error) {
+				setWorkspaceError(
+					error instanceof Error ? error.message : String(error),
+				);
+			} finally {
+				setWorkspaceBusy(false);
+			}
+		},
+		[],
+	);
+
+	// The manifest belongs to the session's language, so the catalog is
+	// refreshed whenever either changes.
+	useEffect(() => {
+		if (!session) return;
+		const timer = setTimeout(
+			() => sendRuntime({ type: "deps.list", sessionId: session.sessionId }),
+			200,
+		);
+		return () => clearTimeout(timer);
+	}, [sendRuntime, session]);
+
 	const onEntryClick = useCallback(
 		(location: LogSourceLocation): void => {
 			const path = (location.path ?? `src/${entryRef.current}`).replace(
@@ -957,6 +1157,7 @@ export function App(): React.JSX.Element {
 	if (startupError)
 		return (
 			<main className="startup">
+				<img alt="" className="startup-logo" src="/logo.png" />
 				<h1>Atomis</h1>
 				<h2>Environment error</h2>
 				<pre>{startupError}</pre>
@@ -969,6 +1170,7 @@ export function App(): React.JSX.Element {
 	if (!session)
 		return (
 			<main className="startup">
+				<img alt="" className="startup-logo pulsing" src="/logo.png" />
 				<h1>Atomis</h1>
 				<p>Running environment doctor…</p>
 			</main>
@@ -1044,12 +1246,23 @@ export function App(): React.JSX.Element {
 	const degradedMessages = Object.entries(session.degraded)
 		.filter(([key]) => key.startsWith(activeLanguage))
 		.map(([, message]) => message ?? "");
+	const sandboxAvailable = session.sandboxSupport !== "unsupported";
+	const sandboxHint = !sandboxAvailable
+		? "needs Linux 6.7+ with Landlock"
+		: session.sandboxSupport === "files"
+			? "workspace-only files"
+			: "workspace-only files · no TCP";
+	const networkHint = !sandboxAvailable
+		? "your code already runs unconfined here"
+		: settings.sandbox
+			? "your code may call out; files stay confined"
+			: "sandbox off — the network is already open";
 	const drawerToneFor = (testId: string): string =>
 		caseTone(testsDone, testResults.get(testId));
 
 	return (
 		<main
-			className={`app-shell${zen ? " zen" : ""} dock-${dockEffective}${layout.termMax ? " term-max" : ""}`}
+			className={`app-shell${zen ? " zen" : ""} dock-${dockEffective}${layout.termMax ? " term-max" : ""}${switching ? " switching" : ""}`}
 			data-theme={appearance.theme}
 			style={{ fontFamily: APP_FONTS[appearance.fontIndex]?.css }}
 		>
@@ -1074,6 +1287,7 @@ export function App(): React.JSX.Element {
 						onDraftCommit={project.commitTreeDraft}
 						onHideTree={() => updateLayout({ treeOpen: false })}
 						onLoadDemo={loadDemoWorkspace}
+						onSwitchWorkspace={openWorkspacePicker}
 						onClearWorkspace={clearWorkspace}
 						onOpenContextMenu={project.setTreeContextMenu}
 						onRenameActive={() => project.renameFile(activePathRef.current)}
@@ -1082,6 +1296,9 @@ export function App(): React.JSX.Element {
 						onToggleSrc={() =>
 							project.setSrcCollapsed((previous) => !previous)
 						}
+						revealKey={session.sessionId}
+						scratch={!session.workspace}
+						workspaceName={session.workspace?.name ?? "Scratch session"}
 						rows={treeRows}
 						srcCollapsed={project.srcCollapsed}
 						treeSel={treeSel}
@@ -1090,7 +1307,7 @@ export function App(): React.JSX.Element {
 
 				<div className="inner">
 					<section className="editor-card">
-						{!zen && (
+						{!zen && chrome.toolbar && (
 							<EditorChrome
 								active={active}
 								activePath={activePath}
@@ -1105,6 +1322,7 @@ export function App(): React.JSX.Element {
 								onToggleAutoRun={toggleAutoRun}
 								openTabs={openTabs}
 								runDisabled={runDisabled}
+								showTabs={tabsVisible(chrome, openTabs.length)}
 								showTreeRestore={!treeVisible && !tight}
 								stale={stale}
 							/>
@@ -1178,6 +1396,43 @@ export function App(): React.JSX.Element {
 									item.line,
 									item.column,
 								)
+							}
+							depsBusy={
+								depsState === "installing" || depsState === "removing"
+							}
+							depsCount={deps.length}
+							depsPanel={
+								<DepsPanel
+									dependencies={deps}
+									language={activeLanguage}
+									onAdd={(name) =>
+										sendRuntime({
+											type: "deps.add",
+											sessionId: session.sessionId,
+											name,
+										})
+									}
+									onOpenManifest={(manifest) => {
+										// Manifests live beside src/, so the palette
+										// cannot open them: show where they are.
+										setStatus(`${manifest} lives in the workspace root`);
+									}}
+									onRemove={(name) =>
+										sendRuntime({
+											type: "deps.remove",
+											sessionId: session.sessionId,
+											name,
+										})
+									}
+									output={depsOutput}
+									runsUntrustedCode={depsUntrusted}
+									sandboxed={settings.sandbox}
+									state={depsState}
+									supported={depsSupported}
+									{...(depsError ? { error: depsError } : {})}
+									{...(depsHint ? { inputHint: depsHint } : {})}
+									{...(depsManifest ? { manifest: depsManifest } : {})}
+								/>
 							}
 							onTab={setTab}
 							onToggleDrawer={() => setDrawer((previous) => !previous)}
@@ -1258,8 +1513,18 @@ export function App(): React.JSX.Element {
 				/>
 			)}
 
-			<StatusBar
-				activePath={activePath}
+			{!chrome.statusBar && (
+				// Vim writes its command line into this node, so it stays mounted
+				// out of sight: hiding the bar must not quietly disable vim.
+				<div className="vim-status-host">
+					<div className="vim-status" ref={vimStatusRef} />
+				</div>
+			)}
+			{chrome.statusBar && (
+				<StatusBar
+					activePath={activePath}
+				onWorkspace={openWorkspacePicker}
+				workspaceName={session.workspace?.name ?? "scratch"}
 				cursor={cursorPosition}
 				degradedMessages={degradedMessages}
 				focusZone={focusZone}
@@ -1273,7 +1538,8 @@ export function App(): React.JSX.Element {
 				valuesCount={values.size}
 				vimModeLabel={vimModeLabel}
 				vimStatusRef={vimStatusRef}
-			/>
+				/>
+			)}
 
 			{zen && (
 				<ZenPill
@@ -1377,10 +1643,63 @@ export function App(): React.JSX.Element {
 							},
 						},
 						{
+							label: "Inline logs",
+							hint: "log output next to its line",
+							on: inlineLogs,
+							act: () => {
+								setInlineLogs((previous) => {
+									saveInlineLogs(!previous);
+									return !previous;
+								});
+							},
+						},
+						{
+							label: "Sandbox",
+							hint: sandboxHint,
+							on: settings.sandbox,
+							disabled: !sandboxAvailable,
+							act: () =>
+								sendSettings({
+									...settings,
+									sandbox: !settings.sandbox,
+								}),
+						},
+						{
+							label: "Allow network",
+							hint: networkHint,
+							on: settings.network,
+							disabled: !settings.sandbox && sandboxAvailable,
+							act: () =>
+								sendSettings({
+									...settings,
+									network: !settings.network,
+								}),
+						},
+						{
 							label: "Vim Mode",
 							hint: "",
 							on: vimEnabled,
 							act: () => changeVimMode(!vimEnabled),
+						},
+						{
+							label: "Toolbar",
+							hint: "tabs, auto, settings and Run",
+							on: chrome.toolbar,
+							act: () => updateChrome({ toolbar: !chrome.toolbar }),
+						},
+						{
+							label: "Status bar",
+							hint: "mode, workspace and cursor along the bottom",
+							on: chrome.statusBar,
+							act: () => updateChrome({ statusBar: !chrome.statusBar }),
+						},
+						{
+							label: "Hide tabs for one file",
+							hint: "the strip appears once a second file opens",
+							on: chrome.hideSingleTab,
+							disabled: !chrome.toolbar,
+							act: () =>
+								updateChrome({ hideSingleTab: !chrome.hideSingleTab }),
 						},
 						{
 							label: "Zen Mode",
@@ -1395,9 +1714,61 @@ export function App(): React.JSX.Element {
 					valueFmt={valueFmt}
 				/>
 			)}
+			{workspacePickerOpen && (
+				<WorkspacePicker
+					activeId={session.workspace?.id}
+					busy={workspaceBusy}
+					language={activeLanguage}
+					onClose={() => setWorkspacePickerOpen(false)}
+					onCreate={(name) =>
+						void runWorkspaceAction(async () => {
+							const created = await createWorkspace({
+								name,
+								language: activeLanguage,
+								scaffold: loadScaffold(),
+							});
+							switchToWorkspace(created.id);
+						})
+					}
+					onDelete={(id) =>
+						void runWorkspaceAction(async () => {
+							if (
+								!window.confirm(
+									"Delete this workspace and every file in it?",
+								)
+							)
+								return;
+							await deleteWorkspace(id);
+							if (id === session.workspace?.id) switchToWorkspace(undefined);
+							else await refreshWorkspaces();
+						})
+					}
+					onOpen={switchToWorkspace}
+					onRename={(id, name) =>
+						void runWorkspaceAction(async () => {
+							await renameWorkspace(id, name);
+							await refreshWorkspaces();
+						})
+					}
+					onScratch={() => switchToWorkspace(undefined)}
+					workspaces={workspaces}
+					{...(workspaceError ? { error: workspaceError } : {})}
+				/>
+			)}
 			{paletteOpen && (
 				<CommandPalette
 					activePath={activePath}
+					commands={[
+						{
+							id: "settings",
+							title: "Open settings",
+							hint: "⌘,",
+							act: () => {
+								setPaletteOpen(false);
+								setSettingsOpen(true);
+							},
+						},
+					]}
 					files={files}
 					onClose={() => setPaletteOpen(false)}
 					onCreate={(path) => {

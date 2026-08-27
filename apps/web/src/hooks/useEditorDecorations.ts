@@ -14,6 +14,8 @@ import {
 	severityColor,
 	type OwnedDiagnostic,
 } from "../state/diagnostics.js";
+import { groupLogsByLine } from "../state/inlineLogs.js";
+import type { TerminalEntry } from "../types.js";
 import { FAILING_STATUSES } from "../state/runSummary.js";
 import type { InlineValue } from "../state/runtimeState.js";
 
@@ -33,6 +35,9 @@ interface EditorDecorationOptions {
 		MonacoApi.editor.IEditorDecorationsCollection | undefined
 	>;
 	testLensWidgetsRef: React.RefObject<MonacoApi.editor.IContentWidget[]>;
+	inlineLogDecorationsRef: React.RefObject<
+		MonacoApi.editor.IEditorDecorationsCollection | undefined
+	>;
 	entryRef: React.RefObject<string>;
 	activePath: string;
 	catalog: ProbeDescriptor[];
@@ -43,6 +48,8 @@ interface EditorDecorationOptions {
 	allProblems: OwnedDiagnostic[];
 	tests: TestCase[];
 	testResults: Map<string, TestResultEvent>;
+	output: TerminalEntry[];
+	inlineLogs: boolean;
 }
 
 /**
@@ -59,6 +66,7 @@ export function useEditorDecorations(options: EditorDecorationOptions): void {
 		errorLensWidgetsRef,
 		testLensDecorationsRef,
 		testLensWidgetsRef,
+		inlineLogDecorationsRef,
 		entryRef,
 		activePath,
 		catalog,
@@ -69,6 +77,8 @@ export function useEditorDecorations(options: EditorDecorationOptions): void {
 		allProblems,
 		tests,
 		testResults,
+		output,
+		inlineLogs,
 	} = options;
 
 	useEffect(() => {
@@ -221,6 +231,60 @@ export function useEditorDecorations(options: EditorDecorationOptions): void {
 		errorLensDecorationsRef,
 		errorLensWidgetsRef,
 		monacoRef,
+	]);
+
+	// Console Ninja-style inline logs: the latest output of every log/print
+	// statement of the active file, as ghost text at the end of its line.
+	useEffect(() => {
+		const editor = editorRef.current;
+		const decorations = inlineLogDecorationsRef.current;
+		if (!editor || !decorations) return;
+		const model = editor.getModel();
+		if (!model || !inlineLogs) {
+			decorations.set([]);
+			return;
+		}
+		const lineCount = model.getLineCount();
+		const logs = groupLogsByLine(output, {
+			activePath,
+			entryFile: entryRef.current,
+		});
+		decorations.set(
+			[...logs.values()]
+				.filter((log) => log.line >= 1 && log.line <= lineCount)
+				.map((log) => {
+					const endColumn = model.getLineMaxColumn(log.line);
+					const content = `  ⇢ ${log.text}${log.count > 1 ? ` ×${log.count}` : ""}`;
+					return {
+						range: {
+							startLineNumber: log.line,
+							startColumn: Math.max(1, endColumn - 1),
+							endLineNumber: log.line,
+							endColumn,
+						} as MonacoApi.Range,
+						options: {
+							after: {
+								content,
+								inlineClassName: `inline-log${log.isError ? " err" : ""}${stale ? " stale" : ""}`,
+								inlineClassNameAffectsLetterSpacing: true,
+							},
+							hoverMessage: {
+								value: log.history
+									.map((item) => `- \`${item}\``)
+									.join("\n"),
+							},
+						},
+					};
+				}),
+		);
+	}, [
+		activePath,
+		editorRef,
+		entryRef,
+		inlineLogDecorationsRef,
+		inlineLogs,
+		output,
+		stale,
 	]);
 
 	useEffect(() => {

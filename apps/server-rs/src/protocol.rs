@@ -180,6 +180,14 @@ pub struct CreateSessionResponse {
     pub initial_source: String,
     pub files: Vec<ProjectFile>,
     pub degraded: serde_json::Map<String, serde_json::Value>,
+    /// What this kernel can enforce: "files+network", "files" or
+    /// "unsupported".
+    pub sandbox_support: String,
+    /// Whether new sessions start sandboxed (true wherever it is available).
+    pub sandbox: bool,
+    /// The persistent workspace this session is attached to, if any.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<crate::workspace::WorkspaceMeta>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
@@ -197,6 +205,8 @@ pub enum WorkspaceScaffold {
 pub struct CreateSessionRequest {
     pub language: Option<Language>,
     pub scaffold: Option<WorkspaceScaffold>,
+    /// Attach to a persistent workspace instead of a throwaway session.
+    pub workspace: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -309,7 +319,37 @@ pub enum RuntimeClientMessage {
         timeout_ms: u64,
         #[serde(rename = "manualProbeIds")]
         manual_probe_ids: Vec<String>,
+        #[serde(default)]
+        sandbox: Option<bool>,
+        #[serde(default)]
+        network: Option<bool>,
     },
+    #[serde(rename = "deps.list")]
+    DepsList {
+        #[serde(rename = "sessionId")]
+        session_id: String,
+    },
+    #[serde(rename = "deps.add")]
+    DepsAdd {
+        #[serde(rename = "sessionId")]
+        session_id: String,
+        name: String,
+    },
+    #[serde(rename = "deps.remove")]
+    DepsRemove {
+        #[serde(rename = "sessionId")]
+        session_id: String,
+        name: String,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DepsState {
+    Idle,
+    Installing,
+    Removing,
+    Failed,
 }
 
 fn default_entry_path() -> String {
@@ -332,12 +372,34 @@ impl RuntimeClientMessage {
             | RuntimeClientMessage::FileDelete { session_id, .. }
             | RuntimeClientMessage::RunRequest { session_id, .. }
             | RuntimeClientMessage::RunCancel { session_id }
-            | RuntimeClientMessage::SettingsUpdate { session_id, .. } => session_id,
+            | RuntimeClientMessage::SettingsUpdate { session_id, .. }
+            | RuntimeClientMessage::DepsList { session_id }
+            | RuntimeClientMessage::DepsAdd { session_id, .. }
+            | RuntimeClientMessage::DepsRemove { session_id, .. } => session_id,
         }
     }
 
     /// zod-parity validation beyond serde's shape checks.
     pub fn validate(&self) -> Result<(), String> {
+        // A dependency name reaches a command line, so it is bounded and
+        // kept clear of option syntax and shell-looking characters. It is
+        // passed as an argv entry (never through a shell), so this is the
+        // belt to that suspenders.
+        let check_dependency = |name: &str| -> Result<(), String> {
+            let name = name.trim();
+            if name.is_empty() || name.len() > 214 {
+                return Err("dependency name length".into());
+            }
+            if name.starts_with('-') {
+                return Err("dependency name may not start with '-'".into());
+            }
+            if name.chars().any(|c| {
+                c.is_control() || c.is_whitespace() || "\"'`$;&|<>()".contains(c)
+            }) {
+                return Err("dependency name has invalid characters".into());
+            }
+            Ok(())
+        };
         let check_version = |version: u64| -> Result<(), String> {
             if version == 0 {
                 Err("version must be positive".into())
@@ -346,6 +408,9 @@ impl RuntimeClientMessage {
             }
         };
         match self {
+            RuntimeClientMessage::DepsAdd { name, .. }
+            | RuntimeClientMessage::DepsRemove { name, .. } => check_dependency(name),
+            RuntimeClientMessage::DepsList { .. } => Ok(()),
             RuntimeClientMessage::DocumentUpdate {
                 version,
                 path,
@@ -439,6 +504,29 @@ pub enum ServerEvent {
         document_version: u64,
         files: Vec<ProjectFile>,
     },
+    /// What the workspace declares, plus what the language supports.
+    #[serde(rename = "deps.catalog", rename_all = "camelCase")]
+    DepsCatalog {
+        language: Language,
+        /// None when the language has no package manager Atomis drives.
+        supported: bool,
+        manifest: Option<String>,
+        input_hint: Option<String>,
+        /// Installing runs code written by the package author (npm).
+        runs_untrusted_code: bool,
+        dependencies: Vec<crate::deps::Dependency>,
+    },
+    /// Progress of an install or removal, with its streamed output.
+    #[serde(rename = "deps.state", rename_all = "camelCase")]
+    DepsState {
+        state: DepsState,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
+    #[serde(rename = "deps.output", rename_all = "camelCase")]
+    DepsOutput { stream: Stream, chunk: String },
     #[serde(rename = "probe.catalog", rename_all = "camelCase")]
     ProbeCatalog {
         document_version: u64,

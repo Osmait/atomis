@@ -1,17 +1,29 @@
 import { useEffect, useRef, useState } from "react";
 import { FileIcon } from "./FileIcon.js";
+import { Lucide } from "./Lucide.js";
 
 export interface PaletteFile {
 	path: string;
 }
 
+/** An action the palette can run, listed above the files. */
+export interface PaletteCommand {
+	id: string;
+	title: string;
+	hint: string;
+	act: () => void;
+}
+
 interface CommandPaletteProps {
 	files: readonly PaletteFile[];
+	commands?: readonly PaletteCommand[];
 	activePath: string;
 	onOpen: (path: string, run: boolean) => void;
 	onCreate: (path: string) => void;
 	onClose: () => void;
 }
+
+const NO_COMMANDS: readonly PaletteCommand[] = [];
 
 function validCreatePath(path: string): boolean {
 	if (path.startsWith("/") || path.includes("\\") || path.length > 240)
@@ -24,6 +36,7 @@ function validCreatePath(path: string): boolean {
 
 export function CommandPalette({
 	files,
+	commands = NO_COMMANDS,
 	activePath,
 	onOpen,
 	onCreate,
@@ -35,22 +48,37 @@ export function CommandPalette({
 
 	useEffect(() => inputRef.current?.focus(), []);
 
-	const trimmed = query.trim();
-	const results = files.filter(
-		(file) =>
-			!trimmed || file.path.toLowerCase().includes(trimmed.toLowerCase()),
+	// A leading ">" narrows to commands, the way editors have taught people
+	// to expect; without it commands still show, matched by their title.
+	const commandMode = query.startsWith(">");
+	const trimmed = (commandMode ? query.slice(1) : query).trim();
+	const needle = trimmed.toLowerCase();
+	const matchedCommands = commands.filter(
+		(command) => !needle || command.title.toLowerCase().includes(needle),
 	);
+	const results = commandMode
+		? []
+		: files.filter((file) => !trimmed || file.path.toLowerCase().includes(needle));
 	const exactMatch = files.some((file) => file.path === trimmed);
-	const creatable = Boolean(trimmed) && !exactMatch && validCreatePath(trimmed);
-	const rowCount = results.length + (creatable ? 1 : 0);
+	const creatable =
+		!commandMode &&
+		Boolean(trimmed) &&
+		!exactMatch &&
+		validCreatePath(trimmed);
+	const rowCount = matchedCommands.length + results.length + (creatable ? 1 : 0);
 	const clamp = (value: number): number =>
 		rowCount === 0 ? 0 : Math.min(Math.max(value, 0), rowCount - 1);
 	const activeRow = clamp(selected);
 
 	const activate = (row: number, run: boolean): void => {
-		if (row < results.length) {
-			const file = results[row];
-			if (file) onOpen(file.path, run);
+		const command = matchedCommands[row];
+		if (command) {
+			command.act();
+			return;
+		}
+		const file = results[row - matchedCommands.length];
+		if (file) {
+			onOpen(file.path, run);
 			return;
 		}
 		if (creatable) onCreate(trimmed);
@@ -68,7 +96,7 @@ export function CommandPalette({
 					<span className="palette-glyph">⌕</span>
 					<input
 						ref={inputRef}
-						placeholder="search or create a file…"
+						placeholder="search or create a file… (> for commands)"
 						value={query}
 						aria-label="Find file"
 						onChange={(event) => {
@@ -95,15 +123,28 @@ export function CommandPalette({
 					<span className="palette-kbd">esc</span>
 				</div>
 				<div className="palette-results">
+					{matchedCommands.map((command, index) => (
+						<button
+							className={`palette-row command${index === activeRow ? " selected" : ""}`}
+							key={command.id}
+							onClick={command.act}
+							onMouseEnter={() => setSelected(index)}
+						>
+							<Lucide icon="settings" size={13} />
+							<span>{command.title}</span>
+							<b>{command.hint}</b>
+						</button>
+					))}
 					{results.map((file, index) => {
+						const row = matchedCommands.length + index;
 						return (
 							<button
-								className={`palette-row${index === activeRow ? " selected" : ""}${file.path === activePath ? " current" : ""}`}
+								className={`palette-row${row === activeRow ? " selected" : ""}${file.path === activePath ? " current" : ""}`}
 								key={file.path}
 								onClick={(event) =>
 									onOpen(file.path, event.metaKey || event.ctrlKey)
 								}
-								onMouseEnter={() => setSelected(index)}
+								onMouseEnter={() => setSelected(row)}
 							>
 								<FileIcon path={file.path} />
 								<span>{file.path}</span>
@@ -113,9 +154,9 @@ export function CommandPalette({
 					})}
 					{creatable && (
 						<button
-							className={`palette-row${activeRow === results.length ? " selected" : ""}`}
+							className={`palette-row${activeRow === rowCount - 1 ? " selected" : ""}`}
 							onClick={() => onCreate(trimmed)}
-							onMouseEnter={() => setSelected(results.length)}
+							onMouseEnter={() => setSelected(rowCount - 1)}
 						>
 							<i className="file-glyph new">＋</i>
 							<span>create {trimmed}</span>
@@ -124,7 +165,7 @@ export function CommandPalette({
 					)}
 					{rowCount === 0 && <p className="palette-empty">no results</p>}
 				</div>
-				<footer>↵ abrir · ⌘↵ abrir y ejecutar · esc cerrar</footer>
+				<footer>↵ open · ⌘↵ open and run · esc close</footer>
 			</div>
 		</div>
 	);

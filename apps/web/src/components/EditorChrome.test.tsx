@@ -25,6 +25,7 @@ function renderChrome(
 			autoRun={true}
 			openTabs={["main.zig", "util.zig"]}
 			runDisabled={false}
+			showTabs={true}
 			showTreeRestore={false}
 			stale={false}
 			{...handlers}
@@ -68,6 +69,13 @@ describe("EditorChrome", () => {
 		renderChrome({ stale: true });
 		const activeTab = screen.getAllByRole("tab")[0] as HTMLElement;
 		expect(activeTab.querySelector(".stale-dot")).toBeTruthy();
+	});
+
+	it("drops the tab strip but keeps Run when tabs are hidden", () => {
+		renderChrome({ showTabs: false });
+		expect(screen.queryAllByRole("tab")).toHaveLength(0);
+		expect(screen.queryByTitle("Find file (⌘K)")).toBeNull();
+		expect(screen.getByLabelText("Run")).toBeTruthy();
 	});
 
 	it("disables run and auto while the language is degraded", () => {

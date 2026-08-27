@@ -3,7 +3,9 @@ import activity from "lucide-static/icons/activity.svg?raw";
 import chevronDown from "lucide-static/icons/chevron-down.svg?raw";
 import chevronRight from "lucide-static/icons/chevron-right.svg?raw";
 import chevronUp from "lucide-static/icons/chevron-up.svg?raw";
+import chevronsUpDown from "lucide-static/icons/chevrons-up-down.svg?raw";
 import circleCheck from "lucide-static/icons/circle-check.svg?raw";
+import folderOpen from "lucide-static/icons/folder-open.svg?raw";
 import circleDashed from "lucide-static/icons/circle-dashed.svg?raw";
 import circleX from "lucide-static/icons/circle-x.svg?raw";
 import ellipsisVertical from "lucide-static/icons/ellipsis-vertical.svg?raw";
@@ -13,6 +15,7 @@ import folderPlus from "lucide-static/icons/folder-plus.svg?raw";
 import flaskConical from "lucide-static/icons/flask-conical.svg?raw";
 import maximize2 from "lucide-static/icons/maximize-2.svg?raw";
 import minimize2 from "lucide-static/icons/minimize-2.svg?raw";
+import packageIcon from "lucide-static/icons/package.svg?raw";
 import panelBottom from "lucide-static/icons/panel-bottom.svg?raw";
 import panelLeftClose from "lucide-static/icons/panel-left-close.svg?raw";
 import panelLeft from "lucide-static/icons/panel-left.svg?raw";
@@ -32,7 +35,9 @@ const ICONS = {
 	"chevron-down": chevronDown,
 	"chevron-right": chevronRight,
 	"chevron-up": chevronUp,
+	"chevrons-up-down": chevronsUpDown,
 	"circle-check": circleCheck,
+	"folder-open": folderOpen,
 	"circle-dashed": circleDashed,
 	"circle-x": circleX,
 	"ellipsis-vertical": ellipsisVertical,
@@ -42,6 +47,7 @@ const ICONS = {
 	"folder-plus": folderPlus,
 	"maximize-2": maximize2,
 	"minimize-2": minimize2,
+	package: packageIcon,
 	"panel-bottom": panelBottom,
 	"panel-left": panelLeft,
 	"panel-left-close": panelLeftClose,

@@ -5,8 +5,12 @@ import EditorWorker from "monaco-editor/editor/editor.worker.js?worker";
 // bundle Zig-focused while enabling the controls used by our LSP providers.
 import "monaco-editor/editor/contrib/clipboard/browser/clipboard";
 import "monaco-editor/editor/contrib/codeAction/browser/codeActionContributions";
+import "monaco-editor/editor/contrib/comment/browser/comment";
+import "monaco-editor/editor/contrib/folding/browser/folding";
 import "monaco-editor/editor/contrib/format/browser/formatActions";
+import "monaco-editor/editor/contrib/gotoSymbol/browser/goToCommands";
 import "monaco-editor/editor/contrib/gotoSymbol/browser/link/goToDefinitionAtPosition";
+import "monaco-editor/editor/standalone/browser/referenceSearch/standaloneReferenceSearch";
 import "monaco-editor/editor/contrib/hover/browser/hoverContribution";
 import "monaco-editor/editor/contrib/inlayHints/browser/inlayHintsContribution";
 import "monaco-editor/editor/contrib/linesOperations/browser/linesOperations";

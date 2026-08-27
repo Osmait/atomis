@@ -113,7 +113,10 @@ input:focus-visible,
 	padding: 0;
 	background: var(--panel-border);
 	font-size: 13px;
-	transition: background 0.18s ease;
+	transition:
+		background 0.18s ease,
+		opacity 140ms ease,
+		filter 140ms ease;
 }
 
 .app-shell.zen {
@@ -332,6 +335,54 @@ input:focus-visible,
 	gap: 2px;
 	overflow: auto;
 	min-height: 0;
+}
+
+/* The sidebar's title doubles as the workspace switcher: it has to read
+   as a control, not as a label. */
+.workspace-bar {
+	align-items: center;
+	background: none;
+	border: 0;
+	border-bottom: 1px solid var(--panel-border);
+	color: var(--text);
+	cursor: pointer;
+	display: flex;
+	font: inherit;
+	font-weight: 600;
+	gap: 7px;
+	padding: 9px 10px;
+	text-align: left;
+	transition: background 0.12s ease;
+	width: 100%;
+}
+
+.workspace-bar:hover {
+	background: var(--panel-side);
+}
+
+.workspace-bar .workspace-bar-name {
+	flex: 1;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.workspace-bar svg {
+	color: var(--mauve);
+	flex: none;
+}
+
+.workspace-bar svg:last-child {
+	color: var(--dim);
+}
+
+.workspace-bar.scratch {
+	color: var(--subtext);
+	font-weight: 500;
+}
+
+.workspace-bar.scratch svg:first-child {
+	color: var(--dim);
 }
 
 .tree-root {
@@ -1004,6 +1055,11 @@ input:focus-visible,
 	display: none;
 }
 
+/* Keeps vim's status node in the document while the status bar is off. */
+.vim-status-host {
+	display: none;
+}
+
 .vim-status input {
 	background: transparent;
 	border: none;
@@ -1279,6 +1335,274 @@ input:focus-visible,
 	color: var(--dim) !important;
 }
 
+/* Workspace switch: the shell eases back instead of reloading, and the
+   new tree unfolds row by row like an accordion. */
+.app-shell.switching {
+	opacity: 0.6;
+	pointer-events: none;
+}
+
+.tree-rows {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-height: 0;
+}
+
+.tree-rows > * {
+	animation: tree-unfold 170ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
+	animation-delay: calc(var(--row, 0) * 14ms);
+	transform-origin: top;
+}
+
+@keyframes tree-unfold {
+	from {
+		max-height: 0;
+		opacity: 0;
+		transform: translateY(-3px);
+	}
+	to {
+		max-height: 40px;
+		opacity: 1;
+		transform: none;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.app-shell,
+	.tree-rows > * {
+		animation: none;
+		transition: none;
+	}
+}
+
+.workspace-picker .palette-results {
+	max-height: 320px;
+}
+
+.workspace-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.workspace-open {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 2px;
+	background: none;
+	border: 0;
+	color: inherit;
+	cursor: pointer;
+	font: inherit;
+	padding: 2px 0;
+	text-align: left;
+}
+
+.workspace-name {
+	color: var(--text);
+}
+
+.workspace-meta {
+	color: var(--dim);
+	font-size: 11px;
+}
+
+.workspace-actions {
+	display: flex;
+	gap: 4px;
+	opacity: 0;
+}
+
+.workspace-row:hover .workspace-actions,
+.workspace-row.selected .workspace-actions {
+	opacity: 1;
+}
+
+.workspace-actions button {
+	background: none;
+	border: 0;
+	color: var(--dim);
+	cursor: pointer;
+	padding: 2px;
+}
+
+.workspace-actions button:hover {
+	color: var(--mauve);
+}
+
+.workspace-scratch {
+	background: none;
+	border: 0;
+	color: inherit;
+	cursor: pointer;
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	font: inherit;
+	gap: 2px;
+	text-align: left;
+	width: 100%;
+}
+
+.workspace-error {
+	color: var(--red);
+	font-size: 11px;
+	margin: 0;
+	padding: 4px 12px;
+}
+
+.deps-panel {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 10px 12px;
+	overflow: auto;
+}
+
+.deps-add {
+	display: flex;
+	gap: 6px;
+}
+
+.deps-add input {
+	background: var(--panel-side);
+	border: 1px solid var(--panel-border);
+	border-radius: 6px;
+	color: var(--text);
+	flex: 1;
+	font: inherit;
+	padding: 5px 8px;
+}
+
+.deps-add input:focus {
+	border-color: var(--mauve);
+	outline: none;
+}
+
+.deps-install {
+	background: var(--mauve);
+	border: 0;
+	border-radius: 6px;
+	color: var(--base);
+	cursor: pointer;
+	font: inherit;
+	font-weight: 600;
+	padding: 5px 12px;
+}
+
+.deps-install:disabled {
+	cursor: default;
+	opacity: 0.5;
+}
+
+.deps-note {
+	color: var(--dim);
+	font-size: 11px;
+	margin: 0;
+}
+
+.deps-error {
+	color: var(--red);
+	font-size: 11px;
+	margin: 0;
+	white-space: pre-wrap;
+}
+
+.deps-list {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.deps-row {
+	align-items: center;
+	border-radius: 5px;
+	display: flex;
+	gap: 8px;
+	padding: 3px 6px;
+}
+
+.deps-row:hover {
+	background: var(--panel-side);
+}
+
+.deps-name {
+	color: var(--text);
+	flex: 1;
+}
+
+.deps-version {
+	color: var(--dim);
+	font-size: 11px;
+}
+
+.deps-row button {
+	background: none;
+	border: 0;
+	color: var(--dim);
+	cursor: pointer;
+	opacity: 0;
+	padding: 2px;
+}
+
+.deps-row:hover button {
+	opacity: 1;
+}
+
+.deps-row button:hover {
+	color: var(--red);
+}
+
+.deps-output {
+	background: var(--panel-side);
+	border-radius: 6px;
+	color: var(--subtext);
+	font-size: 11px;
+	margin: 0;
+	max-height: 160px;
+	overflow: auto;
+	padding: 8px;
+	white-space: pre-wrap;
+}
+
+.deps-manifest {
+	align-self: flex-start;
+	background: none;
+	border: 0;
+	color: var(--dim);
+	cursor: pointer;
+	font: inherit;
+	font-size: 11px;
+	padding: 0;
+	text-decoration: underline;
+}
+
+.qs-match {
+	color: var(--yellow) !important;
+	font-weight: 700;
+	text-decoration: underline;
+	text-underline-offset: 2px;
+}
+
+.inline-log {
+	color: var(--dim) !important;
+	font-style: italic;
+	opacity: 0.9;
+}
+
+.inline-log.err {
+	color: var(--red) !important;
+	opacity: 0.85;
+}
+
+.inline-log.stale {
+	text-decoration: line-through;
+	opacity: 0.6;
+}
+
 .manual-probe {
 	cursor: pointer;
 	border-radius: 50%;
@@ -1395,6 +1719,35 @@ input:focus-visible,
 	color: var(--subtext);
 	padding: 24px;
 	text-align: center;
+}
+
+.startup-logo {
+	/* The PNG already carries its rounded silhouette. */
+	height: 96px;
+	width: 96px;
+}
+
+/* While the doctor runs, the mark breathes so the wait reads as work. */
+.startup-logo.pulsing {
+	animation: logo-breathe 2.4s ease-in-out infinite;
+}
+
+@keyframes logo-breathe {
+	0%,
+	100% {
+		opacity: 0.75;
+		transform: scale(0.97);
+	}
+	50% {
+		opacity: 1;
+		transform: scale(1);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.startup-logo.pulsing {
+		animation: none;
+	}
 }
 
 .startup h1 {

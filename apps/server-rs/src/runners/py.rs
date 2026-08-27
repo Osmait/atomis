@@ -83,8 +83,29 @@ pub fn match_py_test_name<'a>(catalog: &'a [TestCase], runner_name: &str) -> Opt
         .or_else(|| by_title.first().copied())
 }
 
+/// The interpreter a run should use: the workspace's own virtualenv when
+/// `uv add` has created one, so installed packages are importable, and the
+/// system python otherwise.
+fn python_command(root: &std::path::Path) -> String {
+    let venv = root.join(".venv/bin/python");
+    if venv.exists() {
+        venv.to_string_lossy().into_owned()
+    } else {
+        "python3".to_string()
+    }
+}
+
 fn py_env(root: &std::path::Path, with_runtime: bool) -> Vec<(String, String)> {
-    let mut env = vec![("PYTHONDONTWRITEBYTECODE".into(), "1".into())];
+    let mut env = vec![
+        ("PYTHONDONTWRITEBYTECODE".into(), "1".into()),
+        // Python 3.13 colours its own tracebacks, and honours FORCE_COLOR
+        // from whatever launched us — which buries the "File …, line N"
+        // frame in escape codes and costs us the error's location. This
+        // setting outranks both FORCE_COLOR and NO_COLOR, and touches only
+        // the interpreter's own output: colours the program prints itself
+        // still reach the terminal.
+        ("PYTHON_COLORS".into(), "0".into()),
+    ];
     if with_runtime {
         env.push((
             "PYTHONPATH".into(),
@@ -120,7 +141,7 @@ pub async fn run(
         InstrumentConfig {
             source_name: "pylive-instrument",
             instruments: &|path| path.ends_with(".py") && !is_py_test_file(path),
-            command: "python3".to_string(),
+            command: python_command(&session.root),
             command_prefix_args: vec![instrumenter.to_string_lossy().into_owned()],
             extra_args: &|_| Vec::new(),
             timeout_ms: 10_000,
@@ -153,7 +174,8 @@ pub async fn run(
         &cancel,
         &events,
         ExecuteConfig {
-            command: "python3".to_string(),
+            sandbox: session.sandbox(settings),
+            command: python_command(&session.root),
             args: vec!["-u".into(), entry.to_string_lossy().into_owned()],
             cwd: session.root.join("src"),
             env: py_env(&session.root, true),
@@ -201,13 +223,21 @@ pub async fn run(
 }
 
 /// Last `File "…/generated|src/x.py", line N` occurrence in a traceback.
+///
+/// `PYTHON_COLORS=0` keeps the interpreter from painting the frame, but the
+/// escapes are stripped here too: a traceback can also reach us through a
+/// wrapper that colours it, and losing the location is silent — the error
+/// just stops pointing anywhere.
 fn last_py_location(stderr: &str) -> Option<(String, u32)> {
     static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    static ANSI: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     let re = RE.get_or_init(|| {
         regex::Regex::new(r#"File "(?:.*[/\\])?(?:generated|src)[/\\]([\w./-]+\.py)", line (\d+)"#)
             .expect("static")
     });
-    re.captures_iter(stderr)
+    let ansi = ANSI.get_or_init(|| regex::Regex::new(r"\x1b\[[0-9;]*m").expect("static"));
+    let stderr = ansi.replace_all(stderr, "");
+    re.captures_iter(&stderr)
         .last()
         .and_then(|capture| {
             Some((
@@ -314,7 +344,7 @@ async fn run_tests(
     let execution = {
         let reader_ref = &mut reader;
         supervisor::run(
-            "python3",
+            &python_command(&session.root),
             &args,
             RunOptions {
                 cwd: session.root.join("src"),
@@ -322,6 +352,7 @@ async fn run_tests(
                 cancel: cancel.clone(),
                 probe_fd: true,
                 env: py_env(&session.root, false),
+                sandbox: session.sandbox(settings),
                 callbacks: StreamCallbacks {
                     stdout: None,
                     stderr: Some(Box::new(move |chunk: &str| {
@@ -388,4 +419,35 @@ async fn run_tests(
         leaked: 0,
         duration_ms: execution.duration_ms,
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::last_py_location;
+
+    #[test]
+    fn the_traceback_location_survives_a_coloured_frame() {
+        // Exactly what Python 3.13 writes when something upstream exported
+        // FORCE_COLOR: the path and the line number are wrapped in escapes.
+        let coloured = "Traceback (most recent call last):\n  File \u{1b}[35m\"/tmp/atomis/abc/generated/main.py\"\u{1b}[0m, line \u{1b}[35m2\u{1b}[0m, in \u{1b}[35m<module>\u{1b}[0m\n\u{1b}[1;35mValueError\u{1b}[0m: \u{1b}[35mboom\u{1b}[0m\n";
+        assert_eq!(
+            last_py_location(coloured),
+            Some(("main.py".to_string(), 2))
+        );
+    }
+
+    #[test]
+    fn the_deepest_frame_wins_and_plain_output_still_maps() {
+        let plain = concat!(
+            "Traceback (most recent call last):\n",
+            "  File \"/tmp/atomis/abc/generated/main.py\", line 7, in <module>\n",
+            "  File \"/tmp/atomis/abc/generated/helper.py\", line 3, in run\n",
+            "ValueError: boom\n"
+        );
+        assert_eq!(
+            last_py_location(plain),
+            Some(("helper.py".to_string(), 3))
+        );
+        assert_eq!(last_py_location("no traceback here"), None);
+    }
 }

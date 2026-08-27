@@ -6,7 +6,7 @@ description = "Atomis orchestrator rewrite: axum/tokio, same WS protocol as apps
 
 [dependencies]
 axum = { version = "0.8", features = ["ws"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "signal", "net", "io-util", "sync", "time", "fs"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "signal", "net", "io-util", "io-std", "sync", "time", "fs"] }
 tokio-util = "0.7"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
@@ -17,6 +17,13 @@ libc = "0.2"
 rand = "0.8"
 regex = "1"
 futures-util = "0.3"
+
+# Landlock is a Linux kernel interface and its crate does not build
+# anywhere else, so it is only a dependency there. Every call site is
+# already behind cfg(target_os = "linux"); on other systems the sandbox
+# reports itself unsupported and runs stay unconfined.
+[target.'cfg(target_os = "linux")'.dependencies]
+landlock = "0.4"
 
 [profile.release]
 lto = true

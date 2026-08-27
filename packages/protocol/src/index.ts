@@ -142,7 +142,20 @@ export interface CreateSessionResponse {
 	initialSource: string;
 	files: ProjectFile[];
 	degraded: Partial<Record<string, string>>;
+	/** What the kernel can enforce for this session. */
+	sandboxSupport?: SandboxSupport;
+	/** Whether the session starts sandboxed. */
+	sandbox?: boolean;
+	/** Set when the session is attached to a persistent workspace. */
+	workspace?: WorkspaceMeta;
 }
+
+export const sandboxSupports = [
+	"files+network",
+	"files",
+	"unsupported",
+] as const;
+export type SandboxSupport = (typeof sandboxSupports)[number];
 
 export const workspaceScaffolds = ["demo", "minimal"] as const;
 export type WorkspaceScaffold = (typeof workspaceScaffolds)[number];
@@ -151,8 +164,19 @@ export const createSessionRequestSchema = z
 	.object({
 		language: z.enum(languages).default("zig"),
 		scaffold: z.enum(workspaceScaffolds).default("demo"),
+		/** Attach to a persistent workspace instead of a throwaway session. */
+		workspace: z.string().length(32).optional(),
 	})
 	.strict();
+
+/** A persistent workspace: files (and its toolchain caches) survive. */
+export interface WorkspaceMeta {
+	id: string;
+	name: string;
+	language: Language;
+	createdAt: number;
+	updatedAt: number;
+}
 
 /** Byte-accurate layout of one struct field, for the low-level peek panel. */
 export interface ProbeFieldLayout {
@@ -238,8 +262,28 @@ const settings = z
 		debounceMs: z.number().int().min(300).max(500),
 		timeoutMs: z.number().int().min(100).max(10_000),
 		manualProbeIds: z.array(z.string().min(1).max(128)).max(1000),
+		/** Confine spawned processes to the workspace (Linux/Landlock). */
+		sandbox: z.boolean().optional(),
+		/** Let the program open outbound connections while confined. */
+		network: z.boolean().optional(),
 	})
 	.strict();
+
+/** A dependency as the workspace's manifest declares it. */
+export interface Dependency {
+	name: string;
+	/** Empty when the manifest pins no version (path deps, zon URLs). */
+	version: string;
+}
+
+export type DepsState = "idle" | "installing" | "removing" | "failed";
+
+/** Package names reach a command line: keep them boring. */
+const dependencyName = z
+	.string()
+	.min(1)
+	.max(214)
+	.regex(/^[^-\s"'`$;&|<>()][^\s"'`$;&|<>()]*$/);
 
 export const runtimeClientMessageSchema = z.discriminatedUnion("type", [
 	z
@@ -291,10 +335,41 @@ export const runtimeClientMessageSchema = z.discriminatedUnion("type", [
 		.object({ type: z.literal("settings.update"), sessionId })
 		.extend(settings.shape)
 		.strict(),
+	z.object({ type: z.literal("deps.list"), sessionId }).strict(),
+	z
+		.object({
+			type: z.literal("deps.add"),
+			sessionId,
+			name: dependencyName,
+		})
+		.strict(),
+	z
+		.object({
+			type: z.literal("deps.remove"),
+			sessionId,
+			name: dependencyName,
+		})
+		.strict(),
 ]);
 export type RuntimeClientMessage = z.infer<typeof runtimeClientMessageSchema>;
 
 export type RuntimeServerEvent =
+	| {
+			type: "deps.catalog";
+			language: Language;
+			supported: boolean;
+			manifest?: string;
+			inputHint?: string;
+			runsUntrustedCode: boolean;
+			dependencies: Dependency[];
+	  }
+	| {
+			type: "deps.state";
+			state: DepsState;
+			name?: string;
+			error?: string;
+	  }
+	| { type: "deps.output"; stream: "stdout" | "stderr"; chunk: string }
 	| {
 			type: "run.state";
 			documentVersion: number;

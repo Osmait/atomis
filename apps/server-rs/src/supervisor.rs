@@ -58,6 +58,10 @@ pub struct RunOptions<'a> {
     pub cancel: CancellationToken,
     pub probe_fd: bool,
     pub env: Vec<(String, String)>,
+    /// When set, the child is confined to the policy's allowlist before it
+    /// execs. Every process a session spawns carries the same policy:
+    /// build.zig, cargo build scripts and proc-macros are user code too.
+    pub sandbox: Option<std::sync::Arc<crate::sandbox::SandboxPolicy>>,
     pub callbacks: StreamCallbacks<'a>,
 }
 
@@ -96,6 +100,13 @@ pub async fn run(command: &str, args: &[String], options: RunOptions<'_>) -> Pro
         .stderr(Stdio::piped())
         .kill_on_drop(true)
         .process_group(0);
+    // Sandboxed children get their toolchain caches redirected into the
+    // workspace first; the runner's own variables still win.
+    if let Some(policy) = &options.sandbox {
+        for (key, value) in crate::sandbox::child_env(policy) {
+            cmd.env(key, value);
+        }
+    }
     for (key, value) in &options.env {
         cmd.env(key, value);
     }
@@ -139,6 +150,24 @@ pub async fn run(command: &str, args: &[String], options: RunOptions<'_>) -> Pro
             }
         }
         probe_writer_keepalive = Some(owned_write);
+    }
+
+    if let Some(policy) = &options.sandbox {
+        // The ruleset is built here, in the parent: the child may only run
+        // allocation-free syscalls between fork and exec. Whatever we are
+        // about to exec has to be reachable, wherever it was installed.
+        let policy = crate::sandbox::with_program(policy, command);
+        match crate::sandbox::prepare(&policy, crate::sandbox::detect_support()) {
+            Ok(Some(ruleset)) => unsafe {
+                cmd.pre_exec(move || crate::sandbox::restrict(&ruleset));
+            },
+            Ok(None) => {}
+            Err(error) => {
+                result.stderr = format!("sandbox setup failed: {error}");
+                result.exit_code = None;
+                return result;
+            }
+        }
     }
 
     let mut child = match cmd.spawn() {

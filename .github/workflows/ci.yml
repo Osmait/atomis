@@ -126,6 +126,17 @@ jobs:
           pnpm go:build
           pnpm --filter @atomis/protocol build
           cargo build --manifest-path apps/server-rs/Cargo.toml
+      # Sessions share one Zig cache (see sandbox::toolchain_cache_root), so
+      # only the first compile of the standard library is slow. Paying for it
+      # here keeps that cost out of the first test's timeout.
+      - name: Warm the shared Zig cache
+        run: |
+          mkdir -p "$RUNNER_TEMP/warm"
+          echo 'pub fn main() void {}' > "$RUNNER_TEMP/warm/main.zig"
+          export ZIG_GLOBAL_CACHE_DIR="$HOME/.cache/atomis/toolchains/zig"
+          export ZIG_LOCAL_CACHE_DIR="$RUNNER_TEMP/warm/local"
+          zig build-exe "$RUNNER_TEMP/warm/main.zig" -femit-bin="$RUNNER_TEMP/warm/a"
+          zig build-exe "$RUNNER_TEMP/warm/main.zig" -lc -femit-bin="$RUNNER_TEMP/warm/b"
       - name: Doctor (informational)
         run: pnpm run doctor || true
       - name: E2E

@@ -322,6 +322,25 @@ export class LspClient {
 				}),
 			);
 
+		if (capabilities.referencesProvider)
+			this.disposables.push(
+				this.monaco.languages.registerReferenceProvider(this.languageId, {
+					provideReferences: async (model, at) => {
+						const response = await this.request<LspLocation[] | null>(
+							"textDocument/references",
+							{
+								...(this.documentPosition(model, at) as object),
+								context: { includeDeclaration: true },
+							},
+						);
+						return (response ?? []).map((item) => ({
+							uri: this.monaco.Uri.parse(item.uri),
+							range: range(item.range),
+						}));
+					},
+				}),
+			);
+
 		if (capabilities.documentFormattingProvider)
 			this.disposables.push(
 				this.monaco.languages.registerDocumentFormattingEditProvider(this.languageId, {

@@ -148,6 +148,212 @@ pub async fn handle_runtime(state: Arc<AppState>, session: Arc<Session>, socket:
     });
 }
 
+/// Reads and reports what the workspace declares. Cheap enough to run
+/// after every change instead of caching it.
+async fn send_deps_catalog(
+    session: &Arc<Session>,
+    outbox: &tokio::sync::mpsc::UnboundedSender<ServerEvent>,
+) {
+    let language = session.language;
+    let Some(support) = crate::deps::support(language) else {
+        let _ = outbox.send(ServerEvent::DepsCatalog {
+            language,
+            supported: false,
+            manifest: None,
+            input_hint: None,
+            runs_untrusted_code: false,
+            dependencies: Vec::new(),
+        });
+        return;
+    };
+    let text = tokio::fs::read_to_string(session.root.join(support.manifest))
+        .await
+        .unwrap_or_default();
+    let _ = outbox.send(ServerEvent::DepsCatalog {
+        language,
+        supported: true,
+        manifest: Some(support.manifest.to_string()),
+        input_hint: Some(support.input_hint.to_string()),
+        runs_untrusted_code: support.runs_untrusted_code,
+        dependencies: crate::deps::parse_manifest(language, &text),
+    });
+}
+
+/// Runs one dependency command. Installing is the only step in Atomis that
+/// may reach the network, and only outbound HTTPS: the sandbox policy is
+/// widened for this process alone, never for builds or user code.
+async fn run_deps_command(
+    session: &Arc<Session>,
+    outbox: &tokio::sync::mpsc::UnboundedSender<ServerEvent>,
+    name: String,
+    installing: bool,
+) -> Result<(), String> {
+    let language = session.language;
+    let support = crate::deps::support(language).ok_or("This language has no package manager")?;
+    let settings = session.settings.lock().await.clone();
+    let base = session.sandbox(&settings);
+    let sandbox = match (&base, installing) {
+        (Some(policy), true) => Some(std::sync::Arc::new(crate::sandbox::with_fetch_network(
+            policy,
+        ))),
+        (policy, _) => policy.clone(),
+    };
+
+    // Removing where the toolchain has no command for it (zig) is a
+    // manifest edit, not a process.
+    if !installing && support.remove.is_none() {
+        let path = session.root.join(support.manifest);
+        let text = tokio::fs::read_to_string(&path)
+            .await
+            .map_err(|error| error.to_string())?;
+        let state = match crate::deps::manifest_without(language, &text, &name) {
+            Some(updated) => {
+                tokio::fs::write(&path, updated)
+                    .await
+                    .map_err(|error| error.to_string())?;
+                crate::protocol::DepsState::Idle
+            }
+            None => crate::protocol::DepsState::Failed,
+        };
+        send_deps_catalog(session, outbox).await;
+        let _ = outbox.send(ServerEvent::DepsState {
+            state,
+            name: Some(name),
+            error: (state == crate::protocol::DepsState::Failed)
+                .then(|| "not found in the manifest".to_string()),
+        });
+        return Ok(());
+    }
+
+    let template = if installing {
+        support.add
+    } else {
+        support.remove.unwrap_or(support.add)
+    };
+    let (command, leading) = template.split_first().ok_or("empty command")?;
+    let mut args: Vec<String> = leading.iter().map(|arg| (*arg).to_string()).collect();
+    args.push(if installing {
+        name.clone()
+    } else {
+        crate::deps::remove_argument(language, &name)
+    });
+
+    let _ = outbox.send(ServerEvent::DepsState {
+        state: if installing {
+            crate::protocol::DepsState::Installing
+        } else {
+            crate::protocol::DepsState::Removing
+        },
+        name: Some(name.clone()),
+        error: None,
+    });
+
+    let mut env: Vec<(String, String)> = support
+        .fetch_env
+        .iter()
+        .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
+        .collect();
+    if !installing {
+        // Removal is a local edit; keep it offline.
+        env.retain(|(key, _)| key != "CARGO_NET_OFFLINE" && key != "GOPROXY");
+    }
+
+    let stdout_events = outbox.clone();
+    let stderr_events = outbox.clone();
+    let result = crate::supervisor::run(
+        command,
+        &args,
+        crate::supervisor::RunOptions {
+            cwd: session.root.clone(),
+            // Fetching a dependency tree is slower than a build.
+            limits: crate::supervisor::ProcessLimits::new(180_000, 512 * 1024, 512 * 1024),
+            cancel: tokio_util::sync::CancellationToken::new(),
+            probe_fd: false,
+            env,
+            sandbox: sandbox.clone(),
+            callbacks: crate::supervisor::StreamCallbacks {
+                stdout: Some(Box::new(move |chunk: &str| {
+                    let _ = stdout_events.send(ServerEvent::DepsOutput {
+                        stream: crate::protocol::Stream::Stdout,
+                        chunk: chunk.to_string(),
+                    });
+                })),
+                stderr: Some(Box::new(move |chunk: &str| {
+                    let _ = stderr_events.send(ServerEvent::DepsOutput {
+                        stream: crate::protocol::Stream::Stderr,
+                        chunk: chunk.to_string(),
+                    });
+                })),
+                probe: None,
+            },
+        },
+    )
+    .await;
+
+    // Pull the sources too, while the grant is still open: the build that
+    // follows runs offline and would fail on a missing download.
+    let mut result = result;
+    if installing && result.exit_code == Some(0) {
+        if let Some(fetch) = support.fetch_after_add {
+            let (fetch_command, fetch_args) = fetch.split_first().ok_or("empty fetch command")?;
+            let fetch_events = outbox.clone();
+            result = crate::supervisor::run(
+                fetch_command,
+                &fetch_args
+                    .iter()
+                    .map(|arg| (*arg).to_string())
+                    .collect::<Vec<_>>(),
+                crate::supervisor::RunOptions {
+                    cwd: session.root.clone(),
+                    limits: crate::supervisor::ProcessLimits::new(180_000, 512 * 1024, 512 * 1024),
+                    cancel: tokio_util::sync::CancellationToken::new(),
+                    probe_fd: false,
+                    env: support
+                        .fetch_env
+                        .iter()
+                        .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
+                        .collect(),
+                    sandbox: sandbox.clone(),
+                    callbacks: crate::supervisor::StreamCallbacks {
+                        stderr: Some(Box::new(move |chunk: &str| {
+                            let _ = fetch_events.send(ServerEvent::DepsOutput {
+                                stream: crate::protocol::Stream::Stderr,
+                                chunk: chunk.to_string(),
+                            });
+                        })),
+                        ..Default::default()
+                    },
+                },
+            )
+            .await;
+        }
+    }
+
+    send_deps_catalog(session, outbox).await;
+    if result.exit_code == Some(0) {
+        let _ = outbox.send(ServerEvent::DepsState {
+            state: crate::protocol::DepsState::Idle,
+            name: Some(name),
+            error: None,
+        });
+        Ok(())
+    } else {
+        let reason = if result.timed_out {
+            "timed out".to_string()
+        } else if result.stderr.is_empty() {
+            format!("{command} exited with {:?}", result.exit_code)
+        } else {
+            result.stderr.clone()
+        };
+        let _ = outbox.send(ServerEvent::DepsState {
+            state: crate::protocol::DepsState::Failed,
+            name: Some(name),
+            error: Some(reason),
+        });
+        Ok(())
+    }
+}
+
 async fn handle_message(
     session: &Arc<Session>,
     scheduler: &Arc<RunScheduler>,
@@ -155,6 +361,16 @@ async fn handle_message(
     message: RuntimeClientMessage,
 ) -> Result<(), String> {
     match message {
+        RuntimeClientMessage::DepsList { .. } => {
+            send_deps_catalog(session, outbox).await;
+            Ok(())
+        }
+        RuntimeClientMessage::DepsAdd { name, .. } => {
+            run_deps_command(session, outbox, name, true).await
+        }
+        RuntimeClientMessage::DepsRemove { name, .. } => {
+            run_deps_command(session, outbox, name, false).await
+        }
         RuntimeClientMessage::DocumentUpdate {
             version,
             path,
@@ -219,6 +435,8 @@ async fn handle_message(
             debounce_ms,
             timeout_ms,
             manual_probe_ids,
+            sandbox,
+            network,
             ..
         } => {
             *session.settings.lock().await = SessionSettings {
@@ -227,6 +445,11 @@ async fn handle_message(
                 debounce_ms,
                 timeout_ms,
                 manual_probe_ids,
+                // A client that predates the toggle keeps the default.
+                sandbox: sandbox.unwrap_or_else(|| {
+                    crate::sandbox::detect_support().available()
+                }),
+                network: network.unwrap_or(false),
             };
             Ok(())
         }

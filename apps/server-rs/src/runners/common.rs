@@ -117,6 +117,7 @@ pub async fn instrument_files(
                 cancel: cancel.clone(),
                 probe_fd: false,
                 env: Vec::new(),
+                sandbox: session.sandbox(settings),
                 callbacks: StreamCallbacks::default(),
             },
         )
@@ -186,6 +187,7 @@ pub async fn instrument_files(
 
 pub struct ExecuteConfig {
     pub command: String,
+    pub sandbox: Option<std::sync::Arc<crate::sandbox::SandboxPolicy>>,
     pub args: Vec<String>,
     pub cwd: std::path::PathBuf,
     pub env: Vec<(String, String)>,
@@ -255,6 +257,7 @@ pub async fn execute_program(
                 cancel: cancel.clone(),
                 probe_fd: true,
                 env: config.env,
+                sandbox: config.sandbox,
                 callbacks: StreamCallbacks {
                     stdout: Some(Box::new(move |chunk: &str| {
                         if parse_stdout {

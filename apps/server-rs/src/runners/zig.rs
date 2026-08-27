@@ -125,6 +125,7 @@ pub async fn run(
                 cancel: cancel.clone(),
                 probe_fd: false,
                 env: Vec::new(),
+                sandbox: session.sandbox(settings),
                 callbacks: StreamCallbacks::default(),
             },
         )
@@ -211,6 +212,7 @@ pub async fn run(
             cancel: cancel.clone(),
             probe_fd: false,
             env: Vec::new(),
+            sandbox: session.sandbox(settings),
             callbacks: StreamCallbacks {
                 stdout: Some(Box::new({
                     let events = compile_events.clone();
@@ -296,6 +298,7 @@ pub async fn run(
                 cancel: cancel.clone(),
                 probe_fd: true,
                 env: Vec::new(),
+                sandbox: session.sandbox(settings),
                 callbacks: StreamCallbacks {
                     stdout: Some(Box::new({
                         let events = run_events.clone();
@@ -492,6 +495,7 @@ async fn run_tests(
             cancel: cancel.clone(),
             probe_fd: true,
             env: Vec::new(),
+            sandbox: session.sandbox(settings),
             callbacks: StreamCallbacks {
                 stdout: None,
                 stderr: Some(Box::new(move |chunk: &str| {

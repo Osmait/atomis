@@ -52,6 +52,9 @@ function renderTerminal(
 			allProblems={[]}
 			busy={false}
 			caseTone={() => ""}
+			depsBusy={false}
+			depsCount={0}
+			depsPanel={<div data-testid="deps-stub" />}
 			dockEffective="right"
 			drawer={false}
 			drawerScore="0"

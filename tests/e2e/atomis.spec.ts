@@ -16,7 +16,11 @@ async function setToggle(
 	on: boolean,
 ): Promise<void> {
 	await page.locator(".chrome-icon").click();
-	const toggle = page.locator(".settings-toggle", { hasText: label });
+	// Match the label element, not the whole button: hints mention other
+	// toggles by name ("sandbox off — …") and would match too.
+	const toggle = page.locator(".settings-toggle").filter({
+		has: page.getByText(label, { exact: true }),
+	});
 	await expect(toggle).toBeVisible();
 	const isOn = await toggle
 		.locator(".switch")
@@ -623,7 +627,12 @@ test("Ctrl+S formats the document and returns vim to normal mode", async ({
 
 test("multi-file imports run in every language", async ({ page }) => {
 	await openClean(page);
-	await expect(page.locator(".state-succeeded")).toBeVisible();
+	// A sandboxed session starts with cold toolchain caches (they live in
+	// the workspace, not the user's home), so the first compile of each
+	// language pays a one-off penalty; this spec compiles five of them.
+	await expect(page.locator(".state-succeeded")).toBeVisible({
+		timeout: 60_000,
+	});
 	const doctor = await page.evaluate(async () => {
 		const response = await fetch("/api/doctor");
 		const body = (await response.json()) as {
@@ -705,6 +714,22 @@ test("programs that open TCP/HTTP servers are killed at the timeout", async ({
 	await openClean(page);
 	await expect(page.locator(".state-succeeded")).toBeVisible();
 
+	// The sandbox denies the network outright where the kernel supports it,
+	// so a server never binds; this spec is about the fallback policy that
+	// applies with the sandbox off (or on kernels below Landlock ABI 4).
+	const sandboxed = await page.evaluate(async () => {
+		const response = await fetch("/api/sessions", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ language: "zig", scaffold: "minimal" }),
+		});
+		return (
+			((await response.json()) as { sandboxSupport?: string })
+				.sandboxSupport === "files+network"
+		);
+	});
+	if (sandboxed) await setToggle(page, "Sandbox", false);
+
 	// A Node HTTP server blocks forever: the run must end as timed_out and
 	// the process-group kill must leave nothing listening on the port.
 	await page.getByRole("button", { name: "main.ts", exact: true }).click();
@@ -754,6 +779,7 @@ test("programs that open TCP/HTTP servers are killed at the timeout", async ({
 		}
 	});
 	expect(tcpPortFree).toBe(true);
+	if (sandboxed) await setToggle(page, "Sandbox", true);
 });
 
 test("leader key navigates tree and terminal app-wide", async ({ page }) => {
@@ -1316,4 +1342,436 @@ test("workspace starts minimal, loads the demo and clears back", async ({
 		timeout: 60_000,
 	});
 	await expect(page.locator(".tree-file").first()).toContainText("main.zig");
+});
+
+test("inline logs render output beside its line and toggle off", async ({
+	page,
+}) => {
+	await openClean(page);
+	await replaceEditor(
+		page,
+		'const std = @import("std");\n\npub fn main() void {\n\tvar i: usize = 0;\n\twhile (i < 4) : (i += 1) {\n\t\tstd.debug.print("tick {d}\\n", .{i});\n\t}\n}\n',
+	);
+	await expect(page.locator(".state-succeeded")).toBeVisible({
+		timeout: 60_000,
+	});
+	// Console Ninja-style ghost text: latest value plus the hit count.
+	await expect(page.locator(".inline-log")).toContainText("tick 3 ×4");
+
+	await setToggle(page, "Inline logs", false);
+	await expect(page.locator(".inline-log")).toHaveCount(0);
+	await setToggle(page, "Inline logs", true);
+	await expect(page.locator(".inline-log")).toContainText("tick 3 ×4");
+});
+
+test("vim gets quick-scope targets and editor-integrated commands", async ({
+	page,
+}) => {
+	await openClean(page);
+	await setToggle(page, "Vim Mode", true);
+	await page.locator(".monaco-editor").click();
+	await page.keyboard.press("Escape");
+	await page.keyboard.type("gg");
+	// clever-f: pressing f alone must not draw anything…
+	await page.keyboard.press("f");
+	await expect(page.locator(".qs-match")).toHaveCount(0);
+	// …the matches appear once the character is chosen (several t's on
+	// line 1), persist across ; repeats, and any other key clears them.
+	await page.keyboard.press("t");
+	await expect(page.locator(".qs-match").first()).toBeVisible();
+	await page.keyboard.press(";");
+	expect(await page.locator(".qs-match").count()).toBeGreaterThan(0);
+	await page.keyboard.press("j");
+	await expect(page.locator(".qs-match")).toHaveCount(0);
+	await page.keyboard.type("gg");
+
+	// gcc toggles the comment through Monaco's action.
+	await page.keyboard.type("gcc");
+	await expect(page.locator(".view-lines")).toContainText("// const std");
+	await page.keyboard.type("gcc");
+	await expect(page.locator(".view-lines")).not.toContainText("// const std");
+
+	// vim-surround (gs namespace): gsw wraps the word, gsc swaps the
+	// pair (single keypress into the status-bar dialog), gsd removes it.
+	await page.keyboard.type("gg");
+	await page.keyboard.type('gsw"');
+	await expect(page.locator(".view-lines")).toContainText('"const" std');
+	await page.keyboard.type('gsc"');
+	await page.keyboard.press("'");
+	await expect(page.locator(".view-lines")).toContainText("'const' std");
+	await page.keyboard.type("gsd'");
+	await expect(page.locator(".view-lines")).not.toContainText("'const'");
+	// visual gs wraps the selection.
+	await page.keyboard.type("viwgs)");
+	await expect(page.locator(".view-lines")).toContainText("(const) std");
+	await page.keyboard.type("gsd)");
+	await expect(page.locator(".view-lines")).not.toContainText("(const)");
+
+	// Insert mode must never arm the overlay, even on an f keypress.
+	await page.keyboard.type("i");
+	await page.keyboard.press("f");
+	await page.keyboard.press("t");
+	await expect(page.locator(".qs-match")).toHaveCount(0);
+	await page.keyboard.press("Escape");
+});
+
+test("vim LSP keys, folds and workspace ex commands", async ({ page }) => {
+	await openClean(page);
+	await setToggle(page, "Vim Mode", true);
+	await page.locator(".monaco-editor").click();
+	await page.keyboard.press("Escape");
+
+	// Folds through Monaco's folding contribution.
+	await page.keyboard.type("zM");
+	await expect(
+		page.locator(".codicon-folding-collapsed").first(),
+	).toBeVisible();
+	await page.keyboard.type("zR");
+	await expect(page.locator(".codicon-folding-collapsed")).toHaveCount(0);
+
+	// gd: land on the applyTax call (search hits the definition first;
+	// * jumps forward to the test-name string, then the real call).
+	await page.keyboard.type("gg/applyTax.price");
+	await page.keyboard.press("Enter");
+	await expect(page.locator(".cursor-status")).toHaveText("12:4");
+	await page.keyboard.type("**");
+	await expect(page.locator(".cursor-status")).toHaveText("18:47");
+	await page.keyboard.type("gd");
+	await expect(page.locator(".cursor-status")).toHaveText("12:4", {
+		timeout: 15_000,
+	});
+
+	// K: hover documentation for the symbol under the cursor.
+	await page.keyboard.press("K");
+	await expect(page.locator(".monaco-hover:not(.hidden)")).toContainText(
+		"applyTax",
+		{ timeout: 15_000 },
+	);
+	await page.keyboard.press("Escape");
+
+	// Visual gc comments the selected line and gcc restores it.
+	await page.keyboard.type("ggVgc");
+	await expect(page.locator(".view-lines")).toContainText("// const std");
+	await page.keyboard.type("gcc");
+	await expect(page.locator(".view-lines")).not.toContainText("// const std");
+
+	// gr opens the references peek for the symbol under the cursor
+	// (12G lands on fn, w on applyTax).
+	await page.keyboard.type("12Gw");
+	await expect(page.locator(".cursor-status")).toHaveText("12:4");
+	await page.keyboard.type("gr");
+	await expect(page.locator(".zone-widget")).toBeVisible({
+		timeout: 15_000,
+	});
+	await page.keyboard.press("Escape");
+	await expect(page.locator(".zone-widget")).toHaveCount(0);
+
+	// gss wraps the whole line; undo restores it.
+	await page.keyboard.type("gg");
+	await page.keyboard.type('gss"');
+	await expect(page.locator(".view-lines")).toContainText(
+		'"const std = @import("std");"',
+	);
+	await page.keyboard.type("u");
+	await expect(page.locator(".view-lines")).not.toContainText(
+		'"const std = @import("std");"',
+	);
+
+	// :e creates and opens a file; :bd closes its tab; :only keeps one.
+	await page.keyboard.type(":e util.zig");
+	await page.keyboard.press("Enter");
+	await expect(page.locator(".buffer-tab")).toHaveCount(2);
+	await expect(page.locator(".buffer-tab.active")).toContainText("util.zig");
+	await page.keyboard.type(":bd");
+	await page.keyboard.press("Enter");
+	await expect(page.locator(".buffer-tab")).toHaveCount(1);
+	await expect(page.locator(".buffer-tab.active")).toContainText("main.zig");
+	await page.keyboard.type(":e util.zig");
+	await page.keyboard.press("Enter");
+	await expect(page.locator(".buffer-tab")).toHaveCount(2);
+	await page.keyboard.type(":only");
+	await page.keyboard.press("Enter");
+	await expect(page.locator(".buffer-tab")).toHaveCount(1);
+});
+
+test("the sandbox confines the workspace and can be turned off", async ({
+	page,
+}) => {
+	await openClean(page);
+	const support = await page.evaluate(async () => {
+		const response = await fetch("/api/sessions", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ language: "zig", scaffold: "minimal" }),
+		});
+		return ((await response.json()) as { sandboxSupport?: string })
+			.sandboxSupport;
+	});
+	test.skip(
+		support === "unsupported",
+		"kernel without Landlock: nothing to enforce",
+	);
+
+	// Writing outside the session workspace: /tmp is the parent of every
+	// workspace, so it needs no fixture on the host and is never granted.
+	await replaceEditor(
+		page,
+		`const std = @import("std");
+
+const probe = "/tmp/atomis-escape-probe.txt";
+
+pub fn main(init: std.process.Init) void {
+    if (std.Io.Dir.createFileAbsolute(init.io, probe, .{})) |file| {
+        file.close(init.io);
+        std.Io.Dir.deleteFileAbsolute(init.io, probe) catch {};
+        std.debug.print("ESCAPED\\n", .{});
+    } else |_| {
+        std.debug.print("CONFINED\\n", .{});
+    }
+}
+`,
+	);
+	await expect(page.locator(".state-succeeded")).toBeVisible({
+		timeout: 60_000,
+	});
+	await expect(page.locator(".output-list")).toContainText("CONFINED");
+
+	// The same program escapes once the toggle is off.
+	await setToggle(page, "Sandbox", false);
+	await page.locator(".run-button").click();
+	await expect(page.locator(".output-list")).toContainText("ESCAPED", {
+		timeout: 60_000,
+	});
+	await setToggle(page, "Sandbox", true);
+});
+
+test("persistent workspaces keep their files across reloads", async ({
+	page,
+}) => {
+	await openClean(page);
+	const name = `spec-${Date.now()}`;
+
+	// The sidebar is titled by the workspace, and the title is the switcher.
+	await expect(page.locator(".workspace-bar")).toContainText("Scratch session");
+	await page.locator(".workspace-bar").click();
+	await page.getByLabel("New workspace name").fill(name);
+	await page.getByRole("button", { name: "create" }).click();
+	await expect(page.locator(".file-tree")).toBeVisible();
+	await expect(page.locator(".workspace-bar")).toContainText(name, {
+		timeout: 30_000,
+	});
+	// The status bar keeps showing it too, for when the tree is hidden.
+	await expect(page.locator(".branch-status")).toContainText(name);
+
+	// A file created here must survive a full reload.
+	await treeAction(page, "New file");
+	await fillTreeDraft(page, "persisted.zig");
+	await replaceEditor(page, "const kept = 41;\n");
+	await expect(page.locator(".buffer-tab.active")).toContainText(
+		"persisted.zig",
+	);
+	await page.waitForTimeout(500);
+	await page.reload();
+	await expect(page.locator(".file-tree")).toBeVisible();
+	await expect(page.locator(".branch-status")).toContainText(name);
+	await expect(page.getByLabel("persisted.zig")).toBeVisible();
+	await page.getByLabel("persisted.zig").click();
+	await expect(page.locator(".view-lines")).toContainText("const kept = 41;");
+
+	// Switching is an in-place swap, not a page reload: a marker planted on
+	// window must survive it, and the runtime must still be live afterwards.
+	await page.evaluate(() => {
+		(window as object as { atomisSpaProbe?: number }).atomisSpaProbe = 7;
+	});
+
+	// A scratch session is a different, empty place…
+	await page.locator(".workspace-bar").click();
+	await page.getByText("Scratch session").click();
+	await expect(page.locator(".branch-status")).toContainText("scratch", {
+		timeout: 30_000,
+	});
+	await expect(page.getByLabel("persisted.zig")).toHaveCount(0);
+	expect(
+		await page.evaluate(
+			() => (window as object as { atomisSpaProbe?: number }).atomisSpaProbe,
+		),
+	).toBe(7);
+	// The rebuilt socket still runs code in the new session.
+	await replaceEditor(page, 'const std = @import("std");\n\npub fn main() void {\n\tconst after_switch: i32 = 5;\n\t_ = after_switch;\n}\n');
+	await expect(page.locator(".state-succeeded")).toBeVisible({
+		timeout: 60_000,
+	});
+	await expect(page.getByText("5 : i32", { exact: true })).toBeVisible();
+
+	// …and the workspace is still listed, with its files, until deleted.
+	await page.locator(".workspace-bar").click();
+	await page.locator(".workspace-open", { hasText: name }).click();
+	await expect(page.getByLabel("persisted.zig")).toBeVisible({
+		timeout: 30_000,
+	});
+
+	// Re-opening the ACTIVE workspace is a no-op: the live session (and the
+	// inline values it produced) must survive the click.
+	await replaceEditor(
+		page,
+		'const std = @import("std");\n\npub fn main() void {\n\tconst kept: i32 = 41;\n\t_ = kept;\n}\n',
+	);
+	await expect(page.getByText("41 : i32", { exact: true })).toBeVisible({
+		timeout: 60_000,
+	});
+	const before = await page.locator(".branch-status b").textContent();
+	await page.locator(".workspace-bar").click();
+	await page.locator(".workspace-open", { hasText: name }).click();
+	await expect(page.locator(".palette-overlay")).toHaveCount(0);
+	await expect(page.locator(".branch-status b")).toHaveText(before ?? "");
+	await expect(page.getByText("41 : i32", { exact: true })).toBeVisible();
+
+	page.on("dialog", (dialog) => void dialog.accept());
+	await treeAction(page, "Switch workspace…");
+	await page.getByLabel(`Delete ${name}`).click();
+	await expect(page.locator(".branch-status")).toContainText("scratch", {
+		timeout: 30_000,
+	});
+});
+
+test("dependencies install, persist and become importable", async ({
+	page,
+}) => {
+	test.slow();
+	await page.goto("/");
+	await page.evaluate(() => {
+		localStorage.clear();
+		localStorage.setItem("atomis.language.v1", "rust");
+		localStorage.setItem("atomis.scaffold.v1", "minimal");
+	});
+	await page.reload();
+	await expect(page.locator(".file-tree")).toBeVisible();
+	await setToggle(page, "Vim Mode", false);
+	const available = await page.evaluate(async () => {
+		const response = await fetch("/api/doctor");
+		const body = (await response.json()) as {
+			checks: { name: string; detected: string }[];
+		};
+		return !(
+			body.checks.find((check) => check.name === "Rust cargo")?.detected ?? ""
+		).includes("degraded");
+	});
+	test.skip(!available, "cargo not available");
+
+	await page.locator(".term-menu-btn").click();
+	await page.getByRole("menuitem", { name: /Dependencies/ }).click();
+	await expect(page.locator(".term-view-label")).toHaveText("Dependencies");
+	await expect(page.locator(".deps-list .empty-state")).toContainText(
+		"Cargo.toml",
+	);
+
+	// Installing is the one moment Atomis goes online.
+	await page.getByLabel("Add dependency").fill("uuid");
+	await page.getByRole("button", { name: "install" }).click();
+	await expect(page.locator(".deps-row")).toHaveCount(1, { timeout: 180_000 });
+	await expect(page.locator(".deps-name")).toHaveText("uuid");
+	await expect(page.locator(".term-view-label")).toHaveText("Dependencies 1");
+
+	// The point of installing: the code can use it, compiled offline.
+	await replaceEditor(
+		page,
+		"use uuid::Uuid;\n\nfn main() {\n\tlet id = Uuid::nil();\n\tprintln!(\"id {id}\");\n}\n",
+	);
+	await expect(page.locator(".state-succeeded")).toBeVisible({
+		timeout: 180_000,
+	});
+	await page.locator(".term-menu-btn").click();
+	await page.getByRole("menuitem", { name: "Output", exact: true }).click();
+	await expect(page.locator(".output-list")).toContainText(
+		"id 00000000-0000-0000-0000-000000000000",
+	);
+
+	// And removing takes it back out of the manifest.
+	await page.locator(".term-menu-btn").click();
+	await page.getByRole("menuitem", { name: /Dependencies/ }).click();
+	await page.getByLabel("Remove uuid").click();
+	await expect(page.locator(".deps-row")).toHaveCount(0, { timeout: 120_000 });
+});
+
+test("Allow network lets code call out while files stay confined", async ({
+	page,
+}) => {
+	await openClean(page);
+	const support = await page.evaluate(async () => {
+		const response = await fetch("/api/sessions", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ language: "ts", scaffold: "minimal" }),
+		});
+		return ((await response.json()) as { sandboxSupport?: string })
+			.sandboxSupport;
+	});
+	test.skip(
+		support !== "files+network",
+		"kernel without Landlock network rules",
+	);
+
+	// A local request keeps the test off the internet; the boundary being
+	// tested is the sandbox, not the route.
+	await page.getByRole("button", { name: "main.ts", exact: true }).click();
+	await replaceEditor(
+		page,
+		'const probe = "/tmp/atomis-network-probe.txt";\nconst { writeFileSync } = await import("node:fs");\nlet reached = "denied";\ntry {\n\tconst response = await fetch("http://127.0.0.1:4317/api/health");\n\treached = String((await response.json()).ok);\n} catch {\n\treached = "denied";\n}\nlet wrote = "denied";\ntry {\n\twriteFileSync(probe, "x");\n\twrote = "escaped";\n} catch {\n\twrote = "denied";\n}\nconsole.log(`net:${reached} disk:${wrote}`);\n',
+	);
+	// Off by default: the program cannot reach the server at all.
+	await expect(page.locator(".output-list")).toContainText(
+		"net:denied disk:denied",
+		{ timeout: 60_000 },
+	);
+
+	// With the toggle on, the call goes through — and the disk does not.
+	await setToggle(page, "Allow network", true);
+	await page.locator(".run-button").click();
+	await expect(page.locator(".output-list")).toContainText(
+		"net:true disk:denied",
+		{ timeout: 60_000 },
+	);
+	await setToggle(page, "Allow network", false);
+});
+
+test("the toolbar, the tabs and the status bar can each be put away", async ({
+	page,
+}) => {
+	await openClean(page);
+	await expect(page.locator(".editor-chrome")).toBeVisible();
+	await expect(page.locator(".global-status")).toBeVisible();
+
+	// One open file needs no tab strip; a second file brings it back.
+	await setToggle(page, "Hide tabs for one file", true);
+	await expect(page.locator(".tab-pill")).toHaveCount(0);
+	await page.getByRole("button", { name: "main.py", exact: true }).click();
+	await expect(page.locator(".tab-pill")).toBeVisible();
+	await expect(page.getByRole("tab")).toHaveCount(2);
+
+	await setToggle(page, "Status bar", false);
+	await expect(page.locator(".global-status")).toHaveCount(0);
+
+	// Turning the toolbar off takes the settings gear with it, which is what
+	// the palette command is for.
+	await setToggle(page, "Toolbar", false);
+	await expect(page.locator(".editor-chrome")).toHaveCount(0);
+	await expect(page.locator(".chrome-icon")).toHaveCount(0);
+
+	await page.keyboard.press("ControlOrMeta+k");
+	await expect(page.locator(".palette")).toBeVisible();
+	await page.locator(".palette input").fill(">settings");
+	await page.getByText("Open settings").click();
+	await expect(page.locator(".settings-modal")).toBeVisible();
+
+	// The choices survive a reload, and the editor is still usable without
+	// any furniture around it.
+	await page.keyboard.press("Escape");
+	await page.reload();
+	await expect(page.locator(".monaco-editor")).toBeVisible();
+	await expect(page.locator(".editor-chrome")).toHaveCount(0);
+	await expect(page.locator(".global-status")).toHaveCount(0);
+
+	await page.keyboard.press("ControlOrMeta+,");
+	await expect(page.locator(".settings-modal")).toBeVisible();
+	await page.keyboard.press("Escape");
 });

@@ -5,6 +5,8 @@ import { Lucide } from "./Lucide.js";
 interface EditorChromeProps {
 	openTabs: string[];
 	activePath: string;
+	/** False hides the whole tab strip — one file needs no tab to pick it. */
+	showTabs: boolean;
 	stale: boolean;
 	showTreeRestore: boolean;
 	autoRun: boolean;
@@ -34,46 +36,48 @@ export function EditorChrome(props: EditorChromeProps): React.JSX.Element {
 					<Lucide icon="panel-left" size={14} />
 				</button>
 			)}
-			<div className="tab-pill" role="tablist">
-				{props.openTabs.map((path) => (
-					<div
-						className={`buffer-tab${path === props.activePath ? " active" : ""}`}
-						key={path}
-						onClick={() => props.onSelect(path)}
-						onKeyDown={(event) => {
-							if (event.key === "Enter") props.onSelect(path);
-						}}
-						role="tab"
-						aria-selected={path === props.activePath}
-						tabIndex={0}
-					>
-						<FileIcon path={path} />
-						<span>{path}</span>
-						{props.stale && path === props.activePath && (
-							<em className="stale-dot" />
-						)}
-						<span
-							className="tab-close"
-							onClick={(event) => {
-								event.stopPropagation();
-								props.onCloseTab(path);
+			{props.showTabs && (
+				<div className="tab-pill" role="tablist">
+					{props.openTabs.map((path) => (
+						<div
+							className={`buffer-tab${path === props.activePath ? " active" : ""}`}
+							key={path}
+							onClick={() => props.onSelect(path)}
+							onKeyDown={(event) => {
+								if (event.key === "Enter") props.onSelect(path);
 							}}
-							role="button"
-							tabIndex={-1}
-							title="Close tab"
+							role="tab"
+							aria-selected={path === props.activePath}
+							tabIndex={0}
 						>
-							✕
-						</span>
-					</div>
-				))}
-				<button
-					className="tab-add"
-					onClick={props.onOpenPalette}
-					title="Find file (⌘K)"
-				>
-					+
-				</button>
-			</div>
+							<FileIcon path={path} />
+							<span>{path}</span>
+							{props.stale && path === props.activePath && (
+								<em className="stale-dot" />
+							)}
+							<span
+								className="tab-close"
+								onClick={(event) => {
+									event.stopPropagation();
+									props.onCloseTab(path);
+								}}
+								role="button"
+								tabIndex={-1}
+								title="Close tab"
+							>
+								✕
+							</span>
+						</div>
+					))}
+					<button
+						className="tab-add"
+						onClick={props.onOpenPalette}
+						title="Find file (⌘K)"
+					>
+						+
+					</button>
+				</div>
+			)}
 			<div className="chrome-right">
 				<button
 					className={`auto-text${props.autoRun ? " on" : ""}`}

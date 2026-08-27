@@ -34,9 +34,50 @@
 
 ## Network and user-code processes
 
-- **There is no sandbox**: code runs locally with the user's permissions
-  (the UI warns about this when the session is created). A program can open
-  sockets, read files or use the network while it runs.
+- **Optional sandbox (Linux)**: with **Settings → Sandbox** on (the default
+  wherever the kernel supports it), every process a session spawns —
+  instrumenters, compilers AND the user's program — is confined by a
+  Landlock ruleset: read+execute on toolchains and system paths, read+write
+  on that session's workspace only, and no TCP at all on Landlock ABI 4+
+  (Linux 6.7+). `build.zig`, cargo build scripts and proc-macros are user
+  code too, which is why compilation is confined as well. The session
+  response reports what the kernel can enforce (`files+network`, `files`,
+  `unsupported`) and `pnpm run doctor` shows it. macOS and older kernels get
+  no enforcement; the toggle is disabled there.
+- **Cost**: the enforcement itself is free — a warm run measures the same
+  sandboxed or not (93 ms vs 94 ms for the Zig sample). Toolchain caches are
+  redirected into the workspace, so a session never writes to the user's
+  own caches. Zig's *global* cache is the one exception: rebuilding the
+  standard library costs every new session about 3.4 s (1.1 s when it is
+  shared), and paying that on every scratch session was worse than the
+  alternative — so it lives in `$XDG_CACHE_HOME/atomis/toolchains/zig` and
+  every session of the same user shares it. The price is that one sandboxed
+  run can influence another's build artifacts; it cannot reach anything
+  else, since the poisoned code would run under the same restrictions.
+  Everything else — dependencies included — stays per workspace.
+- **Allow network** (Settings, off by default) lets the program itself open
+  outbound TCP while everything else stays confined: it can call an API,
+  it still cannot read your home or listen on a port. Turning the sandbox
+  off instead removes both restrictions at once, which is why the toggle
+  exists separately.
+- **Name resolution comes with the network**: opening the network also
+  grants the resolver's runtime paths (`/run/systemd/resolve` and friends),
+  because on a systemd system `/etc/resolv.conf` is a symlink into `/run`
+  and the nsswitch module talks to resolved over a socket there. Without
+  them a sandboxed process with the network open still reports "Could not
+  resolve host", which reads like the network being down.
+- **Installing dependencies opens the network for that step**: outbound
+  HTTPS only, for the install process only, with the filesystem still
+  confined to the workspace. npm (and any manager that runs install
+  scripts) executes third-party code during it — confined, but executed;
+  the UI says so before you press install.
+- **What the network rules do NOT cover**: Landlock restricts TCP bind and
+  connect only, so UDP — DNS lookups included — still works from sandboxed
+  code. A unit test pins this boundary so the claim stays honest; closing it
+  needs a seccomp filter (not implemented).
+- The sandbox raises the bar substantially but **is not a virtual machine**:
+  kernel bugs and side channels are out of scope, and with the toggle off
+  code runs with the user's full permissions (the UI says so).
 - **Servers do not survive**: any blocking process (a TCP/HTTP server,
   `serve_forever`, a `listen`) dies when the execution timeout expires
   (2 s by default, 10 s max): SIGTERM to the whole process group and

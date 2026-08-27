@@ -2,6 +2,8 @@ import { useCallback, useRef, useState } from "react";
 import type { Monaco } from "@monaco-editor/react";
 import type {
 	AppDiagnostic,
+	Dependency,
+	DepsState,
 	ProbeDescriptor,
 	RunResult,
 	RunState,
@@ -89,6 +91,14 @@ export function useRuntimeEvents(options: RuntimeEventsOptions) {
 	const testSummaryRef = useRef<TestSummaryEvent | undefined>(undefined);
 	const [history, setHistory] = useState<RunHistoryEntry[]>([]);
 	const [drawer, setDrawer] = useState(false);
+	const [deps, setDeps] = useState<Dependency[]>([]);
+	const [depsSupported, setDepsSupported] = useState(false);
+	const [depsManifest, setDepsManifest] = useState<string>();
+	const [depsHint, setDepsHint] = useState<string>();
+	const [depsUntrusted, setDepsUntrusted] = useState(false);
+	const [depsState, setDepsState] = useState<DepsState>("idle");
+	const [depsError, setDepsError] = useState<string>();
+	const [depsOutput, setDepsOutput] = useState<string[]>([]);
 	const [openFolds, setOpenFolds] = useState<Set<string>>(new Set());
 	const lastRunFailedRef = useRef(false);
 	const runNoRef = useRef(0);
@@ -216,6 +226,22 @@ export function useRuntimeEvents(options: RuntimeEventsOptions) {
 					if (open) setDrawer(true);
 					lastRunFailedRef.current = failed;
 				}
+			} else if (event.type === "deps.catalog") {
+				setDeps(event.dependencies);
+				setDepsSupported(event.supported);
+				setDepsManifest(event.manifest);
+				setDepsHint(event.inputHint);
+				setDepsUntrusted(event.runsUntrustedCode);
+			} else if (event.type === "deps.state") {
+				setDepsState(event.state);
+				setDepsError(event.error);
+				// A fresh run starts with a clean log.
+				if (event.state === "installing" || event.state === "removing")
+					setDepsOutput([]);
+			} else if (event.type === "deps.output") {
+				setDepsOutput((previous) =>
+					[...previous, event.chunk].slice(-200),
+				);
 			} else if (event.type === "server.error") setStatus(event.message);
 		},
 		[
@@ -230,7 +256,35 @@ export function useRuntimeEvents(options: RuntimeEventsOptions) {
 		],
 	);
 
+	/// Clears everything the previous session produced. Used when the app
+	/// switches workspaces without reloading the page.
+	const reset = useCallback((): void => {
+		setRunState("idle");
+		setCatalog([]);
+		catalogRef.current = [];
+		setValues(new Map());
+		setStale(false);
+		setOutput([]);
+		setDiagnostics({});
+		setResult(undefined);
+		setTests([]);
+		setTestResults(new Map());
+		setTestSummary(undefined);
+		testSummaryRef.current = undefined;
+		setHistory([]);
+		setDrawer(false);
+		setDeps([]);
+		setDepsSupported(false);
+		setDepsState("idle");
+		setDepsError(undefined);
+		setDepsOutput([]);
+		setOpenFolds(new Set());
+		lastRunFailedRef.current = false;
+		runNoRef.current = 0;
+	}, []);
+
 	return {
+		reset,
 		runState,
 		catalog,
 		catalogRef,
@@ -249,6 +303,14 @@ export function useRuntimeEvents(options: RuntimeEventsOptions) {
 		history,
 		drawer,
 		setDrawer,
+		deps,
+		depsSupported,
+		depsManifest,
+		depsHint,
+		depsUntrusted,
+		depsState,
+		depsError,
+		depsOutput,
 		openFolds,
 		setOpenFolds,
 		handleRuntimeEvent,
