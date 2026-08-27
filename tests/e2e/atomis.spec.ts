@@ -58,7 +58,10 @@ async function openTermView(
 
 async function openClean(page: import("@playwright/test").Page): Promise<void> {
 	await page.goto("/");
-	await page.evaluate(() => localStorage.clear());
+	await page.evaluate(() => {
+		localStorage.clear();
+		localStorage.setItem("atomis.scaffold.v1", "demo");
+	});
 	await page.reload();
 	await expect(page.locator(".file-tree")).toBeVisible();
 	await expect(page.locator(".monaco-editor")).toBeVisible();
@@ -503,6 +506,7 @@ async function openRust(page: import("@playwright/test").Page): Promise<boolean>
 	if (!doctor) return false;
 	await page.evaluate(() => {
 		localStorage.clear();
+		localStorage.setItem("atomis.scaffold.v1", "demo");
 		localStorage.setItem("atomis.language.v1", "rust");
 	});
 	await page.reload();
@@ -593,7 +597,10 @@ test("Ctrl+S formats the document and returns vim to normal mode", async ({
 	page,
 }) => {
 	await page.goto("/");
-	await page.evaluate(() => localStorage.clear());
+	await page.evaluate(() => {
+		localStorage.clear();
+		localStorage.setItem("atomis.scaffold.v1", "demo");
+	});
 	await page.reload();
 	await expect(page.locator(".file-tree")).toBeVisible();
 	await expect(page.locator(".state-succeeded")).toBeVisible();
@@ -993,6 +1000,7 @@ async function openGo(page: import("@playwright/test").Page): Promise<boolean> {
 	if (!available) return false;
 	await page.evaluate(() => {
 		localStorage.clear();
+		localStorage.setItem("atomis.scaffold.v1", "demo");
 		localStorage.setItem("atomis.language.v1", "go");
 	});
 	await page.reload();
@@ -1070,6 +1078,7 @@ test("ts sessions run with inline values, tests and non-blocking type errors", a
 	await page.goto("/");
 	await page.evaluate(() => {
 		localStorage.clear();
+		localStorage.setItem("atomis.scaffold.v1", "demo");
 		localStorage.setItem("atomis.language.v1", "ts");
 	});
 	await page.reload();
@@ -1139,6 +1148,7 @@ test("python sessions run with inline values, tests and tracebacks", async ({
 	test.skip(!available, "python3 not available");
 	await page.evaluate(() => {
 		localStorage.clear();
+		localStorage.setItem("atomis.scaffold.v1", "demo");
 		localStorage.setItem("atomis.language.v1", "py");
 	});
 	await page.reload();
@@ -1202,6 +1212,7 @@ async function openCFamily(
 	if (!available) return false;
 	await page.evaluate((lang) => {
 		localStorage.clear();
+		localStorage.setItem("atomis.scaffold.v1", "demo");
 		localStorage.setItem("atomis.language.v1", lang);
 	}, language);
 	await page.reload();
@@ -1270,4 +1281,39 @@ test("cpp sessions run with stream previews and failing asserts", async ({
 	});
 	await expect(page.locator(".case-message")).toContainText(/Assertion|assert/);
 	await expect(page.locator(".test-lens-message.failed")).toBeVisible();
+});
+
+test("workspace starts minimal, loads the demo and clears back", async ({
+	page,
+}) => {
+	await page.goto("/");
+	// No scaffold seed: the app's default is the minimal workspace.
+	await page.evaluate(() => localStorage.clear());
+	await page.reload();
+	await expect(page.locator(".file-tree")).toBeVisible();
+	await expect(page.locator(".state-succeeded")).toBeVisible({
+		timeout: 60_000,
+	});
+	await expect(page.locator(".tree-file")).toHaveCount(1);
+	await expect(page.locator(".tree-file").first()).toContainText("main.zig");
+	// Probes and tests still run on the minimal scaffold.
+	await expect(page.getByText("43 : i32", { exact: true })).toBeVisible();
+	await expect(page.locator(".test-score")).toHaveText("2/2");
+
+	page.on("dialog", (dialog) => void dialog.accept());
+	await page.locator(".tree-menu-btn").click();
+	await page.getByRole("menuitem", { name: "Load demo workspace" }).click();
+	await expect(page.locator(".file-tree")).toBeVisible();
+	await expect(page.locator(".state-succeeded")).toBeVisible({
+		timeout: 60_000,
+	});
+	expect(await page.locator(".tree-file").count()).toBeGreaterThan(3);
+
+	await page.locator(".tree-menu-btn").click();
+	await page.getByRole("menuitem", { name: "Clear workspace" }).click();
+	await expect(page.locator(".file-tree")).toBeVisible();
+	await expect(page.locator(".tree-file")).toHaveCount(1, {
+		timeout: 60_000,
+	});
+	await expect(page.locator(".tree-file").first()).toContainText("main.zig");
 });

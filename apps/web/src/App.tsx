@@ -84,11 +84,13 @@ import {
 	loadEntrySource,
 	loadLanguage,
 	loadLayout,
+	loadScaffold,
 	loadSettings,
 	loadValueFmt,
 	loadVimMode,
 	saveEntrySource,
 	saveLayout,
+	saveScaffold,
 	saveSettings,
 	saveValueFmt,
 	saveVimMode,
@@ -377,7 +379,10 @@ export function App(): React.JSX.Element {
 				const response = await fetch("/api/sessions", {
 					method: "POST",
 					headers: { "content-type": "application/json" },
-					body: JSON.stringify({ language: loadLanguage() }),
+					body: JSON.stringify({
+						language: loadLanguage(),
+						scaffold: loadScaffold(),
+					}),
 				});
 				if (!response.ok)
 					throw new Error(`Session creation failed (${response.status})`);
@@ -898,6 +903,32 @@ export function App(): React.JSX.Element {
 		[activePathRef, sendRuntime, session, setStale],
 	);
 
+	const loadDemoWorkspace = useCallback((): void => {
+		if (
+			!window.confirm(
+				"Load the demo workspace? Current files will be replaced by every language's example.",
+			)
+		)
+			return;
+		saveScaffold("demo");
+		window.location.reload();
+	}, []);
+
+	const clearWorkspace = useCallback((): void => {
+		const entry =
+			WEB_LANGUAGE_PACKS[
+				languageForPath(activePathRef.current) ?? activeLanguageRef.current
+			].entryFile;
+		if (
+			!window.confirm(
+				`Clear the workspace? Only a fresh ${entry} will remain.`,
+			)
+		)
+			return;
+		saveScaffold("minimal");
+		window.location.reload();
+	}, [activePathRef]);
+
 	const onEntryClick = useCallback(
 		(location: LogSourceLocation): void => {
 			const path = (location.path ?? `src/${entryRef.current}`).replace(
@@ -1042,6 +1073,8 @@ export function App(): React.JSX.Element {
 						}}
 						onDraftCommit={project.commitTreeDraft}
 						onHideTree={() => updateLayout({ treeOpen: false })}
+						onLoadDemo={loadDemoWorkspace}
+						onClearWorkspace={clearWorkspace}
 						onOpenContextMenu={project.setTreeContextMenu}
 						onRenameActive={() => project.renameFile(activePathRef.current)}
 						onSelect={selectFile}

@@ -325,7 +325,11 @@ impl SessionManager {
             .await
     }
 
-    pub async fn create(&self, preferred: Language) -> Result<CreateSessionResponse, String> {
+    pub async fn create(
+        &self,
+        preferred: Language,
+        scaffold: crate::protocol::WorkspaceScaffold,
+    ) -> Result<CreateSessionResponse, String> {
         let id = random_hex(16);
         let token = random_base64url(32);
         let root = self.root.join(&id);
@@ -405,10 +409,21 @@ impl SessionManager {
         } else {
             Language::Zig
         };
+        // Visible src/ files: the demo scaffold carries every language's
+        // example; minimal starts with just the chosen language's entry.
+        // Language templates outside src/ are staged either way, so files
+        // of any supported language can be created and run later.
         let mut sources: Vec<(String, String)> = Vec::new();
+        let minimal = scaffold == crate::protocol::WorkspaceScaffold::Minimal;
         for pack in &included {
+            if minimal && pack.id != language {
+                continue;
+            }
             if !sources.iter().any(|(p, _)| p == pack.entry_file) {
                 sources.push((pack.entry_file.to_string(), pack.default_source.to_string()));
+            }
+            if minimal {
+                continue;
             }
             for (path, content) in pack.extra_files {
                 if !sources.iter().any(|(p, _)| p == path) {

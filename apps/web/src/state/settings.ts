@@ -1,4 +1,4 @@
-import type { Language } from "@atomis/protocol";
+import type { Language, WorkspaceScaffold } from "@atomis/protocol";
 import { VALUE_FMTS, type ValueFmt } from "../lowlevel.js";
 import { WEB_LANGUAGE_PACKS } from "../languages.js";
 import { readStoredItem, writeStoredItem } from "./storage.js";
@@ -45,6 +45,7 @@ const LAYOUT_KEY = "atomis.layout.v1";
 const VALUE_FMT_KEY = "atomis.value-fmt.v1";
 const VIM_MODE_KEY = "atomis.vim-mode.v1";
 const LANGUAGE_KEY = "atomis.language.v1";
+const SCAFFOLD_KEY = "atomis.scaffold.v1";
 const SOURCE_KEY = "atomis.source.v1";
 
 export function loadSettings(): Settings {
@@ -109,6 +110,19 @@ export function loadLanguage(): Language {
 
 export function saveLanguage(language: Language): void {
 	writeStoredItem(LANGUAGE_KEY, language);
+}
+
+/**
+ * Workspace scaffold for new sessions: "minimal" (the default) starts with
+ * just the chosen language's entry file; "demo" loads every language's
+ * example workspace.
+ */
+export function loadScaffold(): WorkspaceScaffold {
+	return readStoredItem(SCAFFOLD_KEY) === "demo" ? "demo" : "minimal";
+}
+
+export function saveScaffold(scaffold: WorkspaceScaffold): void {
+	writeStoredItem(SCAFFOLD_KEY, scaffold);
 }
 
 /** Last entry-file source, restored when the session starts without files. */

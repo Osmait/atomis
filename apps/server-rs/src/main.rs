@@ -66,7 +66,10 @@ async fn create_session(
     };
     match state
         .sessions
-        .create(request.language.unwrap_or(Language::Zig))
+        .create(
+            request.language.unwrap_or(Language::Zig),
+            request.scaffold.unwrap_or_default(),
+        )
         .await
     {
         Ok(response) => Json(response).into_response(),
