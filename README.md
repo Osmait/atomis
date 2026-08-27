@@ -40,7 +40,7 @@ pnpm dev
 This first builds `runzig-instrument` and the shared protocol, then starts:
 
 - UI: <http://127.0.0.1:5173>
-- orchestrator: `127.0.0.1:4317` (proxied by Vite)
+- orchestrator: `127.0.0.1:4317` (Rust/axum, proxied by Vite)
 
 Override the server port with `ZIGLIVE_PORT`; update the Vite proxy when using a non-default development port.
 
@@ -60,19 +60,19 @@ Useful focused commands:
 
 ```bash
 zig build test
-pnpm --filter @ziglive/server test
+cargo test --manifest-path apps/server-rs/Cargo.toml
 pnpm --filter @ziglive/web test
 pnpm typecheck
 ```
 
 ## Desktop app (Tauri)
 
-`apps/desktop` wraps ZigLive in a Tauri v2 window with the Node server embedded as a **sidecar**: a Node SEA single-executable (`binaries/ziglive-server-<triple>`) that picks a free port, announces it on stdout, and serves the API, the WebSockets and the built web UI; the window navigates to it once ready. Instrumenters, session templates and runtimes ship as bundle resources (`ZIGLIVE_ROOT` points the server at them). Language toolchains (zig, cargo, go, node, python3, clang) are still taken from the host machine — the doctor/degraded flow applies as in the browser.
+`apps/desktop` wraps ZigLive in a Tauri v2 window with the Rust server embedded as a **sidecar**: a ~5 MB native binary (`binaries/ziglive-server-<triple>`) that picks a free port, announces it on stdout, and serves the API, the WebSockets and the built web UI; the window navigates to it once ready. Instrumenters, session templates and runtimes ship as bundle resources (`ZIGLIVE_ROOT` points the server at them). Language toolchains (zig, cargo, go, node, python3, clang) are still taken from the host machine — the doctor/degraded flow applies as in the browser.
 
 ```sh
-pnpm desktop:build                           # toolchains + web build + SEA sidecar + resources
+pnpm desktop:build                           # toolchains + web build + Rust sidecar + resources
 pnpm --filter @ziglive/desktop bundle:linux  # AppImage/deb/rpm (use NO_STRIP=true if linuxdeploy fails)
-pnpm --filter @ziglive/desktop bundle:mac    # .app / .dmg (runs codesign automatically for the sidecar)
+pnpm --filter @ziglive/desktop bundle:mac    # .app / .dmg
 pnpm --filter @ziglive/desktop dev           # dev window against the Vite dev server (pnpm dev first)
 ```
 

@@ -56,7 +56,7 @@ fn find_marker(buffer: &str) -> Option<ParsedMarker> {
 fn parse_body(body: &str, start: usize, end: usize) -> Option<ParsedMarker> {
     // fid:line:col[:loop_line:loop_col:variable:value]
     let mut rest = body;
-    let mut take_number = |rest: &mut &str| -> Option<u32> {
+    let take_number = |rest: &mut &str| -> Option<u32> {
         let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
         if digits.is_empty() {
             return None;
@@ -248,5 +248,64 @@ impl<'a> MarkerParser<'a> {
     pub fn flush(&mut self) {
         let rest = std::mem::take(&mut self.buffer);
         self.emit_text(&rest, None);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+
+    fn collect(
+        chunks: &[&str],
+        detect_errors: bool,
+    ) -> Vec<(String, OutputCategory, Option<LogSourceLocation>)> {
+        let sink: Arc<Mutex<Vec<(String, OutputCategory, Option<LogSourceLocation>)>>> =
+            Arc::new(Mutex::new(Vec::new()));
+        let out = Arc::clone(&sink);
+        let mut file_ids = HashMap::new();
+        file_ids.insert(1, "src/main.zig".to_string());
+        let mut parser = MarkerParser::new(
+            Stream::Stderr,
+            detect_errors,
+            file_ids,
+            Box::new(move |_, chunk, category, location| {
+                out.lock()
+                    .expect("sink")
+                    .push((chunk.to_string(), category, location));
+            }),
+        );
+        for chunk in chunks {
+            parser.push(chunk);
+        }
+        parser.flush();
+        drop(parser);
+        Arc::try_unwrap(sink).expect("sink").into_inner().expect("sink")
+    }
+
+    #[test]
+    fn markers_annotate_preceding_text_and_count_executions() {
+        let lines = collect(
+            &["hola\n\u{1e}ZIGLIVE_LOG:1:4:9\u{1f}", "otra\n\u{1e}ZIGLIVE_LOG:1:4:9\u{1f}"],
+            false,
+        );
+        assert_eq!(lines.len(), 2);
+        let first = lines[0].2.as_ref().expect("location");
+        assert_eq!((first.line, first.column, first.execution_index), (4, 9, 1));
+        let second = lines[1].2.as_ref().expect("location");
+        assert_eq!(second.execution_index, 2);
+    }
+
+    #[test]
+    fn loop_markers_carry_variable_and_value() {
+        let lines = collect(&["iter 1\n\u{1e}ZIGLIVE_LOG:1:3:5:2:5:i:1\u{1f}"], false);
+        let info = lines[0].2.as_ref().and_then(|l| l.loop_info.as_ref()).expect("loop");
+        assert_eq!((info.line, info.column, info.variable.as_str(), info.value.as_str()), (2, 5, "i", "1"));
+    }
+
+    #[test]
+    fn panics_turn_sticky_error() {
+        let lines = collect(&["thread 1 panic: boom\nsiguiente\n"], true);
+        assert!(lines.iter().all(|(_, category, _)| *category == OutputCategory::Error));
     }
 }

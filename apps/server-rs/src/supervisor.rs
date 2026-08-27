@@ -159,7 +159,7 @@ pub async fn run(command: &str, args: &[String], options: RunOptions<'_>) -> Pro
     let mut stderr_done = stderr.is_none();
     let mut probe_done = probe_reader.is_none();
 
-    let mut terminate = |terminating: &mut bool| {
+    let terminate = |terminating: &mut bool| {
         if *terminating || pid == 0 {
             return;
         }

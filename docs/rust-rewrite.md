@@ -46,9 +46,11 @@ sidecar Node, un solo lenguaje en el desktop, menos RAM.
 - El sidecar del desktop ya usa el binario Rust (5 MB, antes ~90 MB de
   Node SEA); mismos env vars y línea `ZIGLIVE_LISTENING`.
 - `pnpm dev:rs` levanta cargo + vite para desarrollo contra Rust.
-- Pendiente para retirar apps/server: pruebas de uso real, portar los
-  vitest unitarios que sigan aportando (la e2e ya cubre la paridad), y
-  el swap del proxy de Vite por defecto.
+- **Swap completado**: `apps/server` retirado; `pnpm dev`/`start`/
+  `doctor`/`test`/`build` apuntan al binario Rust (`--doctor` reemplaza
+  al doctor de tsx). Unit tests Rust para locale_compare, file URLs y el
+  parser de marcadores; la paridad de protocolo la sigue garantizando la
+  suite e2e completa.
 
 ## Reglas
 

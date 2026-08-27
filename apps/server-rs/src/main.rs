@@ -157,6 +157,27 @@ async fn ws_lsp_route(
 
 #[tokio::main]
 async fn main() {
+    // `ziglive-server --doctor` replaces the old `tsx apps/server/doctor.ts`.
+    if std::env::args().any(|argument| argument == "--doctor") {
+        let checks = doctor::run_doctor().await;
+        println!("ZigLive doctor\n");
+        let mut failed = false;
+        for check in &checks {
+            println!("{} {}", if check.ok { "✓" } else { "✗" }, check.name);
+            println!("  detected: {}", check.detected);
+            println!("  expected: {}", check.expected);
+            println!("  command:  {}", check.command);
+            if !check.ok {
+                failed = true;
+                if let Some(help) = &check.help {
+                    println!("  fix:      {help}");
+                }
+            }
+        }
+        println!("\nRe-run with: pnpm run doctor");
+        std::process::exit(i32::from(failed));
+    }
+
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()

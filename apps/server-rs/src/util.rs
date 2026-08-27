@@ -147,3 +147,39 @@ pub fn locale_compare(left: &str, right: &str) -> std::cmp::Ordering {
         .map(tertiary)
         .cmp(right.chars().map(tertiary))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn locale_compare_matches_node_icu_order() {
+        let mut files = vec![
+            "main.zig", "main_test.py", "utils/helper.zig", "main.c", "a_b.txt",
+            "input.txt", "main_test.c", "aoc/day1.zig", "main.test.ts", "A.txt",
+            "a.txt", "main.ts",
+        ];
+        files.sort_by(|l, r| locale_compare(l, r));
+        assert_eq!(
+            files,
+            vec![
+                "a_b.txt", "a.txt", "A.txt", "aoc/day1.zig", "input.txt",
+                "main_test.c", "main_test.py", "main.c", "main.test.ts",
+                "main.ts", "main.zig", "utils/helper.zig",
+            ]
+        );
+    }
+
+    #[test]
+    fn file_urls_encode_the_whatwg_path_set() {
+        let url = path_to_file_url(std::path::Path::new("/tmp/ziglive/a b/main.zig"));
+        assert_eq!(url, "file:///tmp/ziglive/a%20b/main.zig");
+    }
+
+    #[test]
+    fn timing_safe_eq_compares_full_strings() {
+        assert!(timing_safe_eq("abc", "abc"));
+        assert!(!timing_safe_eq("abc", "abd"));
+        assert!(!timing_safe_eq("abc", "abcd"));
+    }
+}
