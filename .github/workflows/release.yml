@@ -1,0 +1,151 @@
+# Release: un solo botón (workflow_dispatch) que versiona la app en todos
+# los manifiestos, commitea + taguea, compila los bundles de escritorio
+# para Linux (AppImage/deb/rpm, x86_64) y macOS (dmg, Apple Silicon) y
+# publica el GitHub Release con notas generadas. Los pushes hechos con
+# GITHUB_TOKEN no re-disparan workflows, así que no hay recursión.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Incremento de versión (semver)"
+        required: true
+        type: choice
+        default: patch
+        options: [patch, minor, major]
+
+permissions:
+  contents: write
+
+env:
+  ZIG_VERSION: 0.16.0
+
+jobs:
+  version:
+    name: Bump + tag v-next
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Bump every manifest
+        id: bump
+        run: |
+          VERSION="$(node scripts/bump-version.mjs '${{ inputs.bump }}')"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Commit and tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore(release): v${{ steps.bump.outputs.version }}"
+          git tag -a "v${{ steps.bump.outputs.version }}" -m "ZigLive v${{ steps.bump.outputs.version }}"
+          git push origin HEAD "refs/tags/v${{ steps.bump.outputs.version }}"
+
+  build:
+    name: Bundle ${{ matrix.artifact }}
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            bundle: linux
+            artifact: linux-x86_64
+          - os: macos-latest
+            bundle: mac
+            artifact: macos-aarch64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.version.outputs.version }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release
+          workspaces: |
+            apps/server-rs
+            rust/instrumenter
+            apps/desktop/src-tauri
+      - name: Tauri Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev \
+            librsvg2-dev patchelf xdg-utils libfuse2
+      - run: pnpm install --frozen-lockfile
+      - name: Build sidecar + resources (pnpm desktop:build)
+        run: pnpm desktop:build
+      - name: Bundle (${{ matrix.bundle }})
+        run: pnpm --filter @ziglive/desktop bundle:${{ matrix.bundle }}
+      - name: Collect bundles
+        shell: bash
+        run: |
+          BUNDLES=apps/desktop/src-tauri/target/release/bundle
+          mkdir -p dist-release
+          if [ "${{ matrix.bundle }}" = "linux" ]; then
+            cp "$BUNDLES"/appimage/*.AppImage dist-release/
+            cp "$BUNDLES"/deb/*.deb dist-release/
+            cp "$BUNDLES"/rpm/*.rpm dist-release/
+          else
+            cp "$BUNDLES"/dmg/*.dmg dist-release/
+          fi
+          ls -l dist-release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundles-${{ matrix.artifact }}
+          path: dist-release/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist-release
+          merge-multiple: true
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          cat > notes.md <<'NOTES'
+          Bundles de escritorio (Tauri v2, sidecar Rust de ~5 MB):
+
+          - **Linux x86_64**: AppImage, .deb y .rpm
+          - **macOS Apple Silicon**: .dmg — sin firmar: la primera vez ábrelo
+            con clic derecho → Abrir, o ejecuta
+            `xattr -d com.apple.quarantine /Applications/ziglive.app`
+
+          Los toolchains de lenguaje (zig, cargo, go, node, python3, clang)
+          se toman de la máquina anfitriona; sin ellos la app arranca en
+          modo degradado por lenguaje.
+          NOTES
+          gh release create "v$VERSION" dist-release/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "ZigLive v$VERSION" \
+            --notes-file notes.md \
+            --generate-notes

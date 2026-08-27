@@ -1,0 +1,132 @@
+# CI: linters (oxlint estricto + clippy -D warnings), typecheck, tests
+# unitarios/instrumentadores y la suite e2e de Playwright sobre el stack
+# real (server Rust + Vite). Patrones tomados de GitButler (jobs por
+# preocupación + rust-cache compartido) y Clash Verge Rev (toolchains).
+name: CI
+
+on:
+  push:
+    branches: [main, rust-backend]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ZIG_VERSION: 0.16.0
+  ZLS_TARBALL: https://builds.zigtools.org/zls-x86_64-linux-0.16.0.tar.xz
+  ZLS_SHA256: ded6d562a0b86ee878b1ddf70ffab2797ce3cdca3b02d6077548f9d56dff96b6
+
+jobs:
+  lint:
+    name: Lint + typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ziglive
+          workspaces: |
+            apps/server-rs
+      - run: pnpm install --frozen-lockfile
+      - name: Build protocol types
+        run: pnpm --filter @ziglive/protocol build
+      - name: Lint (oxlint + clippy)
+        run: pnpm lint
+      - name: Typecheck (packages + e2e)
+        run: pnpm typecheck
+
+  test:
+    name: Unit + instrumenter tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ziglive
+          workspaces: |
+            apps/server-rs
+            rust/instrumenter
+      - run: pnpm install --frozen-lockfile
+      - name: Tests (zig, instrumentadores, cargo, vitest)
+        run: pnpm test
+
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ziglive
+          workspaces: |
+            apps/server-rs
+            rust/instrumenter
+      - name: Install ZLS ${{ env.ZIG_VERSION }}
+        run: |
+          curl -fsSL "$ZLS_TARBALL" -o /tmp/zls.tar.xz
+          echo "$ZLS_SHA256  /tmp/zls.tar.xz" | sha256sum -c -
+          mkdir -p "$HOME/.local/bin"
+          tar -xJf /tmp/zls.tar.xz -C "$HOME/.local/bin" zls
+          chmod +x "$HOME/.local/bin/zls"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - run: pnpm install --frozen-lockfile
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Prebuild stack (instrumenters + server)
+        run: |
+          pnpm zig:build
+          pnpm rust:build
+          pnpm go:build
+          pnpm --filter @ziglive/protocol build
+          cargo build --manifest-path apps/server-rs/Cargo.toml
+      - name: Doctor (informativo)
+        run: pnpm run doctor || true
+      - name: E2E
+        run: pnpm test:e2e
+      - name: Upload traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: test-results/
+          retention-days: 7

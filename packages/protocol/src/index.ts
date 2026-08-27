@@ -1,5 +1,14 @@
 import { z } from "zod";
 
+/** A JSON wire value: what can travel over the ZigLive WebSockets. */
+export type JsonValue =
+	| string
+	| number
+	| boolean
+	| null
+	| JsonValue[]
+	| { [key: string]: JsonValue };
+
 export const PROTOCOL_VERSION = 1 as const;
 export const languages = ["zig", "rust", "go", "ts", "py", "c", "cpp"] as const;
 export type Language = (typeof languages)[number];
@@ -209,7 +218,8 @@ export const projectPathSchema = z
 		(value) =>
 			!value.startsWith("/") &&
 			!value.includes("\\") &&
-			!/[\u0000-\u001f]/.test(value) &&
+			// oxlint-disable-next-line no-control-regex -- rejecting control chars in paths is the point
+			!/[\u0000-\u001F]/.test(value) &&
 			value
 				.split("/")
 				.every((part) => part.length > 0 && part !== "." && part !== ".."),
@@ -324,7 +334,7 @@ export type RuntimeServerEvent =
 			runId: string;
 			result: RunResult;
 	  }
-	| { type: "lsp.capabilities"; capabilities: Record<string, unknown> }
+	| { type: "lsp.capabilities"; capabilities: Record<string, JsonValue> }
 	| {
 			type: "server.error";
 			recoverable: boolean;

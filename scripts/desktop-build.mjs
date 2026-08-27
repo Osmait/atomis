@@ -5,10 +5,9 @@
 // `pnpm --filter @ziglive/desktop bundle:*`.
 import { execFileSync, execSync } from "node:child_process";
 import { cpSync, copyFileSync, existsSync, mkdirSync, rmSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, resolve } from "node:path";
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const root = resolve(import.meta.dirname, "..");
 const desktop = join(root, "apps/desktop/src-tauri");
 const run = (command, args, options = {}) =>
 	execFileSync(command, args, { stdio: "inherit", cwd: root, ...options });
