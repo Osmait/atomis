@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type * as MonacoApi from "monaco-editor";
-import { charMatchColumns } from "../state/quickScope.js";
+import { charMatchPositions } from "../state/quickScope.js";
 
 interface QuickScopeOptions {
 	editorRef: React.RefObject<
@@ -82,16 +82,18 @@ export function useQuickScope(options: QuickScopeOptions): void {
 			decorations.set([]);
 			return;
 		}
-		const lineText = model.getLineContent(cursor.line);
 		decorations.set(
-			charMatchColumns(lineText, phase.char)
-				.filter((column) => column !== cursor.column)
-				.map((column) => ({
+			charMatchPositions(model.getLinesContent(), phase.char)
+				.filter(
+					(match) =>
+						match.line !== cursor.line || match.column !== cursor.column,
+				)
+				.map((match) => ({
 					range: {
-						startLineNumber: cursor.line,
-						startColumn: column,
-						endLineNumber: cursor.line,
-						endColumn: column + 1,
+						startLineNumber: match.line,
+						startColumn: match.column,
+						endLineNumber: match.line,
+						endColumn: match.column + 1,
 					} as MonacoApi.Range,
 					options: { inlineClassName: "qs-match" },
 				})),
