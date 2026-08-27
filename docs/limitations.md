@@ -60,6 +60,12 @@
   it still cannot read your home or listen on a port. Turning the sandbox
   off instead removes both restrictions at once, which is why the toggle
   exists separately.
+- **Name resolution comes with the network**: opening the network also
+  grants the resolver's runtime paths (`/run/systemd/resolve` and friends),
+  because on a systemd system `/etc/resolv.conf` is a symlink into `/run`
+  and the nsswitch module talks to resolved over a socket there. Without
+  them a sandboxed process with the network open still reports "Could not
+  resolve host", which reads like the network being down.
 - **Installing dependencies opens the network for that step**: outbound
   HTTPS only, for the install process only, with the filesystem still
   confined to the workspace. npm (and any manager that runs install

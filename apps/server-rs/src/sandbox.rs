@@ -232,6 +232,31 @@ pub fn with_program(policy: &SandboxPolicy, program: &str) -> SandboxPolicy {
     next
 }
 
+/// What resolving a hostname needs, beyond the network itself.
+///
+/// On a systemd system `/etc/resolv.conf` is a symlink into `/run`, and the
+/// `resolve` nsswitch module talks to resolved over a socket in the same
+/// directory — so a process allowed to use the network still cannot look up
+/// a name without these, and the error it reports is "Could not resolve
+/// host", which reads like the network being down. Granted only when the
+/// policy opens the network at all.
+const RESOLVER_PATHS: &[&str] = &[
+    "/run/systemd/resolve",
+    "/run/resolvconf",
+    "/run/nscd",
+    "/run/dbus/system_bus_socket",
+];
+
+/// Adds the resolver paths to a policy that has just been given network
+/// access. Connecting to a Unix socket needs the write right, so these go
+/// in with the writable paths; `prepare` drops whichever do not exist.
+fn with_resolver(mut policy: SandboxPolicy) -> SandboxPolicy {
+    for path in RESOLVER_PATHS {
+        policy.read_write.push(PathBuf::from(path));
+    }
+    policy
+}
+
 /// Ports a dependency fetch needs: HTTPS, plus plain HTTP for the
 /// redirects some registries still serve.
 pub const FETCH_PORTS: &[u16] = &[443, 80];
@@ -240,20 +265,20 @@ pub const FETCH_PORTS: &[u16] = &[443, 80];
 /// it: installing dependencies. Everything else — the filesystem, binding a
 /// port, every other port — stays exactly as restricted.
 pub fn with_fetch_network(policy: &SandboxPolicy) -> SandboxPolicy {
-    SandboxPolicy {
+    with_resolver(SandboxPolicy {
         network: NetworkAccess::Ports(FETCH_PORTS.to_vec()),
         ..policy.clone()
-    }
+    })
 }
 
 /// The same policy with outbound TCP opened for the program itself, which
 /// is what "Allow network" grants: HTTP clients work, the filesystem stays
 /// confined to the workspace, and nothing can listen.
 pub fn with_outbound_network(policy: &SandboxPolicy) -> SandboxPolicy {
-    SandboxPolicy {
+    with_resolver(SandboxPolicy {
         network: NetworkAccess::Outbound,
         ..policy.clone()
-    }
+    })
 }
 
 /// Environment that keeps toolchains from needing anything outside the
@@ -533,6 +558,32 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Opening the network is useless if a name cannot be looked up, and
+    /// the failure reads like the network being down rather than like a
+    /// sandbox denial — so the resolver's runtime paths come with it, and
+    /// only with it.
+    #[test]
+    fn the_resolver_is_reachable_only_once_the_network_opens() {
+        let base = policy_for(
+            Path::new("/tmp/atomis/abc"),
+            Path::new("/srv"),
+            Some(Path::new("/home/dev")),
+        );
+        let resolved = Path::new("/run/systemd/resolve");
+        assert!(!base.read_write.iter().any(|path| path == resolved));
+
+        for opened in [with_fetch_network(&base), with_outbound_network(&base)] {
+            assert!(
+                opened.read_write.iter().any(|path| path == resolved),
+                "a policy with network must be able to resolve names"
+            );
+            // The workspace is still the first writable path, and nothing
+            // outside the resolver's runtime dirs came along.
+            assert_eq!(opened.read_write[0], PathBuf::from("/tmp/atomis/abc"));
+            assert!(!opened.read_write.iter().any(|path| path == Path::new("/run")));
+        }
     }
 
     #[test]
