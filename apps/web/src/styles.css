@@ -1055,6 +1055,11 @@ input:focus-visible,
 	display: none;
 }
 
+/* Keeps vim's status node in the document while the status bar is off. */
+.vim-status-host {
+	display: none;
+}
+
 .vim-status input {
 	background: transparent;
 	border: none;

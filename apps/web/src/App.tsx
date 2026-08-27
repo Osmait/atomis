@@ -88,6 +88,12 @@ import {
 } from "./state/runSummary.js";
 import { toggleProbe, type InlineValue } from "./state/runtimeState.js";
 import {
+	loadChrome,
+	saveChrome,
+	tabsVisible,
+	type ChromeSettings,
+} from "./state/chrome.js";
+import {
 	loadEntrySource,
 	loadInlineLogs,
 	loadLanguage,
@@ -168,6 +174,7 @@ export function App(): React.JSX.Element {
 		y: number;
 	}>();
 	const [layout, setLayout] = useState<LayoutState>(loadLayout);
+	const [chrome, setChrome] = useState<ChromeSettings>(loadChrome);
 	const [paletteOpen, setPaletteOpen] = useState(false);
 	const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
 	const [workspaces, setWorkspaces] = useState<WorkspaceMeta[]>([]);
@@ -377,6 +384,13 @@ export function App(): React.JSX.Element {
 		() => updateLayout({ zen: !layoutRef.current.zen }),
 		[updateLayout],
 	);
+	const updateChrome = useCallback((patch: Partial<ChromeSettings>): void => {
+		setChrome((previous) => {
+			const next = { ...previous, ...patch };
+			saveChrome(next);
+			return next;
+		});
+	}, []);
 
 	const nav = useKeyboardNav({
 		appearanceRef,
@@ -1293,7 +1307,7 @@ export function App(): React.JSX.Element {
 
 				<div className="inner">
 					<section className="editor-card">
-						{!zen && (
+						{!zen && chrome.toolbar && (
 							<EditorChrome
 								active={active}
 								activePath={activePath}
@@ -1308,6 +1322,7 @@ export function App(): React.JSX.Element {
 								onToggleAutoRun={toggleAutoRun}
 								openTabs={openTabs}
 								runDisabled={runDisabled}
+								showTabs={tabsVisible(chrome, openTabs.length)}
 								showTreeRestore={!treeVisible && !tight}
 								stale={stale}
 							/>
@@ -1498,8 +1513,16 @@ export function App(): React.JSX.Element {
 				/>
 			)}
 
-			<StatusBar
-				activePath={activePath}
+			{!chrome.statusBar && (
+				// Vim writes its command line into this node, so it stays mounted
+				// out of sight: hiding the bar must not quietly disable vim.
+				<div className="vim-status-host">
+					<div className="vim-status" ref={vimStatusRef} />
+				</div>
+			)}
+			{chrome.statusBar && (
+				<StatusBar
+					activePath={activePath}
 				onWorkspace={openWorkspacePicker}
 				workspaceName={session.workspace?.name ?? "scratch"}
 				cursor={cursorPosition}
@@ -1515,7 +1538,8 @@ export function App(): React.JSX.Element {
 				valuesCount={values.size}
 				vimModeLabel={vimModeLabel}
 				vimStatusRef={vimStatusRef}
-			/>
+				/>
+			)}
 
 			{zen && (
 				<ZenPill
@@ -1658,6 +1682,26 @@ export function App(): React.JSX.Element {
 							act: () => changeVimMode(!vimEnabled),
 						},
 						{
+							label: "Toolbar",
+							hint: "tabs, auto, settings and Run",
+							on: chrome.toolbar,
+							act: () => updateChrome({ toolbar: !chrome.toolbar }),
+						},
+						{
+							label: "Status bar",
+							hint: "mode, workspace and cursor along the bottom",
+							on: chrome.statusBar,
+							act: () => updateChrome({ statusBar: !chrome.statusBar }),
+						},
+						{
+							label: "Hide tabs for one file",
+							hint: "the strip appears once a second file opens",
+							on: chrome.hideSingleTab,
+							disabled: !chrome.toolbar,
+							act: () =>
+								updateChrome({ hideSingleTab: !chrome.hideSingleTab }),
+						},
+						{
 							label: "Zen Mode",
 							hint: "⌘.",
 							on: zen,
@@ -1714,6 +1758,17 @@ export function App(): React.JSX.Element {
 			{paletteOpen && (
 				<CommandPalette
 					activePath={activePath}
+					commands={[
+						{
+							id: "settings",
+							title: "Open settings",
+							hint: "⌘,",
+							act: () => {
+								setPaletteOpen(false);
+								setSettingsOpen(true);
+							},
+						},
+					]}
 					files={files}
 					onClose={() => setPaletteOpen(false)}
 					onCreate={(path) => {

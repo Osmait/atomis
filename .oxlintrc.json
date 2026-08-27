@@ -48,7 +48,7 @@
 			{
 				"types": {
 					"unknown": {
-						"message": "unknown prohibido: usa un tipo concreto, un gen\u00e9rico o JsonValue (lsp/protocol)"
+						"message": "unknown is banned: use a concrete type, a generic, or JsonValue (lsp/protocol)"
 					}
 				}
 			}

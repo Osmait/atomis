@@ -1733,3 +1733,45 @@ test("Allow network lets code call out while files stay confined", async ({
 	);
 	await setToggle(page, "Allow network", false);
 });
+
+test("the toolbar, the tabs and the status bar can each be put away", async ({
+	page,
+}) => {
+	await openClean(page);
+	await expect(page.locator(".editor-chrome")).toBeVisible();
+	await expect(page.locator(".global-status")).toBeVisible();
+
+	// One open file needs no tab strip; a second file brings it back.
+	await setToggle(page, "Hide tabs for one file", true);
+	await expect(page.locator(".tab-pill")).toHaveCount(0);
+	await page.getByRole("button", { name: "main.py", exact: true }).click();
+	await expect(page.locator(".tab-pill")).toBeVisible();
+	await expect(page.getByRole("tab")).toHaveCount(2);
+
+	await setToggle(page, "Status bar", false);
+	await expect(page.locator(".global-status")).toHaveCount(0);
+
+	// Turning the toolbar off takes the settings gear with it, which is what
+	// the palette command is for.
+	await setToggle(page, "Toolbar", false);
+	await expect(page.locator(".editor-chrome")).toHaveCount(0);
+	await expect(page.locator(".chrome-icon")).toHaveCount(0);
+
+	await page.keyboard.press("ControlOrMeta+k");
+	await expect(page.locator(".palette")).toBeVisible();
+	await page.locator(".palette input").fill(">settings");
+	await page.getByText("Open settings").click();
+	await expect(page.locator(".settings-modal")).toBeVisible();
+
+	// The choices survive a reload, and the editor is still usable without
+	// any furniture around it.
+	await page.keyboard.press("Escape");
+	await page.reload();
+	await expect(page.locator(".monaco-editor")).toBeVisible();
+	await expect(page.locator(".editor-chrome")).toHaveCount(0);
+	await expect(page.locator(".global-status")).toHaveCount(0);
+
+	await page.keyboard.press("ControlOrMeta+,");
+	await expect(page.locator(".settings-modal")).toBeVisible();
+	await page.keyboard.press("Escape");
+});
