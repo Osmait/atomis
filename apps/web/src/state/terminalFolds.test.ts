@@ -50,7 +50,7 @@ describe("groupOutput", () => {
 		expect(rows.map((row) => row.kind)).toEqual(["line", "fold", "line"]);
 		const fold = rows[1];
 		if (fold?.kind !== "fold") throw new Error("expected fold");
-		expect(fold.label).toBe("traza · src/main.zig:4:9 · bucle i");
+		expect(fold.label).toBe("trace · src/main.zig:4:9 · loop i");
 		expect(fold.entries).toHaveLength(4);
 		expect(fold.entries[0]?.index).toBe(1);
 	});
@@ -68,7 +68,7 @@ describe("groupOutput", () => {
 		expect(rows.map((row) => row.kind)).toEqual(["line", "line", "fold"]);
 		const fold = rows[2];
 		if (fold?.kind !== "fold") throw new Error("expected fold");
-		expect(fold.label).toBe("traza del panic");
+		expect(fold.label).toBe("panic trace");
 		expect(fold.entries).toHaveLength(3);
 	});
 });

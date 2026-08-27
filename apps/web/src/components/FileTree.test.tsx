@@ -82,12 +82,12 @@ describe("FileTree", () => {
 
 	it("opens the ⋯ menu with rename/delete disabled on the entry file", () => {
 		const handlers = renderTree();
-		fireEvent.click(screen.getByLabelText("Acciones del árbol"));
+		fireEvent.click(screen.getByLabelText("Tree actions"));
 		const rename = screen
-			.getByText("Renombrar archivo")
+			.getByText("Rename file")
 			.closest("button") as HTMLButtonElement;
 		expect(rename.disabled).toBe(true);
-		fireEvent.click(screen.getByText("Crear archivo"));
+		fireEvent.click(screen.getByText("New file"));
 		expect(handlers.onCreateFile).toHaveBeenCalledWith();
 	});
 
@@ -96,7 +96,7 @@ describe("FileTree", () => {
 			draft: { kind: "file", base: "" },
 			draftValue: "nuevo.zig",
 		});
-		const input = screen.getByLabelText("Nombre del archivo");
+		const input = screen.getByLabelText("File name");
 		fireEvent.keyDown(input, { key: "Enter" });
 		expect(handlers.onDraftCommit).toHaveBeenCalledWith("nuevo.zig");
 		fireEvent.keyDown(input, { key: "Escape" });

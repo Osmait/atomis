@@ -8,8 +8,8 @@ struct Sidecar(Mutex<Option<CommandChild>>);
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-  // WebKitGTK crashea con el driver NVIDIA propietario en Wayland (Error 71,
-  // explicit sync); la variable debe existir antes de crear la webview.
+  // WebKitGTK crashes with the proprietary NVIDIA driver on Wayland
+  // (Error 71, explicit sync); the variable must exist before the webview.
   #[cfg(target_os = "linux")]
   if std::env::var_os("__NV_DISABLE_EXPLICIT_SYNC").is_none() {
     std::env::set_var("__NV_DISABLE_EXPLICIT_SYNC", "1");

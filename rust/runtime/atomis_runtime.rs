@@ -80,7 +80,7 @@ impl<T: std::fmt::Debug> DebugProbe for Wrap<&T> {
 impl<T> FallbackProbe for &Wrap<&T> {
     fn atomis_preview(&self) -> (String, String) {
         let name = short_type(std::any::type_name::<T>());
-        (format!("<sin Debug: {name}>"), name)
+        (format!("<no Debug: {name}>"), name)
     }
 }
 

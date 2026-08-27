@@ -139,11 +139,11 @@ export function useProjectFiles(options: ProjectFilesOptions) {
 		(path: string): boolean => {
 			if (!session) return false;
 			if (!isValidProjectPath(path)) {
-				setStatus("Ruta de archivo inválida");
+				setStatus("Invalid file path");
 				return false;
 			}
 			if (filesRef.current.some((file) => file.path === path)) {
-				setStatus(`El archivo ${path} ya existe`);
+				setStatus(`File ${path} already exists`);
 				return false;
 			}
 			const base = session.documentUri.slice(
@@ -192,7 +192,7 @@ export function useProjectFiles(options: ProjectFilesOptions) {
 		(raw: string): boolean => {
 			const folder = normalizeFolderName(raw);
 			if (!isValidProjectPath(folder)) {
-				setStatus("Nombre de carpeta inválido");
+				setStatus("Invalid folder name");
 				return false;
 			}
 			setPendingFolders((previous) =>
@@ -217,11 +217,11 @@ export function useProjectFiles(options: ProjectFilesOptions) {
 			if (!session || ENTRY_FILES.has(path)) return false;
 			if (!newPath || newPath === path) return true;
 			if (!isValidProjectPath(newPath)) {
-				setStatus("Ruta de archivo inválida");
+				setStatus("Invalid file path");
 				return false;
 			}
 			if (filesRef.current.some((file) => file.path === newPath)) {
-				setStatus(`El archivo ${newPath} ya existe`);
+				setStatus(`File ${newPath} already exists`);
 				return false;
 			}
 			const current = filesRef.current.find((file) => file.path === path);
@@ -292,7 +292,7 @@ export function useProjectFiles(options: ProjectFilesOptions) {
 	const deleteFile = useCallback(
 		(path: string): void => {
 			if (!session || ENTRY_FILES.has(path)) return;
-			if (!window.confirm(`¿Eliminar src/${path}?`)) return;
+			if (!window.confirm(`Delete src/${path}?`)) return;
 			const current = filesRef.current.find((file) => file.path === path);
 			if (!current) return;
 			filesRef.current = filesRef.current.filter((file) => file.path !== path);

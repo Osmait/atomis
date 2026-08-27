@@ -221,7 +221,7 @@ async fn main() {
     state.port.store(bound.port(), Ordering::SeqCst);
     // Same announce line the Tauri shell parses from the Node sidecar.
     println!("ATOMIS_LISTENING={}", bound.port());
-    tracing::info!(%bound, "atomis-server (rust) ready — el código se ejecuta localmente con tus permisos");
+    tracing::info!(%bound, "atomis-server (rust) ready — code runs locally with your permissions");
 
     let shutdown_state = Arc::clone(&state);
     axum::serve(listener, app)

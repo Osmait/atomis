@@ -39,7 +39,7 @@ export function TreeContextMenu(props: TreeContextMenuProps): React.JSX.Element 
 						role="menuitem"
 					>
 						<Lucide icon="chevron-right" size={13} />
-						<span>Abrir</span>
+						<span>Open</span>
 					</button>
 					<button
 						disabled={ENTRY_FILES.has(menu.path)}
@@ -50,7 +50,7 @@ export function TreeContextMenu(props: TreeContextMenuProps): React.JSX.Element 
 						role="menuitem"
 					>
 						<Lucide icon="pencil" size={13} />
-						<span>Renombrar</span>
+						<span>Rename</span>
 					</button>
 					<button
 						disabled={ENTRY_FILES.has(menu.path)}
@@ -61,7 +61,7 @@ export function TreeContextMenu(props: TreeContextMenuProps): React.JSX.Element 
 						role="menuitem"
 					>
 						<Lucide icon="trash-2" size={13} />
-						<span>Eliminar</span>
+						<span>Delete</span>
 					</button>
 					<span className="term-menu-sep" />
 				</>
@@ -80,7 +80,7 @@ export function TreeContextMenu(props: TreeContextMenuProps): React.JSX.Element 
 			>
 				<Lucide icon="file-plus" size={13} />
 				<span>
-					Nuevo archivo
+					New file
 					{menu.folder ? ` en ${menu.folder}/` : ""}
 				</span>
 			</button>
@@ -92,7 +92,7 @@ export function TreeContextMenu(props: TreeContextMenuProps): React.JSX.Element 
 				role="menuitem"
 			>
 				<Lucide icon="folder-plus" size={13} />
-				<span>Nueva carpeta</span>
+				<span>New folder</span>
 			</button>
 		</div>
 	);

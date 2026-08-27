@@ -110,9 +110,9 @@ class Collector(ast.NodeVisitor):
                 None,
             )
             if first is not None:
-                self._record(first, node, "patrón de desestructuración")
+                self._record(first, node, "destructuring pattern")
         elif len(node.targets) > 1 and isinstance(node.targets[0], ast.Name):
-            self._record(node.targets[0], node, "asignación múltiple")
+            self._record(node.targets[0], node, "multiple assignment")
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node):
@@ -120,7 +120,7 @@ class Collector(ast.NodeVisitor):
             if node.value is not None:
                 self._record(node.target, node)
             else:
-                self._record(node.target, node, "declaración sin inicializador")
+                self._record(node.target, node, "declaration without initializer")
         self.generic_visit(node)
 
     def _visit_loop(self, node, variable):

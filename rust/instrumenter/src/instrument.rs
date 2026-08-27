@@ -144,7 +144,7 @@ impl<'a> Collector<'a> {
         match pat {
             syn::Pat::Ident(ident) => {
                 if ident.subpat.is_some() {
-                    Err("patrón con subpatrón (@)")
+                    Err("pattern with a @ subpattern")
                 } else {
                     Ok(Some(ident))
                 }
@@ -152,9 +152,9 @@ impl<'a> Collector<'a> {
             syn::Pat::Type(typed) => Self::local_ident(&typed.pat),
             syn::Pat::Wild(_) => Ok(None),
             syn::Pat::Tuple(_) | syn::Pat::TupleStruct(_) | syn::Pat::Struct(_) => {
-                Err("patrón de desestructuración")
+                Err("destructuring pattern")
             }
-            _ => Err("patrón no soportado"),
+            _ => Err("unsupported pattern"),
         }
     }
 }
@@ -251,7 +251,7 @@ impl<'a, 'ast> Visit<'ast> for Collector<'a> {
                 probe_id: id,
                 name,
                 supported: false,
-                reason: Some("declaración sin inicializador"),
+                reason: Some("declaration without initializer"),
                 range,
                 insertion_byte: None,
                 mode: Mode::Auto,
@@ -415,7 +415,7 @@ mod tests {
         assert_eq!(supported[0].range.start_line, 2);
         let unsupported: Vec<_> = output.probes.iter().filter(|p| !p.supported).collect();
         assert_eq!(unsupported.len(), 1);
-        assert_eq!(unsupported[0].reason, Some("patrón de desestructuración"));
+        assert_eq!(unsupported[0].reason, Some("destructuring pattern"));
     }
 
     #[test]

@@ -59,10 +59,10 @@ export function FileTree(props: FileTreeProps): React.JSX.Element {
 			<input
 				aria-label={
 					draft?.kind === "folder"
-						? "Nombre de la carpeta"
+						? "Folder name"
 						: draft?.kind === "rename"
-							? "Nueva ruta del archivo"
-							: "Nombre del archivo"
+							? "New file path"
+							: "File name"
 				}
 				autoFocus
 				onBlur={() => {
@@ -76,7 +76,7 @@ export function FileTree(props: FileTreeProps): React.JSX.Element {
 					if (event.key === "Enter") props.onDraftCommit(draftValue);
 					else if (event.key === "Escape") props.onDraftCancel();
 				}}
-				placeholder={draft?.kind === "folder" ? "carpeta" : "nombre.ext"}
+				placeholder={draft?.kind === "folder" ? "folder" : "name.ext"}
 				spellCheck={false}
 				value={draftValue}
 			/>
@@ -109,7 +109,7 @@ export function FileTree(props: FileTreeProps): React.JSX.Element {
 					<button
 						className="tree-root-toggle"
 						onClick={props.onToggleSrc}
-						title={props.srcCollapsed ? "Expandir src" : "Colapsar src"}
+						title={props.srcCollapsed ? "Expand src" : "Collapse src"}
 					>
 						<span className="chev">
 							<Lucide
@@ -121,7 +121,7 @@ export function FileTree(props: FileTreeProps): React.JSX.Element {
 					</button>
 					<span className="tree-menu-wrap root-tools">
 						<button
-							aria-label="Acciones del árbol"
+							aria-label="Tree actions"
 							className={`tree-menu-btn${menuOpen ? " open" : ""}`}
 							onClick={() => setMenuOpen((previous) => !previous)}
 						>
@@ -139,7 +139,7 @@ export function FileTree(props: FileTreeProps): React.JSX.Element {
 							role="menuitem"
 						>
 							<Lucide icon="file-plus" size={13} />
-							<span>Crear archivo</span>
+							<span>New file</span>
 						</button>
 						<button
 							onClick={() => {
@@ -149,7 +149,7 @@ export function FileTree(props: FileTreeProps): React.JSX.Element {
 							role="menuitem"
 						>
 							<Lucide icon="folder-plus" size={13} />
-							<span>Crear carpeta</span>
+							<span>New folder</span>
 						</button>
 						<span className="term-menu-sep" />
 						<button
@@ -161,7 +161,7 @@ export function FileTree(props: FileTreeProps): React.JSX.Element {
 							role="menuitem"
 						>
 							<Lucide icon="pencil" size={13} />
-							<span>Renombrar archivo</span>
+							<span>Rename file</span>
 						</button>
 						<button
 							disabled={props.activeIsEntry}
@@ -172,7 +172,7 @@ export function FileTree(props: FileTreeProps): React.JSX.Element {
 							role="menuitem"
 						>
 							<Lucide icon="trash-2" size={13} />
-							<span>Eliminar archivo</span>
+							<span>Delete file</span>
 						</button>
 						<span className="term-menu-sep" />
 						<button
@@ -183,7 +183,7 @@ export function FileTree(props: FileTreeProps): React.JSX.Element {
 							role="menuitem"
 						>
 							<Lucide icon="panel-left-close" size={13} />
-							<span>Ocultar árbol</span>
+							<span>Hide tree</span>
 							<b>⌘B</b>
 						</button>
 					</div>
@@ -217,7 +217,7 @@ export function FileTree(props: FileTreeProps): React.JSX.Element {
 										<button
 											className="folder-add"
 											onClick={() => props.onCreateFile(`${row.path}/`)}
-											title={`Crear archivo en ${row.path}/`}
+											title={`New file in ${row.path}/`}
 										>
 											＋
 										</button>

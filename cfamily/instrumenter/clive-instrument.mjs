@@ -236,10 +236,10 @@ export function instrument(source, options) {
 					recordProbe(
 						varDecls[0],
 						range.end,
-						"declaración sin inicializador",
+						"declaration without initializer",
 					);
 			} else if (varDecls.length > 1 && varDecls[0]?.name)
-				recordProbe(varDecls[0], range.end, "declaración múltiple");
+				recordProbe(varDecls[0], range.end, "multiple declaration");
 		}
 
 		if (

@@ -39,7 +39,7 @@ class InstrumentTests(unittest.TestCase):
         # inner, price, tax, total, total (reassign in while), values
         self.assertEqual(len(supported), 6)
         self.assertEqual(len(unsupported), 1)
-        self.assertEqual(unsupported[0]["reason"], "patrón de desestructuración")
+        self.assertEqual(unsupported[0]["reason"], "destructuring pattern")
 
     def test_multiline_statement_inserts_after_the_closing_line(self):
         result = instrument(SAMPLE, "file:///main.py", True, [], 1)

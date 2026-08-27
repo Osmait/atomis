@@ -1,15 +1,15 @@
-# Release: un solo botón (workflow_dispatch) que versiona la app en todos
-# los manifiestos, commitea + taguea, compila los bundles de escritorio
-# para Linux (AppImage/deb/rpm, x86_64) y macOS (dmg, Apple Silicon) y
-# publica el GitHub Release con notas generadas. Los pushes hechos con
-# GITHUB_TOKEN no re-disparan workflows, así que no hay recursión.
+# Release: a single button (workflow_dispatch) that versions the app in
+# every manifest, commits + tags, builds the desktop bundles for Linux
+# (AppImage/deb/rpm, x86_64) and macOS (dmg, Apple Silicon) and publishes
+# the GitHub Release with generated notes. Pushes made with GITHUB_TOKEN
+# do not re-trigger workflows, so there is no recursion.
 name: Release
 
 on:
   workflow_dispatch:
     inputs:
       bump:
-        description: "Incremento de versión (semver)"
+        description: "Version bump (semver)"
         required: true
         type: choice
         default: patch
@@ -133,16 +133,16 @@ jobs:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           cat > notes.md <<'NOTES'
-          Bundles de escritorio (Tauri v2, sidecar Rust de ~5 MB):
+          Desktop bundles (Tauri v2, ~5 MB Rust sidecar):
 
-          - **Linux x86_64**: AppImage, .deb y .rpm
-          - **macOS Apple Silicon**: .dmg — sin firmar: la primera vez ábrelo
-            con clic derecho → Abrir, o ejecuta
+          - **Linux x86_64**: AppImage, .deb and .rpm
+          - **macOS Apple Silicon**: .dmg — unsigned: the first time, open
+            it via right click → Open, or run
             `xattr -d com.apple.quarantine /Applications/atomis.app`
 
-          Los toolchains de lenguaje (zig, cargo, go, node, python3, clang)
-          se toman de la máquina anfitriona; sin ellos la app arranca en
-          modo degradado por lenguaje.
+          Language toolchains (zig, cargo, go, node, python3, clang) come
+          from the host machine; without them the app starts degraded per
+          language.
           NOTES
           gh release create "v$VERSION" dist-release/* \
             --repo "$GITHUB_REPOSITORY" \

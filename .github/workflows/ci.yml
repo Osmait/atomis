@@ -1,7 +1,7 @@
-# CI: linters (oxlint estricto + clippy -D warnings), typecheck, tests
-# unitarios/instrumentadores y la suite e2e de Playwright sobre el stack
-# real (server Rust + Vite). Patrones tomados de GitButler (jobs por
-# preocupación + rust-cache compartido) y Clash Verge Rev (toolchains).
+# CI: linters (strict oxlint + clippy -D warnings), typecheck, the
+# unit/instrumenter tests and the Playwright e2e suite against the real
+# stack (Rust server + Vite). Patterns borrowed from GitButler (one job
+# per concern + shared rust-cache) and Clash Verge Rev (toolchains).
 name: CI
 
 on:
@@ -73,7 +73,7 @@ jobs:
             apps/server-rs
             rust/instrumenter
       - run: pnpm install --frozen-lockfile
-      - name: Tests (zig, instrumentadores, cargo, vitest)
+      - name: Tests (zig, instrumenters, cargo, vitest)
         run: pnpm test
 
   e2e:
@@ -123,7 +123,7 @@ jobs:
           pnpm go:build
           pnpm --filter @atomis/protocol build
           cargo build --manifest-path apps/server-rs/Cargo.toml
-      - name: Doctor (informativo)
+      - name: Doctor (informational)
         run: pnpm run doctor || true
       - name: E2E
         run: pnpm test:e2e

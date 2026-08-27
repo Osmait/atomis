@@ -48,7 +48,7 @@ describe("EditorChrome", () => {
 		fireEvent.click(screen.getByText("util.zig"));
 		expect(handlers.onSelect).toHaveBeenCalledWith("util.zig");
 		handlers.onSelect.mockClear();
-		const closes = screen.getAllByTitle("Cerrar tab");
+		const closes = screen.getAllByTitle("Close tab");
 		fireEvent.click(closes[1] as HTMLElement);
 		expect(handlers.onCloseTab).toHaveBeenCalledWith("util.zig");
 		expect(handlers.onSelect).not.toHaveBeenCalled();
@@ -60,7 +60,7 @@ describe("EditorChrome", () => {
 		expect(idle.onRun).toHaveBeenCalled();
 		cleanup();
 		const running = renderChrome({ active: true });
-		fireEvent.click(screen.getByLabelText("Detener"));
+		fireEvent.click(screen.getByLabelText("Stop"));
 		expect(running.onStop).toHaveBeenCalled();
 	});
 

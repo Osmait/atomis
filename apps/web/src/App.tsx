@@ -1175,7 +1175,7 @@ export function App(): React.JSX.Element {
 								testSummary
 									? `${testSummary.passed} ok · ${testSummary.failed} err · ${testSummary.skipped} skip${testSummary.leaked ? ` · ${testSummary.leaked} leak` : ""}`
 									: tests.length
-										? `${tests.length} detectados`
+										? `${tests.length} detected`
 										: "—"
 							}
 							testsTone={tone.tests}
@@ -1326,14 +1326,14 @@ export function App(): React.JSX.Element {
 					toggles={[
 						{
 							label: "Auto Run",
-							hint: "ejecuta al dejar de escribir",
+							hint: "runs when you stop typing",
 							on: settings.autoRun,
 							disabled: runDisabled,
 							act: toggleAutoRun,
 						},
 						{
 							label: "Auto Inspect",
-							hint: "valores en línea",
+							hint: "inline values",
 							on: settings.autoInspect,
 							act: () => {
 								sendSettings({

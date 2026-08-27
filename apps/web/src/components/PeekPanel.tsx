@@ -74,11 +74,11 @@ export function PeekPanel({
 				<span className="peek-sub">{subParts.join(" · ")}</span>
 				<span className="peek-actions">
 					{override !== undefined && (
-						<button onClick={onReset} title="Restaurar el valor real">
+						<button onClick={onReset} title="Restore the real value">
 							reset
 						</button>
 					)}
-					<button onClick={onClose} title="Cerrar (clic en el valor)">
+					<button onClick={onClose} title="Close (click the value)">
 						esc
 					</button>
 				</span>
@@ -146,11 +146,11 @@ export function PeekPanel({
 			{value.fields && value.fields.length > 0 && (
 				<div className="peek-fields">
 					<div className="peek-field-row peek-field-head">
-						<span>campo</span>
-						<span>tipo</span>
+						<span>field</span>
+						<span>type</span>
 						<span>offset</span>
-						<span>tamaño</span>
-						<span>valor</span>
+						<span>size</span>
+						<span>value</span>
 					</div>
 					{value.fields.map((field) => {
 						const fieldInt = parseIntegerPreview(field.preview);
@@ -175,7 +175,7 @@ export function PeekPanel({
 			<div className="peek-rows">
 				{value.sizeBytes !== undefined && (
 					<div className="peek-kv">
-						<span>tamaño</span>
+						<span>size</span>
 						<b>{value.sizeBytes} B</b>
 					</div>
 				)}
@@ -209,10 +209,10 @@ export function PeekPanel({
 
 			<div className="peek-note">
 				{override !== undefined
-					? "bits editados localmente · el programa no cambia — reset para volver"
+					? "bits edited locally · the program never changes — reset to go back"
 					: value.fields
-						? "offsets y tamaños reales del compilador"
-						: "clic en un bit para probar variantes en local"}
+						? "compiler-real offsets and sizes"
+						: "click a bit to try local what-ifs"}
 			</div>
 		</div>
 	);

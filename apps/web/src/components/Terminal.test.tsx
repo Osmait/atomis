@@ -64,8 +64,8 @@ function renderTerminal(
 			outputRows={groupOutput(output)}
 			probesLabel="4 / 4"
 			runCommand="zig build run"
-			runStateLabel="listo"
-			stageLabel="ejecutando…"
+			runStateLabel="ready"
+			stageLabel="running…"
 			tab="output"
 			termMax={false}
 			termTone="ok"
@@ -98,7 +98,7 @@ describe("Terminal", () => {
 	it("collapses loop traces into a fold row", () => {
 		const output = [0, 1, 2, 3].map((i) => entry(`iter ${i}\n`, 100 + i, 3));
 		const handlers = renderTerminal({ output, outputRows: groupOutput(output) });
-		const fold = screen.getByText(/traza · src\/main\.zig:3:5/);
+		const fold = screen.getByText(/trace · src\/main\.zig:3:5/);
 		expect(screen.queryByText("iter 0", { selector: "pre" })).toBeNull();
 		fireEvent.click(fold.closest("button") as HTMLElement);
 		expect(handlers.onToggleFold).toHaveBeenCalledWith("loop:src/main.zig:3:5:0");
@@ -106,7 +106,7 @@ describe("Terminal", () => {
 
 	it("switches views from the ⋮ menu", () => {
 		const handlers = renderTerminal();
-		fireEvent.click(screen.getByLabelText("Opciones del terminal"));
+		fireEvent.click(screen.getByLabelText("Terminal options"));
 		fireEvent.click(screen.getByText("Runtime"));
 		expect(handlers.onTab).toHaveBeenCalledWith("runtime");
 	});
@@ -140,7 +140,7 @@ describe("Terminal", () => {
 
 	it("expands the tests bar into the drawer", () => {
 		const handlers = renderTerminal();
-		fireEvent.click(screen.getByTitle("Ver tests (⌘T)"));
+		fireEvent.click(screen.getByTitle("Show tests (⌘T)"));
 		expect(handlers.onOpenDrawer).toHaveBeenCalled();
 	});
 
@@ -150,6 +150,6 @@ describe("Terminal", () => {
 			children: <div data-testid="drawer-stub" />,
 		});
 		expect(screen.getByTestId("drawer-stub")).toBeTruthy();
-		expect(screen.queryByTitle("Ver tests (⌘T)")).toBeNull();
+		expect(screen.queryByTitle("Show tests (⌘T)")).toBeNull();
 	});
 });

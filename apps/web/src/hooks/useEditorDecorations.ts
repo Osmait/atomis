@@ -250,9 +250,9 @@ export function useEditorDecorations(options: EditorDecorationOptions): void {
 			const endColumn = model.getLineMaxColumn(test.line);
 			if (result && !diagnosticLines.has(test.line)) {
 				const label = failing
-					? `✗ ${(result.message ?? "test fallando").split("\n")[0] ?? ""}`
+					? `✗ ${(result.message ?? "test failing").split("\n")[0] ?? ""}`
 					: result.status === "skipped"
-						? "− saltado"
+						? "− skipped"
 						: `✓ ${result.durationMs < 0.05 ? "ok" : `${result.durationMs.toFixed(1)}ms`}`;
 				const messageNode = document.createElement("span");
 				messageNode.className = `test-lens-message${failing ? " failed" : ""}`;

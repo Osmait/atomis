@@ -41,7 +41,7 @@ function OutputEntry(props: OutputEntryProps): React.JSX.Element {
 			tabIndex={location ? 0 : undefined}
 			title={
 				location
-					? `Generado por ${originPath}:${location.line}:${location.column} · ejecución #${location.executionIndex}`
+					? `Emitted by ${originPath}:${location.line}:${location.column} · execution #${location.executionIndex}`
 					: undefined
 			}
 		>
@@ -53,12 +53,12 @@ function OutputEntry(props: OutputEntryProps): React.JSX.Element {
 			</time>
 			{location && (
 				<span className="log-origin-tooltip">
-					↳ {originPath}:{location.line}:{location.column} · ejecución #
+					↳ {originPath}:{location.line}:{location.column} · execution #
 					{location.executionIndex}
 					{location.loop && (
 						<>
 							{" "}
-							· bucle {location.loop.line}:{location.loop.column} ·{" "}
+							· loop {location.loop.line}:{location.loop.column} ·{" "}
 							<b>
 								{location.loop.variable}={location.loop.value}
 							</b>
@@ -113,7 +113,7 @@ interface TerminalProps {
 	children?: React.ReactNode;
 }
 
-/** The dockable terminal: Salida/Problemas/Runtime views behind the ⋮ menu,
+/** The dockable terminal: Salida/Problems/Runtime views behind the ⋮ menu,
  * log provenance hover/click, collapsible folds, and the slim tests bar that
  * expands into the drawer (passed as children). */
 export function Terminal(props: TerminalProps): React.JSX.Element {
@@ -134,13 +134,13 @@ export function Terminal(props: TerminalProps): React.JSX.Element {
 				{tab !== "output" && (
 					<span className="term-view-label">
 						{tab === "problems"
-							? `Problemas${allProblems.length ? ` ${allProblems.length}` : ""}`
+							? `Problems${allProblems.length ? ` ${allProblems.length}` : ""}`
 							: "Runtime"}
 					</span>
 				)}
 				<span className="term-menu-wrap">
 					<button
-						aria-label="Opciones del terminal"
+						aria-label="Terminal options"
 						className={`term-menu-btn${menuOpen ? " open" : ""}`}
 						onClick={() => setMenuOpen((previous) => !previous)}
 					>
@@ -163,7 +163,7 @@ export function Terminal(props: TerminalProps): React.JSX.Element {
 										role="menuitem"
 									>
 										<Lucide icon="panel-right" size={13} />
-										<span>Acoplar a la derecha</span>
+										<span>Dock right</span>
 									</button>
 									<button
 										className={
@@ -178,7 +178,7 @@ export function Terminal(props: TerminalProps): React.JSX.Element {
 										role="menuitem"
 									>
 										<Lucide icon="panel-bottom" size={13} />
-										<span>Acoplar abajo</span>
+										<span>Dock bottom</span>
 									</button>
 								</>
 							)}
@@ -195,7 +195,7 @@ export function Terminal(props: TerminalProps): React.JSX.Element {
 									size={13}
 								/>
 								<span>
-									{props.termMax ? "Restaurar tamaño" : "Maximizar"}
+									{props.termMax ? "Restore size" : "Maximize"}
 								</span>
 							</button>
 							<button
@@ -207,7 +207,7 @@ export function Terminal(props: TerminalProps): React.JSX.Element {
 								role="menuitem"
 							>
 								<Lucide icon="flask-conical" size={13} />
-								<span>{props.drawer ? "Ocultar tests" : "Ver tests"}</span>
+								<span>{props.drawer ? "Hide tests" : "Show tests"}</span>
 								<b>⌘T</b>
 							</button>
 							<span className="term-menu-sep" />
@@ -220,7 +220,7 @@ export function Terminal(props: TerminalProps): React.JSX.Element {
 								role="menuitem"
 							>
 								<Lucide icon="terminal" size={13} />
-								<span>Salida</span>
+								<span>Output</span>
 							</button>
 							<button
 								aria-label={`Problems (${allProblems.length})`}
@@ -233,7 +233,7 @@ export function Terminal(props: TerminalProps): React.JSX.Element {
 							>
 								<Lucide icon="triangle-alert" size={13} />
 								<span>
-									Problemas
+									Problems
 									{allProblems.length ? ` ${allProblems.length}` : ""}
 								</span>
 							</button>
@@ -257,7 +257,7 @@ export function Terminal(props: TerminalProps): React.JSX.Element {
 								role="menuitem"
 							>
 								<Lucide icon="eraser" size={13} />
-								<span>Limpiar salida</span>
+								<span>Clear output</span>
 							</button>
 							<button
 								onClick={() => {
@@ -267,7 +267,7 @@ export function Terminal(props: TerminalProps): React.JSX.Element {
 								role="menuitem"
 							>
 								<Lucide icon="x" size={13} />
-								<span>Cerrar terminal</span>
+								<span>Close terminal</span>
 								<b>⌘J</b>
 							</button>
 						</div>
@@ -300,10 +300,10 @@ export function Terminal(props: TerminalProps): React.JSX.Element {
 									>
 										<span>
 											{props.openFolds.has(row.key) ? "▾" : "▸"} {row.label}{" "}
-											({row.entries.length} líneas)
+											({row.entries.length} lines)
 										</span>
 										<b>
-											{props.openFolds.has(row.key) ? "ocultar" : "ver"}
+											{props.openFolds.has(row.key) ? "hide" : "show"}
 										</b>
 									</button>
 									{props.openFolds.has(row.key) &&
@@ -320,7 +320,7 @@ export function Terminal(props: TerminalProps): React.JSX.Element {
 							),
 						)}
 						{!props.output.length && !props.busy && (
-							<p className="empty-state">La salida aparecerá aquí.</p>
+							<p className="empty-state">Output will show up here.</p>
 						)}
 						{props.active && (
 							<div className="run-stage">
@@ -354,15 +354,15 @@ export function Terminal(props: TerminalProps): React.JSX.Element {
 				)}
 				{tab === "runtime" && (
 					<div className="runtime-grid">
-						<span>Estado</span>
+						<span>State</span>
 						<b>{props.runStateLabel}</b>
-						<span>Código de salida</span>
+						<span>Exit code</span>
 						<b>{props.result?.exitCode ?? "—"}</b>
-						<span>Señal</span>
+						<span>Signal</span>
 						<b>{props.result?.signal ?? "—"}</b>
 						<span>Timeout</span>
-						<b>{props.result?.timedOut ? "sí" : "no"}</b>
-						<span>Probes / valores</span>
+						<b>{props.result?.timedOut ? "yes" : "no"}</b>
+						<span>Probes / values</span>
 						<b>{props.probesLabel}</b>
 						<span>Tests</span>
 						<b>{props.testsLabel}</b>
@@ -378,7 +378,7 @@ export function Terminal(props: TerminalProps): React.JSX.Element {
 				<button
 					className="test-bar"
 					onClick={props.onOpenDrawer}
-					title="Ver tests (⌘T)"
+					title="Show tests (⌘T)"
 				>
 					<Lucide icon="chevron-up" size={13} />
 					<span className="test-bar-label">

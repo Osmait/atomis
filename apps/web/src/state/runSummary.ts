@@ -13,17 +13,17 @@ import type {
  * auto-open rules that fire on `run.finished`.
  */
 export const RUN_STATE_LABELS: Record<RunState, string> = {
-	idle: "listo",
-	debouncing: "esperando",
-	instrumenting: "inspeccionando",
-	compiling: "compilando",
-	running: "ejecutando",
+	idle: "ready",
+	debouncing: "waiting",
+	instrumenting: "inspecting",
+	compiling: "compiling",
+	running: "running",
 	testing: "tests",
-	succeeded: "listo",
+	succeeded: "ready",
 	compile_error: "error",
 	runtime_error: "error",
 	timed_out: "timeout",
-	cancelled: "cancelado",
+	cancelled: "cancelled",
 };
 
 /** Anything between an edit and run.finished, debounce included. */
@@ -104,12 +104,12 @@ export function shouldAutoOpenDrawer(
 
 export function stageLabel(runState: RunState, activePath: string): string {
 	return runState === "instrumenting"
-		? "instrumentando…"
+		? "instrumenting…"
 		: runState === "compiling"
-			? `compilando ${activePath}…`
+			? `compiling ${activePath}…`
 			: runState === "testing"
-				? "ejecutando tests…"
-				: "ejecutando…";
+				? "running tests…"
+				: "running…";
 }
 
 export function zenStatusLabel(options: {
@@ -120,11 +120,11 @@ export function zenStatusLabel(options: {
 	failingCount: number;
 	testCount: number;
 }): string {
-	if (options.active) return "ejecutando…";
+	if (options.active) return "running…";
 	if (options.result === undefined) return RUN_STATE_LABELS[options.runState];
 	if (options.testSummary)
 		return options.failingCount
-			? `${options.failingCount} test${options.failingCount === 1 ? "" : "s"} fallando`
+			? `${options.failingCount} test${options.failingCount === 1 ? "" : "s"} failing`
 			: `${options.testSummary.passed}/${options.testCount} tests ok · ${options.result.executionMs.toFixed(1)}ms`;
 	return options.result.exitCode === 0
 		? `✓ ok · ${options.result.executionMs.toFixed(1)}ms`
@@ -152,11 +152,11 @@ export function drawerSubLabel(options: {
 		options.executionMs === undefined
 			? ""
 			: ` · ${options.executionMs.toFixed(1)}ms`;
-	if (!options.testCount) return "esta ejecución no tiene tests";
-	if (!options.testsDone) return options.busy ? "corriendo…" : "sin ejecutar";
+	if (!options.testCount) return "this run has no tests";
+	if (!options.testsDone) return options.busy ? "running…" : "not run yet";
 	return options.failingCount
-		? `${options.failingCount} fallando${suffix}`
-		: `todos pasando${suffix}`;
+		? `${options.failingCount} failing${suffix}`
+		: `all passing${suffix}`;
 }
 
 export function termTone(options: {
@@ -199,31 +199,31 @@ export function caseTone(
 /** Per-language copy for the drawer's hint row: [with tests, empty]. */
 export const TEST_HINTS: Record<Language, [string, string]> = {
 	zig: [
-		'salen de los bloques test "…" del archivo',
-		'escribe test "nombre" { … } y aparecerá aquí',
+		'come from the file\'s test "…" blocks',
+		'write test "name" { … } and it shows up here',
 	],
 	rust: [
-		"salen de las fn con #[test] del archivo",
-		"escribe #[test] fn nombre() { … } y aparecerá aquí",
+		"come from the file's #[test] fns",
+		"write #[test] fn name() { … } and it shows up here",
 	],
 	go: [
-		"salen de las func TestXxx de *_test.go",
-		"escribe func TestNombre(t *testing.T) { … } en un *_test.go",
+		"come from func TestXxx in *_test.go",
+		"write func TestName(t *testing.T) { … } in a *_test.go",
 	],
 	ts: [
-		"salen de los test()/it() de *.test.ts",
-		"escribe test('nombre', () => { … }) en un *.test.ts",
+		"come from test()/it() in *.test.ts",
+		"write test('name', () => { … }) in a *.test.ts",
 	],
 	py: [
-		"salen de las def test_* de test_*.py",
-		"escribe def test_nombre(): … en un test_*.py",
+		"come from def test_* in test_*.py",
+		"write def test_name(): … in a test_*.py",
 	],
 	c: [
-		"salen de las void test_*(void) de *_test.c",
-		"escribe void test_nombre(void) { … } en un *_test.c",
+		"come from void test_*(void) in *_test.c",
+		"write void test_name(void) { … } in a *_test.c",
 	],
 	cpp: [
-		"salen de las void test_*() de *_test.cpp",
-		"escribe void test_nombre() { … } en un *_test.cpp",
+		"come from void test_*() in *_test.cpp",
+		"write void test_name() { … } in a *_test.cpp",
 	],
 };

@@ -22,9 +22,9 @@ export const APP_FONTS = [
 export const APP_SIZES = [12, 13, 14, 15] as const;
 
 export const LEADER_OPTIONS = [
-	{ id: "space", label: "Espacio" },
-	{ id: "comma", label: "Coma ," },
-	{ id: "backslash", label: "Barra \\" },
+	{ id: "space", label: "Space" },
+	{ id: "comma", label: "Comma ," },
+	{ id: "backslash", label: "Backslash \\" },
 ] as const;
 
 export type LeaderKey = (typeof LEADER_OPTIONS)[number]["id"];

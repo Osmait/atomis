@@ -82,7 +82,7 @@ template <class T> std::string preview_of(const T &value, bool &truncated) {
 	if constexpr (std::is_integral_v<T> && !std::is_same_v<T, bool>)
 		out << +value;
 	else if constexpr (requires(std::ostream &os) { os << value; }) out << value;
-	else out << "<sin operator<<>";
+	else out << "<no operator<<>";
 	std::string text = out.str();
 	if (text.size() > max_preview) {
 		text.resize(max_preview);

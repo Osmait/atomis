@@ -62,15 +62,15 @@ export function CommandPalette({
 				className="palette"
 				onClick={(event) => event.stopPropagation()}
 				role="dialog"
-				aria-label="Buscar archivo"
+				aria-label="Find file"
 			>
 				<div className="palette-input-row">
 					<span className="palette-glyph">⌕</span>
 					<input
 						ref={inputRef}
-						placeholder="buscar o crear archivo…"
+						placeholder="search or create a file…"
 						value={query}
-						aria-label="Buscar archivo"
+						aria-label="Find file"
 						onChange={(event) => {
 							setQuery(event.target.value);
 							setSelected(0);
@@ -107,7 +107,7 @@ export function CommandPalette({
 							>
 								<FileIcon path={file.path} />
 								<span>{file.path}</span>
-								<b>{file.path.endsWith(".zig") ? "run" : "ver"}</b>
+								<b>{file.path.endsWith(".zig") ? "run" : "open"}</b>
 							</button>
 						);
 					})}
@@ -118,11 +118,11 @@ export function CommandPalette({
 							onMouseEnter={() => setSelected(results.length)}
 						>
 							<i className="file-glyph new">＋</i>
-							<span>crear {trimmed}</span>
-							<b>nuevo</b>
+							<span>create {trimmed}</span>
+							<b>new</b>
 						</button>
 					)}
-					{rowCount === 0 && <p className="palette-empty">sin resultados</p>}
+					{rowCount === 0 && <p className="palette-empty">no results</p>}
 				</div>
 				<footer>↵ abrir · ⌘↵ abrir y ejecutar · esc cerrar</footer>
 			</div>

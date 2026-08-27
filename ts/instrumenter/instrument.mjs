@@ -178,11 +178,11 @@ export function instrument(source, uri, autoInspect, manualIds, fileId) {
 						recordProbe(
 							declaration.name,
 							node.end,
-							"declaración sin inicializador",
+							"declaration without initializer",
 						);
-				} else recordProbe(declaration.name, node.end, "patrón de desestructuración");
+				} else recordProbe(declaration.name, node.end, "destructuring pattern");
 			} else if (declarations[0])
-				recordProbe(declarations[0].name, node.end, "declaración múltiple");
+				recordProbe(declarations[0].name, node.end, "multiple declaration");
 		}
 
 		if (
