@@ -117,8 +117,8 @@ export class LspClient {
 			}>("initialize", {
 			processId: null,
 			rootUri: this.workspaceUri,
-			workspaceFolders: [{ uri: this.workspaceUri, name: "ZigLive session" }],
-			clientInfo: { name: "ZigLive", version: "0.1.0" },
+			workspaceFolders: [{ uri: this.workspaceUri, name: "Atomis session" }],
+			clientInfo: { name: "Atomis", version: "0.1.0" },
 			capabilities: {
 				workspace: {
 					configuration: true,
@@ -560,7 +560,7 @@ export class LspClient {
 						"Language server message",
 				),
 			);
-		} else if (message.method === "ziglive/lspRestarted") {
+		} else if (message.method === "atomis/lspRestarted") {
 			this.onStatus("Language server restarted; reconnect the page to reinitialize");
 		}
 		if (message.id !== undefined && message.method)

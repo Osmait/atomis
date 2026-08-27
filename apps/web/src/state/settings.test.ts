@@ -34,8 +34,8 @@ describe("persistence loaders", () => {
 
 	it("fall back to defaults on corrupt JSON", () => {
 		stubStorage({
-			"ziglive.settings.v1": "{no es json",
-			"ziglive.layout.v1": "[]corrupt",
+			"atomis.settings.v1": "{no es json",
+			"atomis.layout.v1": "[]corrupt",
 		});
 		expect(loadSettings()).toEqual(DEFAULT_SETTINGS);
 		expect(loadLayout()).toEqual(DEFAULT_LAYOUT);
@@ -43,11 +43,11 @@ describe("persistence loaders", () => {
 
 	it("merge stored values over the defaults", () => {
 		stubStorage({
-			"ziglive.settings.v1": JSON.stringify({ autoRun: false }),
-			"ziglive.layout.v1": JSON.stringify({ dock: "bottom" }),
-			"ziglive.value-fmt.v1": "hex",
-			"ziglive.vim-mode.v1": "false",
-			"ziglive.language.v1": "rust",
+			"atomis.settings.v1": JSON.stringify({ autoRun: false }),
+			"atomis.layout.v1": JSON.stringify({ dock: "bottom" }),
+			"atomis.value-fmt.v1": "hex",
+			"atomis.vim-mode.v1": "false",
+			"atomis.language.v1": "rust",
 		});
 		expect(loadSettings()).toEqual({ ...DEFAULT_SETTINGS, autoRun: false });
 		expect(loadLayout()).toEqual({ ...DEFAULT_LAYOUT, dock: "bottom" });
@@ -58,14 +58,14 @@ describe("persistence loaders", () => {
 
 	it("reject out-of-catalog appearance and language values", () => {
 		stubStorage({
-			"ziglive.appearance.v1": JSON.stringify({
+			"atomis.appearance.v1": JSON.stringify({
 				theme: "dracula",
 				fontIndex: 99,
 				sizeIndex: -1,
 				leader: "tab",
 			}),
-			"ziglive.value-fmt.v1": "roman",
-			"ziglive.language.v1": "cobol",
+			"atomis.value-fmt.v1": "roman",
+			"atomis.language.v1": "cobol",
 		});
 		expect(loadAppearance()).toEqual(DEFAULT_APPEARANCE);
 		expect(loadValueFmt()).toBe("dec");
@@ -76,10 +76,10 @@ describe("persistence loaders", () => {
 		const store = stubStorage();
 		saveSettings({ ...DEFAULT_SETTINGS, manualProbeIds: ["p1", "p2"] });
 		expect(
-			JSON.parse(store.get("ziglive.settings.v1") ?? "{}").manualProbeIds,
+			JSON.parse(store.get("atomis.settings.v1") ?? "{}").manualProbeIds,
 		).toEqual([]);
 		stubStorage({
-			"ziglive.settings.v1": JSON.stringify({ manualProbeIds: ["p1"] }),
+			"atomis.settings.v1": JSON.stringify({ manualProbeIds: ["p1"] }),
 		});
 		expect(loadSettings().manualProbeIds).toEqual([]);
 	});

@@ -1,7 +1,7 @@
 .{
-    .name = .ziglive,
+    .name = .atomis,
     .version = "0.1.0",
     .minimum_zig_version = "0.16.0",
-    .fingerprint = 0xa3d6566727f887cf,
+    .fingerprint = 0x2041741dcefa9da4,
     .paths = .{ "build.zig", "build.zig.zon", "zig" },
 }

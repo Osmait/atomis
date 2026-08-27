@@ -47,10 +47,10 @@ test("C: probes simple declarations and skips for-init", () => {
 		(C_SAMPLE.match(/\n/g) ?? []).length,
 		(result.generated.match(/\n/g) ?? []).length,
 	);
-	assert.match(result.generated, /int price = 40; __ziglive_probe\("/);
+	assert.match(result.generated, /int price = 40; __atomis_probe\("/);
 	assert.match(result.generated, /"price", price\);/);
-	assert.match(result.generated, /double rate = 1\.5; __ziglive_probe\(/);
-	assert.ok(!/int i = 0; __ziglive_probe/.test(result.generated));
+	assert.match(result.generated, /double rate = 1\.5; __atomis_probe\(/);
+	assert.ok(!/int i = 0; __atomis_probe/.test(result.generated));
 	const supported = result.probes.filter((probe) => probe.supported);
 	assert.equal(supported.length, 3);
 });
@@ -59,9 +59,9 @@ test("C: log markers use the comma operator and track loops", () => {
 	const result = run(C_SAMPLE, "c");
 	assert.match(
 		result.generated,
-		/printf\("iter %d\\n", i\), __ziglive_log_loop\(1, 1, 11, \d+, 10, \d+, "i", i\)/,
+		/printf\("iter %d\\n", i\), __atomis_log_loop\(1, 1, 11, \d+, 10, \d+, "i", i\)/,
 	);
-	assert.match(result.generated, /, __ziglive_log\(2, 1, 13, \d+\)/);
+	assert.match(result.generated, /, __atomis_log\(2, 1, 13, \d+\)/);
 });
 
 test("C++: recovery keeps unknown-type declarations probed", () => {
@@ -69,11 +69,11 @@ test("C++: recovery keeps unknown-type declarations probed", () => {
 	const result = run(source, "cpp");
 	assert.match(result.generated, /"price", price\);/);
 	assert.match(result.generated, /"name", name\);/);
-	assert.match(result.generated, /, __ziglive_log\(1, 1, 7, \d+\)/);
+	assert.match(result.generated, /, __atomis_log\(1, 1, 7, \d+\)/);
 });
 
 test("passthrough for already instrumented sources", () => {
-	const source = 'int main(void) { int x = 1; __ziglive_probe("a", 1, 1, "x", x); }\n';
+	const source = 'int main(void) { int x = 1; __atomis_probe("a", 1, 1, "x", x); }\n';
 	const result = run(source, "c");
 	assert.equal(result.generated, source);
 	assert.equal(result.probes.length, 0);

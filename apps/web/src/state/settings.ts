@@ -1,4 +1,4 @@
-import type { Language } from "@ziglive/protocol";
+import type { Language } from "@atomis/protocol";
 import { VALUE_FMTS, type ValueFmt } from "../lowlevel.js";
 import { WEB_LANGUAGE_PACKS } from "../languages.js";
 import { readStoredItem, writeStoredItem } from "./storage.js";
@@ -40,12 +40,12 @@ export const DEFAULT_LAYOUT: LayoutState = {
 	zen: false,
 };
 
-const SETTINGS_KEY = "ziglive.settings.v1";
-const LAYOUT_KEY = "ziglive.layout.v1";
-const VALUE_FMT_KEY = "ziglive.value-fmt.v1";
-const VIM_MODE_KEY = "ziglive.vim-mode.v1";
-const LANGUAGE_KEY = "ziglive.language.v1";
-const SOURCE_KEY = "ziglive.source.v1";
+const SETTINGS_KEY = "atomis.settings.v1";
+const LAYOUT_KEY = "atomis.layout.v1";
+const VALUE_FMT_KEY = "atomis.value-fmt.v1";
+const VIM_MODE_KEY = "atomis.vim-mode.v1";
+const LANGUAGE_KEY = "atomis.language.v1";
+const SOURCE_KEY = "atomis.source.v1";
 
 export function loadSettings(): Settings {
 	try {

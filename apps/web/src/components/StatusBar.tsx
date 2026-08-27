@@ -1,5 +1,5 @@
 import type React from "react";
-import type { RunState } from "@ziglive/protocol";
+import type { RunState } from "@atomis/protocol";
 import type { FocusZone } from "../state/keyboardNav.js";
 import { RUN_STATE_LABELS } from "../state/runSummary.js";
 import { Lucide } from "./Lucide.js";

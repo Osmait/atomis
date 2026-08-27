@@ -44,7 +44,7 @@ describe("websocketUrl", () => {
 				"/ws/lsp",
 				session,
 				{ lang: "rust" },
-				"https://ziglive.dev/",
+				"https://atomis.dev/",
 			),
 		);
 		expect(url.protocol).toBe("wss:");

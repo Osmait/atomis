@@ -3,7 +3,7 @@ import type {
 	TestCase,
 	TestResultEvent,
 	TestSummaryEvent,
-} from "@ziglive/protocol";
+} from "@atomis/protocol";
 import { describe, expect, it } from "vitest";
 import {
 	computeFailsByFile,

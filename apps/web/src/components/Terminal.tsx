@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import type { RunResult, TestCase } from "@ziglive/protocol";
+import type { RunResult, TestCase } from "@atomis/protocol";
 import { useDismissable } from "../hooks/useDismissable.js";
 import type { OwnedDiagnostic } from "../state/diagnostics.js";
 import type { TerminalRow } from "../state/terminalFolds.js";

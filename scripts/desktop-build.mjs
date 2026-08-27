@@ -2,7 +2,7 @@
 // single ~15 MB native binary replaces the previous ~90 MB Node SEA. It
 // also stages the runtime resources the server reads from disk
 // (instrumenters, session templates, runtimes, web dist). Run before
-// `pnpm --filter @ziglive/desktop bundle:*`.
+// `pnpm --filter @atomis/desktop bundle:*`.
 import { execFileSync, execSync } from "node:child_process";
 import { cpSync, copyFileSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -21,8 +21,8 @@ const triple = /host: (\S+)/.exec(
 if (!triple) throw new Error("rustc -vV did not report a host triple");
 const binariesDir = join(desktop, "binaries");
 mkdirSync(binariesDir, { recursive: true });
-const sidecarBin = join(binariesDir, `ziglive-server-${triple}`);
-copyFileSync(join(root, "apps/server-rs/target/release/ziglive-server"), sidecarBin);
+const sidecarBin = join(binariesDir, `atomis-server-${triple}`);
+copyFileSync(join(root, "apps/server-rs/target/release/atomis-server"), sidecarBin);
 
 // ── 2. runtime resources (paths mirror PROJECT_ROOT layout) ──
 const resources = join(desktop, "resources");

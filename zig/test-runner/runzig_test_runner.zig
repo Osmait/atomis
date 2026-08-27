@@ -1,4 +1,4 @@
-//! Custom test runner for ZigLive sessions. Runs every collected test
+//! Custom test runner for Atomis sessions. Runs every collected test
 //! sequentially and reports NDJSON events on fd 3, mirroring the probe
 //! channel protocol: test_start, test_result and a final test_summary.
 const builtin = @import("builtin");

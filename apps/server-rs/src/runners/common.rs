@@ -84,7 +84,7 @@ pub async fn instrument_files(
         let source_map_path = session
             .root
             .join("generated")
-            .join(format!(".ziglive-{file_id}.json"));
+            .join(format!(".atomis-{file_id}.json"));
         let mut args = config.command_prefix_args.clone();
         args.extend((config.extra_args)(&file.path));
         args.extend([

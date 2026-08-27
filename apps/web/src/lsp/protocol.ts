@@ -1,7 +1,7 @@
 /**
  * Pure LSP wire helpers: coordinate conversion between LSP (0-based) and
  * Monaco (1-based), payload normalization, and canned answers for the
- * server→client requests ZigLive supports. `LspClient` stays in charge of
+ * server→client requests Atomis supports. `LspClient` stays in charge of
  * sockets, providers and Monaco objects.
  */
 /** What can actually travel over the JSON-RPC socket. */

@@ -1,4 +1,4 @@
-// ZigLive session runtime for C++. Injected with `-include` when compiling
+// Atomis session runtime for C++. Injected with `-include` when compiling
 // the generated mirror. The template probe streams any value with an
 // `operator<<` (detected via a C++20 requires-expression) and reports the
 // readable type name extracted from __PRETTY_FUNCTION__.
@@ -11,7 +11,7 @@
 #include <type_traits>
 #include <unistd.h>
 
-namespace __ziglive {
+namespace __atomis {
 
 constexpr std::size_t max_preview = 512;
 
@@ -92,30 +92,30 @@ template <class T> std::string preview_of(const T &value, bool &truncated) {
 	return text;
 }
 
-} // namespace __ziglive
+} // namespace __atomis
 
 template <class T>
-void __ziglive_probe(const char *id, int line, int col, const char *name,
+void __atomis_probe(const char *id, int line, int col, const char *name,
                      const T &value) {
 	bool truncated = false;
-	const std::string preview = __ziglive::preview_of(value, truncated);
+	const std::string preview = __atomis::preview_of(value, truncated);
 	constexpr int bits =
 	    (std::is_integral_v<T> || std::is_enum_v<T>) ? int(sizeof(T)) * 8 : 0;
-	__ziglive::emit(id, line, col, name, __ziglive::type_name<T>(), preview,
+	__atomis::emit(id, line, col, name, __atomis::type_name<T>(), preview,
 	                truncated, int(sizeof(T)), int(alignof(T)), bits);
 }
 
-inline void __ziglive_log(int fd, int file_id, int line, int col) {
-	std::fprintf(fd == 1 ? stdout : stderr, "\x1eZIGLIVE_LOG:%d:%d:%d\x1f",
+inline void __atomis_log(int fd, int file_id, int line, int col) {
+	std::fprintf(fd == 1 ? stdout : stderr, "\x1e" "ATOMIS_LOG:%d:%d:%d\x1f",
 	             file_id, line, col);
 }
 
 template <class T>
-void __ziglive_log_loop(int fd, int file_id, int line, int col, int loop_line,
+void __atomis_log_loop(int fd, int file_id, int line, int col, int loop_line,
                         int loop_col, const char *variable, const T &value) {
 	bool truncated = false;
-	const std::string preview = __ziglive::preview_of(value, truncated);
+	const std::string preview = __atomis::preview_of(value, truncated);
 	std::fprintf(fd == 1 ? stdout : stderr,
-	             "\x1eZIGLIVE_LOG:%d:%d:%d:%d:%d:%s:%s\x1f", file_id, line,
+	             "\x1e" "ATOMIS_LOG:%d:%d:%d:%d:%d:%s:%s\x1f", file_id, line,
 	             col, loop_line, loop_col, variable, preview.c_str());
 }

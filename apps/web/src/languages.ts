@@ -1,4 +1,4 @@
-import type { Language } from "@ziglive/protocol";
+import type { Language } from "@atomis/protocol";
 import type * as Monaco from "monaco-editor";
 import { registerC } from "./editor/cLanguage.js";
 import { registerGo } from "./editor/goLanguage.js";

@@ -1,8 +1,8 @@
 [package]
-name = "ziglive-server"
+name = "atomis-server"
 version = "0.1.0"
 edition = "2021"
-description = "ZigLive orchestrator rewrite: axum/tokio, same WS protocol as apps/server"
+description = "Atomis orchestrator rewrite: axum/tokio, same WS protocol as apps/server"
 
 [dependencies]
 axum = { version = "0.8", features = ["ws"] }

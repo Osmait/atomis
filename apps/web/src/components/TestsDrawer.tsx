@@ -1,5 +1,5 @@
 import type React from "react";
-import type { TestCase, TestResultEvent } from "@ziglive/protocol";
+import type { TestCase, TestResultEvent } from "@atomis/protocol";
 import {
 	FAILING_STATUSES,
 	type RunHistoryEntry,

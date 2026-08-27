@@ -4,7 +4,7 @@ import type {
 	ProbeDescriptor,
 	TestCase,
 	TestResultEvent,
-} from "@ziglive/protocol";
+} from "@atomis/protocol";
 import type * as MonacoApi from "monaco-editor";
 import { languageForPath } from "../languages.js";
 import { displayPreview, type ValueFmt } from "../lowlevel.js";
@@ -177,7 +177,7 @@ export function useEditorDecorations(options: EditorDecorationOptions): void {
 				messageNode.textContent = `${primary.severity === "error" ? "×" : "△"} ${message}`;
 				messageNode.title = `${primary.owner} — ${message}`;
 				const widget: MonacoApi.editor.IContentWidget = {
-					getId: () => `ziglive.errorLens.${line}`,
+					getId: () => `atomis.errorLens.${line}`,
 					getDomNode: () => messageNode,
 					getPosition: () => ({
 						position: { lineNumber: line, column: endColumn },
@@ -259,7 +259,7 @@ export function useEditorDecorations(options: EditorDecorationOptions): void {
 				messageNode.textContent = label;
 				messageNode.title = result.message ?? test.name;
 				const widget: MonacoApi.editor.IContentWidget = {
-					getId: () => `ziglive.testLens.${test.testId}`,
+					getId: () => `atomis.testLens.${test.testId}`,
 					getDomNode: () => messageNode,
 					getPosition: () => ({
 						position: { lineNumber: test.line, column: endColumn },

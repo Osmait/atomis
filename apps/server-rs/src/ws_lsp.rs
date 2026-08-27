@@ -396,7 +396,7 @@ impl LspProxy {
                     &proxy.state,
                     serde_json::json!({
                         "jsonrpc": "2.0",
-                        "method": "ziglive/lspRestarted",
+                        "method": "atomis/lspRestarted",
                         "params": {},
                     })
                     .to_string(),
@@ -464,7 +464,7 @@ impl LspProxy {
         if let Some(stdin) = state.child_stdin.as_mut() {
             let shutdown = serde_json::json!({
                 "jsonrpc": "2.0",
-                "id": "ziglive-shutdown",
+                "id": "atomis-shutdown",
                 "method": "shutdown",
                 "params": null,
             });

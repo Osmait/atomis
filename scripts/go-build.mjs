@@ -1,5 +1,5 @@
 // Builds the Go instrumenter when a Go toolchain is available. Missing go is
-// not an error: ZigLive simply disables Go sessions.
+// not an error: Atomis simply disables Go sessions.
 import { spawnSync } from "node:child_process";
 
 const probe = spawnSync("go", ["version"], { encoding: "utf8" });

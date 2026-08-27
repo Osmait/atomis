@@ -134,7 +134,7 @@ pub async fn run(
     *session.probes.lock().await = outcome.probes.clone();
     emit(RunnerEvent::Catalog(outcome.probes.clone()));
     emit(RunnerEvent::Diagnostic {
-        owner: "ziglive-instrumenter".to_string(),
+        owner: "atomis-instrumenter".to_string(),
         diagnostics: outcome.diagnostics.clone(),
     });
     if !outcome.diagnostics.is_empty() {
@@ -301,7 +301,7 @@ async fn run_tests(
         }
     }));
 
-    let runner = packs::project_root().join("python/test-runner/ziglive_test_runner.py");
+    let runner = packs::project_root().join("python/test-runner/atomis_test_runner.py");
     let mut args: Vec<String> = vec!["-u".into(), runner.to_string_lossy().into_owned()];
     let mut seen = std::collections::HashSet::new();
     for test in catalog {

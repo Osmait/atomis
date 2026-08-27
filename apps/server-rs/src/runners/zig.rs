@@ -94,7 +94,7 @@ pub async fn run(
         let source_map_path = session
             .root
             .join("generated")
-            .join(format!(".ziglive-{file_id}.json"));
+            .join(format!(".atomis-{file_id}.json"));
         let mut args: Vec<String> = vec![
             "--input".into(),
             source_path.to_string_lossy().into_owned(),
@@ -183,7 +183,7 @@ pub async fn run(
     *session.probes.lock().await = probes.clone();
     emit(RunnerEvent::Catalog(probes.clone()));
     emit(RunnerEvent::Diagnostic {
-        owner: "ziglive-instrumenter".to_string(),
+        owner: "atomis-instrumenter".to_string(),
         diagnostics: instrument_diagnostics.clone(),
     });
     if !instrument_diagnostics.is_empty() {
@@ -280,7 +280,7 @@ pub async fn run(
             });
         }),
     );
-    let executable = session.root.join("zig-out/bin/ziglive-session");
+    let executable = session.root.join("zig-out/bin/atomis-session");
     let run_events = events.clone();
     let execution = {
         let forwarder = &mut forwarder;
@@ -481,7 +481,7 @@ async fn run_tests(
         }
     }));
 
-    let executable = session.root.join("zig-out/bin/ziglive-tests");
+    let executable = session.root.join("zig-out/bin/atomis-tests");
     let stderr_state = Arc::clone(&state);
     let execution = supervisor::run(
         &executable.to_string_lossy(),

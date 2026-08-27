@@ -9,7 +9,7 @@ import type {
 	TestCase,
 	TestResultEvent,
 	TestSummaryEvent,
-} from "@ziglive/protocol";
+} from "@atomis/protocol";
 import type * as MonacoApi from "monaco-editor";
 import {
 	diagnosticDocPath,
@@ -127,7 +127,7 @@ export function useRuntimeEvents(options: RuntimeEventsOptions) {
 						...previous,
 						compiler: [],
 						runtime: [],
-						"ziglive-instrumenter": [],
+						"atomis-instrumenter": [],
 					}));
 					const monaco = monacoRef.current;
 					if (monaco)
@@ -135,7 +135,7 @@ export function useRuntimeEvents(options: RuntimeEventsOptions) {
 							for (const owner of [
 								"compiler",
 								"runtime",
-								"ziglive-instrumenter",
+								"atomis-instrumenter",
 							])
 								monaco.editor.setModelMarkers(model, owner, []);
 				}

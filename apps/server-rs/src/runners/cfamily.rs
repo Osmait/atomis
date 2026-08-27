@@ -37,16 +37,16 @@ pub const C_CONFIG: CFamilyConfig = CFamilyConfig {
     language: Language::C,
     compiler: "clang",
     std: "c17",
-    runtime_header: "ziglive_runtime.h",
-    test_main_name: "__ziglive_test_main.c",
+    runtime_header: "atomis_runtime.h",
+    test_main_name: "__atomis_test_main.c",
 };
 
 pub const CPP_CONFIG: CFamilyConfig = CFamilyConfig {
     language: Language::Cpp,
     compiler: "clang++",
     std: "c++20",
-    runtime_header: "ziglive_runtime.hpp",
-    test_main_name: "__ziglive_test_main.cpp",
+    runtime_header: "atomis_runtime.hpp",
+    test_main_name: "__atomis_test_main.cpp",
 };
 
 impl CFamilyConfig {
@@ -173,21 +173,21 @@ pub fn build_test_main(tests: &[TestCase], config: &CFamilyConfig) -> String {
 
 {declarations}
 
-struct __ziglive_test {{
+struct __atomis_test {{
 	const char *name;
 	void (*fn)(void);
 }};
 
-static struct __ziglive_test __ziglive_tests[] = {{
+static struct __atomis_test __atomis_tests[] = {{
 {entries}
 }};
 
-static void __ziglive_write(const char *record) {{
+static void __atomis_write(const char *record) {{
 	ssize_t written = write(3, record, strlen(record));
 	(void)written;
 }}
 
-static long long __ziglive_now(void) {{
+static long long __atomis_now(void) {{
 	struct timespec ts;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
 	return (long long)ts.tv_sec * 1000000000LL + ts.tv_nsec;
@@ -195,26 +195,26 @@ static long long __ziglive_now(void) {{
 
 int main(void) {{
 	char record[512];
-	int total = (int)(sizeof __ziglive_tests / sizeof __ziglive_tests[0]);
+	int total = (int)(sizeof __atomis_tests / sizeof __atomis_tests[0]);
 	int passed = 0;
 	for (int index = 0; index < total; index++) {{
 		snprintf(record, sizeof record,
 			"{{\"protocolVersion\":1,\"kind\":\"test_start\",\"index\":%d,\"name\":\"%s\"}}\n",
-			index, __ziglive_tests[index].name);
-		__ziglive_write(record);
-		long long started = __ziglive_now();
-		__ziglive_tests[index].fn();
-		long long elapsed = __ziglive_now() - started;
+			index, __atomis_tests[index].name);
+		__atomis_write(record);
+		long long started = __atomis_now();
+		__atomis_tests[index].fn();
+		long long elapsed = __atomis_now() - started;
 		snprintf(record, sizeof record,
 			"{{\"protocolVersion\":1,\"kind\":\"test_result\",\"index\":%d,\"status\":\"passed\",\"durationNs\":%lld,\"name\":\"%s\"}}\n",
-			index, elapsed, __ziglive_tests[index].name);
-		__ziglive_write(record);
+			index, elapsed, __atomis_tests[index].name);
+		__atomis_write(record);
 		passed++;
 	}}
 	snprintf(record, sizeof record,
 		"{{\"protocolVersion\":1,\"kind\":\"test_summary\",\"passed\":%d,\"failed\":0,\"skipped\":0,\"leaked\":0}}\n",
 		passed);
-	__ziglive_write(record);
+	__atomis_write(record);
 	return 0;
 }}
 "#
@@ -271,7 +271,7 @@ pub async fn run(
     *session.probes.lock().await = outcome.probes.clone();
     emit(RunnerEvent::Catalog(outcome.probes.clone()));
     emit(RunnerEvent::Diagnostic {
-        owner: "ziglive-instrumenter".to_string(),
+        owner: "atomis-instrumenter".to_string(),
         diagnostics: outcome.diagnostics.clone(),
     });
     if !outcome.diagnostics.is_empty() {
@@ -475,7 +475,7 @@ async fn run_tests(
                 format!("-std={}", config.std),
                 "-g".into(),
                 "-O0".into(),
-                "-Dmain=__ziglive_user_main".into(),
+                "-Dmain=__atomis_user_main".into(),
                 "-c".into(),
                 session
                     .root

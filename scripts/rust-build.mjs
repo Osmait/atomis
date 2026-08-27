@@ -1,5 +1,5 @@
 // Builds the Rust instrumenter when a cargo toolchain is available. Missing
-// cargo is not an error: ZigLive simply disables Rust sessions.
+// cargo is not an error: Atomis simply disables Rust sessions.
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 

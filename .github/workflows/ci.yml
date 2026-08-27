@@ -36,12 +36,12 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: ziglive
+          shared-key: atomis
           workspaces: |
             apps/server-rs
       - run: pnpm install --frozen-lockfile
       - name: Build protocol types
-        run: pnpm --filter @ziglive/protocol build
+        run: pnpm --filter @atomis/protocol build
       - name: Lint (oxlint + clippy)
         run: pnpm lint
       - name: Typecheck (packages + e2e)
@@ -68,7 +68,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: ziglive
+          shared-key: atomis
           workspaces: |
             apps/server-rs
             rust/instrumenter
@@ -97,7 +97,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: ziglive
+          shared-key: atomis
           workspaces: |
             apps/server-rs
             rust/instrumenter
@@ -121,7 +121,7 @@ jobs:
           pnpm zig:build
           pnpm rust:build
           pnpm go:build
-          pnpm --filter @ziglive/protocol build
+          pnpm --filter @atomis/protocol build
           cargo build --manifest-path apps/server-rs/Cargo.toml
       - name: Doctor (informativo)
         run: pnpm run doctor || true

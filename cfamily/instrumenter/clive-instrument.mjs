@@ -1,4 +1,4 @@
-// clive-instrument: the ZigLive source instrumenter for C and C++. Parses
+// clive-instrument: the Atomis source instrumenter for C and C++. Parses
 // the file with clang's JSON AST dump using EMPTY STUBS for system includes
 // (only the syntactic shape is needed, and clang's recovery keeps VarDecls
 // with names and byte offsets even when types are unknown), then splices
@@ -35,7 +35,7 @@ function probeId(uri, startByte, endByte, name) {
 }
 
 function makeStubs(source) {
-	const stubDir = mkdtempSync(join(tmpdir(), "ziglive-stubs-"));
+	const stubDir = mkdtempSync(join(tmpdir(), "atomis-stubs-"));
 	for (const match of source.matchAll(/^\s*#\s*include\s*<([^>]+)>/gm)) {
 		const header = match[1];
 		if (header.includes("..")) continue;
@@ -48,7 +48,7 @@ function makeStubs(source) {
 
 export function instrument(source, options) {
 	const { inputPath, uri, lang, autoInspect, manualIds, fileId } = options;
-	if (source.includes("__ziglive_probe(") || source.includes("__ziglive_log"))
+	if (source.includes("__atomis_probe(") || source.includes("__atomis_log"))
 		return { generated: source, probes: [] };
 
 	const stubDir = makeStubs(source);
@@ -120,7 +120,7 @@ export function instrument(source, options) {
 		if (active)
 			insertions.push({
 				offset: statementEnd,
-				text: ` __ziglive_probe("${id}", ${line}, ${column}, "${name}", ${name});`,
+				text: ` __atomis_probe("${id}", ${line}, ${column}, "${name}", ${name});`,
 			});
 		probes.push({
 			probeId: id,
@@ -262,8 +262,8 @@ export function instrument(source, options) {
 				const enclosing = loops.at(-1);
 				const marker =
 					enclosing?.variable
-						? `, __ziglive_log_loop(${fd}, ${fileId}, ${range.beginLine}, ${range.beginCol}, ${enclosing.line}, ${enclosing.column}, "${enclosing.variable}", ${enclosing.variable})`
-						: `, __ziglive_log(${fd}, ${fileId}, ${range.beginLine}, ${range.beginCol})`;
+						? `, __atomis_log_loop(${fd}, ${fileId}, ${range.beginLine}, ${range.beginCol}, ${enclosing.line}, ${enclosing.column}, "${enclosing.variable}", ${enclosing.variable})`
+						: `, __atomis_log(${fd}, ${fileId}, ${range.beginLine}, ${range.beginCol})`;
 				insertions.push({ offset: range.end, text: marker });
 			}
 		}
@@ -293,8 +293,8 @@ export function instrument(source, options) {
 					)
 					.at(-1);
 				const marker = enclosing?.variable
-					? `, __ziglive_log_loop(${fd}, ${fileId}, ${lineNumber}, ${(match[1]?.length ?? 0) + 1}, ${enclosing.line}, ${enclosing.column}, "${enclosing.variable}", ${enclosing.variable})`
-					: `, __ziglive_log(${fd}, ${fileId}, ${lineNumber}, ${(match[1]?.length ?? 0) + 1})`;
+					? `, __atomis_log_loop(${fd}, ${fileId}, ${lineNumber}, ${(match[1]?.length ?? 0) + 1}, ${enclosing.line}, ${enclosing.column}, "${enclosing.variable}", ${enclosing.variable})`
+					: `, __atomis_log(${fd}, ${fileId}, ${lineNumber}, ${(match[1]?.length ?? 0) + 1})`;
 				insertions.push({ offset: offset + semicolon, text: marker });
 			}
 			offset += lineText.length + 1;

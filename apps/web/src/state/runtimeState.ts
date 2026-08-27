@@ -1,4 +1,4 @@
-import type { ProbeFieldLayout, ProbeValueEvent } from "@ziglive/protocol";
+import type { ProbeFieldLayout, ProbeValueEvent } from "@atomis/protocol";
 
 export interface InlineValue {
 	probeId: string;

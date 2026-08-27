@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""pylive-instrument: the ZigLive source instrumenter for Python.
+"""pylive-instrument: the Atomis source instrumenter for Python.
 
 Mirrors the runzig/rustlive/golive/tslive contract — parse one file with the
 stdlib `ast` module, record probe insertion points for simple assignments
@@ -83,7 +83,7 @@ class Collector(ast.NodeVisitor):
                 (
                     end_line,
                     end_col,
-                    '; __ziglive_probe("%s", %d, %d, "%s", %s)'
+                    '; __atomis_probe("%s", %d, %d, "%s", %s)'
                     % (
                         probe_id,
                         name_node.lineno,
@@ -174,7 +174,7 @@ class Collector(ast.NodeVisitor):
                     (
                         end_line,
                         end_col,
-                        '; __ziglive_log_loop(1, %d, %d, %d, %d, %d, "%s", %s)'
+                        '; __atomis_log_loop(1, %d, %d, %d, %d, %d, "%s", %s)'
                         % (
                             self.file_id,
                             node.lineno,
@@ -191,7 +191,7 @@ class Collector(ast.NodeVisitor):
                     (
                         end_line,
                         end_col,
-                        "; __ziglive_log(1, %d, %d, %d)"
+                        "; __atomis_log(1, %d, %d, %d)"
                         % (self.file_id, node.lineno, node.col_offset + 1),
                     )
                 )
@@ -199,7 +199,7 @@ class Collector(ast.NodeVisitor):
 
 
 def instrument(source, uri, auto_inspect, manual_ids, file_id):
-    if "__ziglive_probe(" in source or "__ziglive_log" in source:
+    if "__atomis_probe(" in source or "__atomis_log" in source:
         return {"generated": source, "probes": [], "parseDiagnostics": []}
     try:
         tree = ast.parse(source)

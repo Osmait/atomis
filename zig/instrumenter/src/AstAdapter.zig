@@ -192,7 +192,7 @@ fn unsupportedInitializer(tree: Ast, init_node: Ast.Node.Index) bool {
 fn probeId(uri: []const u8, start: usize, end: usize, name: []const u8) [32]u8 {
     var hash: [32]u8 = undefined;
     var hasher = std.crypto.hash.sha2.Sha256.init(.{});
-    hasher.update("ziglive-probe-v1\x00");
+    hasher.update("atomis-probe-v1\x00");
     hasher.update(uri);
     var numbers: [16]u8 = undefined;
     std.mem.writeInt(u64, numbers[0..8], start, .little);
@@ -429,7 +429,7 @@ pub fn instrument(
     var generated: std.ArrayList(u8) = .empty;
     try generated.appendSlice(allocator, source[0..source.len]);
     for (insertions.items) |insertion| switch (insertion.kind) {
-        .comment_open => try generated.insertSlice(allocator, insertion.offset, "// ziglive: observed discard "),
+        .comment_open => try generated.insertSlice(allocator, insertion.offset, "// atomis: observed discard "),
         .log_block_open => try generated.insertSlice(allocator, insertion.offset, "{ "),
         .log_marker => {
             var snippet: [384]u8 = undefined;

@@ -5,7 +5,7 @@ import type {
 	TestCase,
 	TestResultEvent,
 	TestSummaryEvent,
-} from "@ziglive/protocol";
+} from "@atomis/protocol";
 
 /**
  * Derived run/test summaries shared by the status bar, the terminal header,

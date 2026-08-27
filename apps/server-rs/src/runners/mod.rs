@@ -91,12 +91,12 @@ pub struct RunnerOutcome {
 
 pub const RUNTIME_FILES: [&str; 7] = [
     "runzig_runtime.zig",
-    "ziglive_runtime.rs",
-    "ziglive_runtime.go",
-    "__ziglive_runtime.mjs",
+    "atomis_runtime.rs",
+    "atomis_runtime.go",
+    "__atomis_runtime.mjs",
     "sitecustomize.py",
-    "ziglive_runtime.h",
-    "ziglive_runtime.hpp",
+    "atomis_runtime.h",
+    "atomis_runtime.hpp",
 ];
 
 /// Clears the generated mirror while preserving every language runtime that

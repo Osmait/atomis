@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ZigLive test runner for Python sessions.
+"""Atomis test runner for Python sessions.
 
 Imports every given test file, runs its `test_*` functions sequentially, and
 reports NDJSON events on fd 3 with the same schema as the Zig custom runner

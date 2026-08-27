@@ -95,7 +95,7 @@ pub async fn run_doctor() -> Vec<DoctorCheck> {
             expected: "0.16.x".to_string(),
             command: format!("{tool} {}", args.join(" ")),
             help: Some(format!(
-                "Install {tool} 0.16.x on PATH. ZigLive never downloads it automatically."
+                "Install {tool} 0.16.x on PATH. Atomis never downloads it automatically."
             )),
         });
     }
@@ -160,7 +160,7 @@ pub async fn run_doctor() -> Vec<DoctorCheck> {
 
     // Native compile/run + writable temp storage.
     let directory = std::env::temp_dir().join(format!(
-        "ziglive-doctor-{}",
+        "atomis-doctor-{}",
         crate::util::random_hex(6)
     ));
     let _ = tokio::fs::create_dir_all(&directory).await;

@@ -5,7 +5,7 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .Debug });
 
     const check_exe = b.addExecutable(.{
-        .name = "ziglive-check",
+        .name = "atomis-check",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
             .target = target,
@@ -16,7 +16,7 @@ pub fn build(b: *std.Build) void {
     check.dependOn(&check_exe.step);
 
     const executable = b.addExecutable(.{
-        .name = "ziglive-session",
+        .name = "atomis-session",
         .root_module = b.createModule(.{
             .root_source_file = b.path("generated/main.zig"),
             .target = target,
@@ -37,7 +37,7 @@ pub fn build(b: *std.Build) void {
         }),
         .test_runner = .{ .path = b.path("runzig_test_runner.zig"), .mode = .simple },
     });
-    const install_tests = b.addInstallArtifact(tests, .{ .dest_sub_path = "ziglive-tests" });
+    const install_tests = b.addInstallArtifact(tests, .{ .dest_sub_path = "atomis-tests" });
     const tests_step = b.step("tests", "Build the visible-source test binary");
     tests_step.dependOn(&install_tests.step);
 }
