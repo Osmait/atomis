@@ -1,13 +1,22 @@
 {
   "name": "@atomis/protocol",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
-  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.build.json"
   },
-  "dependencies": { "zod": "4.4.3" },
-  "devDependencies": { "typescript": "7.0.2" }
+  "dependencies": {
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2"
+  }
 }
