@@ -105,7 +105,15 @@ pub async fn run(command: &str, args: &[String], options: RunOptions<'_>) -> Pro
     let mut probe_writer_keepalive: Option<OwnedFd> = None;
     if options.probe_fd {
         let mut fds = [0i32; 2];
+        // pipe2 is Linux-only; macOS needs pipe + FD_CLOEXEC via fcntl.
+        #[cfg(target_os = "linux")]
         let ok = unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) } == 0;
+        #[cfg(not(target_os = "linux"))]
+        let ok = unsafe {
+            libc::pipe(fds.as_mut_ptr()) == 0
+                && libc::fcntl(fds[0], libc::F_SETFD, libc::FD_CLOEXEC) == 0
+                && libc::fcntl(fds[1], libc::F_SETFD, libc::FD_CLOEXEC) == 0
+        };
         if !ok {
             result.stderr = "failed to create probe pipe".into();
             result.exit_code = None;
