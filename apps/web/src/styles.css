@@ -1401,6 +1401,132 @@ input:focus-visible,
 	padding: 4px 12px;
 }
 
+.deps-panel {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 10px 12px;
+	overflow: auto;
+}
+
+.deps-add {
+	display: flex;
+	gap: 6px;
+}
+
+.deps-add input {
+	background: var(--panel-side);
+	border: 1px solid var(--panel-border);
+	border-radius: 6px;
+	color: var(--text);
+	flex: 1;
+	font: inherit;
+	padding: 5px 8px;
+}
+
+.deps-add input:focus {
+	border-color: var(--mauve);
+	outline: none;
+}
+
+.deps-install {
+	background: var(--mauve);
+	border: 0;
+	border-radius: 6px;
+	color: var(--base);
+	cursor: pointer;
+	font: inherit;
+	font-weight: 600;
+	padding: 5px 12px;
+}
+
+.deps-install:disabled {
+	cursor: default;
+	opacity: 0.5;
+}
+
+.deps-note {
+	color: var(--dim);
+	font-size: 11px;
+	margin: 0;
+}
+
+.deps-error {
+	color: var(--red);
+	font-size: 11px;
+	margin: 0;
+	white-space: pre-wrap;
+}
+
+.deps-list {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.deps-row {
+	align-items: center;
+	border-radius: 5px;
+	display: flex;
+	gap: 8px;
+	padding: 3px 6px;
+}
+
+.deps-row:hover {
+	background: var(--panel-side);
+}
+
+.deps-name {
+	color: var(--text);
+	flex: 1;
+}
+
+.deps-version {
+	color: var(--dim);
+	font-size: 11px;
+}
+
+.deps-row button {
+	background: none;
+	border: 0;
+	color: var(--dim);
+	cursor: pointer;
+	opacity: 0;
+	padding: 2px;
+}
+
+.deps-row:hover button {
+	opacity: 1;
+}
+
+.deps-row button:hover {
+	color: var(--red);
+}
+
+.deps-output {
+	background: var(--panel-side);
+	border-radius: 6px;
+	color: var(--subtext);
+	font-size: 11px;
+	margin: 0;
+	max-height: 160px;
+	overflow: auto;
+	padding: 8px;
+	white-space: pre-wrap;
+}
+
+.deps-manifest {
+	align-self: flex-start;
+	background: none;
+	border: 0;
+	color: var(--dim);
+	cursor: pointer;
+	font: inherit;
+	font-size: 11px;
+	padding: 0;
+	text-decoration: underline;
+}
+
 .qs-match {
 	color: var(--yellow) !important;
 	font-weight: 700;
@@ -1543,7 +1669,7 @@ input:focus-visible,
 }
 
 .startup-logo {
-	border-radius: 22%;
+	/* The PNG already carries its rounded silhouette. */
 	height: 96px;
 	width: 96px;
 }

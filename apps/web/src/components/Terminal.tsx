@@ -6,7 +6,7 @@ import type { TerminalRow } from "../state/terminalFolds.js";
 import type { LogSourceLocation, TerminalEntry } from "../types.js";
 import { Lucide } from "./Lucide.js";
 
-export type TerminalTab = "output" | "problems" | "runtime";
+export type TerminalTab = "output" | "problems" | "runtime" | "deps";
 
 interface OutputEntryProps {
 	entry: TerminalEntry;
@@ -110,6 +110,9 @@ interface TerminalProps {
 	drawerScore: string;
 	tests: TestCase[];
 	caseTone: (testId: string) => string;
+	depsPanel: React.ReactNode;
+	depsCount: number;
+	depsBusy: boolean;
 	children?: React.ReactNode;
 }
 
@@ -135,7 +138,9 @@ export function Terminal(props: TerminalProps): React.JSX.Element {
 					<span className="term-view-label">
 						{tab === "problems"
 							? `Problems${allProblems.length ? ` ${allProblems.length}` : ""}`
-							: "Runtime"}
+							: tab === "deps"
+								? `Dependencies${props.depsCount ? ` ${props.depsCount}` : ""}`
+								: "Runtime"}
 					</span>
 				)}
 				<span className="term-menu-wrap">
@@ -248,6 +253,21 @@ export function Terminal(props: TerminalProps): React.JSX.Element {
 								<Lucide icon="activity" size={13} />
 								<span>Runtime</span>
 							</button>
+							<button
+								className={tab === "deps" ? "on" : ""}
+								onClick={() => {
+									props.onTab("deps");
+									setMenuOpen(false);
+								}}
+								role="menuitem"
+							>
+								<Lucide icon="package" size={13} />
+								<span>
+									Dependencies
+									{props.depsCount ? ` ${props.depsCount}` : ""}
+								</span>
+								{props.depsBusy && <b className="spin">⟳</b>}
+							</button>
 							<span className="term-menu-sep" />
 							<button
 								onClick={() => {
@@ -352,6 +372,7 @@ export function Terminal(props: TerminalProps): React.JSX.Element {
 						)}
 					</ul>
 				)}
+				{tab === "deps" && props.depsPanel}
 				{tab === "runtime" && (
 					<div className="runtime-grid">
 						<span>State</span>

@@ -90,6 +90,9 @@ pub struct SandboxPolicy {
     pub devices: Vec<PathBuf>,
     /// The real user home, kept so toolchain roots can still be pointed at.
     pub home: Option<PathBuf>,
+    /// TCP ports the process may CONNECT to. Empty means no network at all.
+    /// Binding is never allowed: a confined process may fetch, never serve.
+    pub allow_connect_ports: Vec<u16>,
 }
 
 /// System locations every toolchain needs to exec and load libraries from.
@@ -130,6 +133,21 @@ pub fn policy_for(workspace: &Path, project_root: &Path, home: Option<&Path>) ->
         read_only,
         devices: DEVICES.iter().map(PathBuf::from).collect(),
         home: home.map(Path::to_path_buf),
+        allow_connect_ports: Vec::new(),
+    }
+}
+
+/// Ports a dependency fetch needs: HTTPS, plus plain HTTP for the
+/// redirects some registries still serve.
+pub const FETCH_PORTS: &[u16] = &[443, 80];
+
+/// The same policy with outbound HTTPS opened, for the one step that needs
+/// it: installing dependencies. Everything else — the filesystem, binding a
+/// port, every other port — stays exactly as restricted.
+pub fn with_fetch_network(policy: &SandboxPolicy) -> SandboxPolicy {
+    SandboxPolicy {
+        allow_connect_ports: FETCH_PORTS.to_vec(),
+        ..policy.clone()
     }
 }
 
@@ -171,8 +189,8 @@ pub fn child_env(policy: &SandboxPolicy) -> Vec<(String, String)> {
 mod imp {
     use super::{SandboxPolicy, SandboxSupport};
     use landlock::{
-        path_beneath_rules, Access, AccessFs, AccessNet, CompatLevel, Compatible, Ruleset,
-        RulesetAttr, RulesetCreatedAttr, ABI,
+        path_beneath_rules, Access, AccessFs, AccessNet, CompatLevel, Compatible, NetPort, Ruleset,
+        RulesetAttr, RulesetCreatedAttr, RulesetError, ABI,
     };
     use std::os::fd::{AsRawFd, OwnedFd};
 
@@ -207,6 +225,11 @@ mod imp {
                 .handle_access(AccessNet::from_all(abi))
                 .map_err(|error| error.to_string())?;
         }
+        let connect_ports: Vec<u16> = if support == SandboxSupport::FilesAndNetwork {
+            policy.allow_connect_ports.clone()
+        } else {
+            Vec::new()
+        };
         let created = ruleset
             .create()
             .map_err(|error| error.to_string())?
@@ -224,7 +247,15 @@ mod imp {
                 existing(&policy.devices),
                 AccessFs::ReadFile | AccessFs::WriteFile | AccessFs::Truncate,
             ))
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| error.to_string())?
+            // Only the listed ports, and only outbound: AccessNet::BindTcp
+            // stays handled with no rule, so nothing can listen.
+            .add_rules(
+                connect_ports
+                    .iter()
+                    .map(|port| Ok(NetPort::new(*port, AccessNet::ConnectTcp))),
+            )
+            .map_err(|error: RulesetError| error.to_string())?;
         // No network rules are added, so with AccessNet handled every TCP
         // bind and connect is denied (UDP is outside Landlock's scope).
         let fd: Option<OwnedFd> = created.into();
@@ -514,6 +545,56 @@ mod tests {
             "the rest of the read-only tree must stay read-only"
         );
         std::fs::remove_dir_all(&home).ok();
+    }
+
+    /// The fetch grant must be exactly that: outbound HTTPS and nothing
+    /// else. If it ever widened, a dependency install would become a hole.
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn the_fetch_grant_opens_https_and_nothing_else() {
+        if detect_support() != SandboxSupport::FilesAndNetwork {
+            eprintln!("landlock ABI < 4: skipping fetch-grant test");
+            return;
+        }
+        let workspace = std::env::temp_dir().join(format!(
+            "atomis-sandbox-fetch-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&workspace).expect("workspace");
+        let base = policy_for(&workspace, Path::new("/usr"), None);
+        let fetching = with_fetch_network(&base);
+        let connect = |port: u16| {
+            format!("import socket;s=socket.socket();s.settimeout(3);s.connect(('1.1.1.1',{port}))")
+        };
+        assert!(
+            run_sandboxed(&fetching, &["python3", "-c", &connect(443)]),
+            "HTTPS must be reachable while installing"
+        );
+        assert!(
+            !run_sandboxed(&fetching, &["python3", "-c", &connect(22)]),
+            "every other port stays closed"
+        );
+        assert!(
+            !run_sandboxed(
+                &fetching,
+                &[
+                    "python3",
+                    "-c",
+                    "import socket;s=socket.socket();s.bind(('127.0.0.1',0))",
+                ],
+            ),
+            "a fetching process still may not listen"
+        );
+        // And the base policy is untouched: no network at all.
+        assert!(
+            !run_sandboxed(&base, &["python3", "-c", &connect(443)]),
+            "the grant must not leak into the normal policy"
+        );
+        assert!(
+            base.allow_connect_ports.is_empty(),
+            "with_fetch_network must not mutate the policy it copies"
+        );
+        std::fs::remove_dir_all(&workspace).ok();
     }
 
     #[test]

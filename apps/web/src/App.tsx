@@ -20,6 +20,7 @@ import {
 	type VimAdapterInstance,
 } from "monaco-vim";
 import { CommandPalette } from "./components/CommandPalette.js";
+import { DepsPanel } from "./components/DepsPanel.js";
 import {
 	EditorContextMenu,
 	TreeContextMenu,
@@ -246,6 +247,14 @@ export function App(): React.JSX.Element {
 		history,
 		drawer,
 		setDrawer,
+		deps,
+		depsSupported,
+		depsManifest,
+		depsHint,
+		depsUntrusted,
+		depsState,
+		depsError,
+		depsOutput,
 		openFolds,
 		setOpenFolds,
 		handleRuntimeEvent,
@@ -1095,6 +1104,17 @@ export function App(): React.JSX.Element {
 		[],
 	);
 
+	// The manifest belongs to the session's language, so the catalog is
+	// refreshed whenever either changes.
+	useEffect(() => {
+		if (!session) return;
+		const timer = setTimeout(
+			() => sendRuntime({ type: "deps.list", sessionId: session.sessionId }),
+			200,
+		);
+		return () => clearTimeout(timer);
+	}, [sendRuntime, session]);
+
 	const onEntryClick = useCallback(
 		(location: LogSourceLocation): void => {
 			const path = (location.path ?? `src/${entryRef.current}`).replace(
@@ -1354,6 +1374,43 @@ export function App(): React.JSX.Element {
 									item.line,
 									item.column,
 								)
+							}
+							depsBusy={
+								depsState === "installing" || depsState === "removing"
+							}
+							depsCount={deps.length}
+							depsPanel={
+								<DepsPanel
+									dependencies={deps}
+									language={activeLanguage}
+									onAdd={(name) =>
+										sendRuntime({
+											type: "deps.add",
+											sessionId: session.sessionId,
+											name,
+										})
+									}
+									onOpenManifest={(manifest) => {
+										// Manifests live beside src/, so the palette
+										// cannot open them: show where they are.
+										setStatus(`${manifest} lives in the workspace root`);
+									}}
+									onRemove={(name) =>
+										sendRuntime({
+											type: "deps.remove",
+											sessionId: session.sessionId,
+											name,
+										})
+									}
+									output={depsOutput}
+									runsUntrustedCode={depsUntrusted}
+									sandboxed={settings.sandbox}
+									state={depsState}
+									supported={depsSupported}
+									{...(depsError ? { error: depsError } : {})}
+									{...(depsHint ? { inputHint: depsHint } : {})}
+									{...(depsManifest ? { manifest: depsManifest } : {})}
+								/>
 							}
 							onTab={setTab}
 							onToggleDrawer={() => setDrawer((previous) => !previous)}

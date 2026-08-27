@@ -13,6 +13,7 @@ import folderPlus from "lucide-static/icons/folder-plus.svg?raw";
 import flaskConical from "lucide-static/icons/flask-conical.svg?raw";
 import maximize2 from "lucide-static/icons/maximize-2.svg?raw";
 import minimize2 from "lucide-static/icons/minimize-2.svg?raw";
+import packageIcon from "lucide-static/icons/package.svg?raw";
 import panelBottom from "lucide-static/icons/panel-bottom.svg?raw";
 import panelLeftClose from "lucide-static/icons/panel-left-close.svg?raw";
 import panelLeft from "lucide-static/icons/panel-left.svg?raw";
@@ -42,6 +43,7 @@ const ICONS = {
 	"folder-plus": folderPlus,
 	"maximize-2": maximize2,
 	"minimize-2": minimize2,
+	package: packageIcon,
 	"panel-bottom": panelBottom,
 	"panel-left": panelLeft,
 	"panel-left-close": panelLeftClose,

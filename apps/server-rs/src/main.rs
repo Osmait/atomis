@@ -14,6 +14,7 @@ use axum::routing::{get, post};
 use axum::Router;
 use serde_json::json;
 
+mod deps;
 mod doctor;
 mod markers;
 mod ndjson;

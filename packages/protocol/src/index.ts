@@ -267,6 +267,22 @@ const settings = z
 	})
 	.strict();
 
+/** A dependency as the workspace's manifest declares it. */
+export interface Dependency {
+	name: string;
+	/** Empty when the manifest pins no version (path deps, zon URLs). */
+	version: string;
+}
+
+export type DepsState = "idle" | "installing" | "removing" | "failed";
+
+/** Package names reach a command line: keep them boring. */
+const dependencyName = z
+	.string()
+	.min(1)
+	.max(214)
+	.regex(/^[^-\s"'`$;&|<>()][^\s"'`$;&|<>()]*$/);
+
 export const runtimeClientMessageSchema = z.discriminatedUnion("type", [
 	z
 		.object({
@@ -317,10 +333,41 @@ export const runtimeClientMessageSchema = z.discriminatedUnion("type", [
 		.object({ type: z.literal("settings.update"), sessionId })
 		.extend(settings.shape)
 		.strict(),
+	z.object({ type: z.literal("deps.list"), sessionId }).strict(),
+	z
+		.object({
+			type: z.literal("deps.add"),
+			sessionId,
+			name: dependencyName,
+		})
+		.strict(),
+	z
+		.object({
+			type: z.literal("deps.remove"),
+			sessionId,
+			name: dependencyName,
+		})
+		.strict(),
 ]);
 export type RuntimeClientMessage = z.infer<typeof runtimeClientMessageSchema>;
 
 export type RuntimeServerEvent =
+	| {
+			type: "deps.catalog";
+			language: Language;
+			supported: boolean;
+			manifest?: string;
+			inputHint?: string;
+			runsUntrustedCode: boolean;
+			dependencies: Dependency[];
+	  }
+	| {
+			type: "deps.state";
+			state: DepsState;
+			name?: string;
+			error?: string;
+	  }
+	| { type: "deps.output"; stream: "stdout" | "stderr"; chunk: string }
 	| {
 			type: "run.state";
 			documentVersion: number;

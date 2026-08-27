@@ -1626,3 +1626,62 @@ test("persistent workspaces keep their files across reloads", async ({
 		timeout: 30_000,
 	});
 });
+
+test("dependencies install, persist and become importable", async ({
+	page,
+}) => {
+	test.slow();
+	await page.goto("/");
+	await page.evaluate(() => {
+		localStorage.clear();
+		localStorage.setItem("atomis.language.v1", "rust");
+		localStorage.setItem("atomis.scaffold.v1", "minimal");
+	});
+	await page.reload();
+	await expect(page.locator(".file-tree")).toBeVisible();
+	await setToggle(page, "Vim Mode", false);
+	const available = await page.evaluate(async () => {
+		const response = await fetch("/api/doctor");
+		const body = (await response.json()) as {
+			checks: { name: string; detected: string }[];
+		};
+		return !(
+			body.checks.find((check) => check.name === "Rust cargo")?.detected ?? ""
+		).includes("degraded");
+	});
+	test.skip(!available, "cargo not available");
+
+	await page.locator(".term-menu-btn").click();
+	await page.getByRole("menuitem", { name: /Dependencies/ }).click();
+	await expect(page.locator(".term-view-label")).toHaveText("Dependencies");
+	await expect(page.locator(".deps-list .empty-state")).toContainText(
+		"Cargo.toml",
+	);
+
+	// Installing is the one moment Atomis goes online.
+	await page.getByLabel("Add dependency").fill("uuid");
+	await page.getByRole("button", { name: "install" }).click();
+	await expect(page.locator(".deps-row")).toHaveCount(1, { timeout: 180_000 });
+	await expect(page.locator(".deps-name")).toHaveText("uuid");
+	await expect(page.locator(".term-view-label")).toHaveText("Dependencies 1");
+
+	// The point of installing: the code can use it, compiled offline.
+	await replaceEditor(
+		page,
+		"use uuid::Uuid;\n\nfn main() {\n\tlet id = Uuid::nil();\n\tprintln!(\"id {id}\");\n}\n",
+	);
+	await expect(page.locator(".state-succeeded")).toBeVisible({
+		timeout: 180_000,
+	});
+	await page.locator(".term-menu-btn").click();
+	await page.getByRole("menuitem", { name: "Output", exact: true }).click();
+	await expect(page.locator(".output-list")).toContainText(
+		"id 00000000-0000-0000-0000-000000000000",
+	);
+
+	// And removing takes it back out of the manifest.
+	await page.locator(".term-menu-btn").click();
+	await page.getByRole("menuitem", { name: /Dependencies/ }).click();
+	await page.getByLabel("Remove uuid").click();
+	await expect(page.locator(".deps-row")).toHaveCount(0, { timeout: 120_000 });
+});

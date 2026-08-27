@@ -307,6 +307,16 @@ pub fn lsp_args(language: Language, root: &Path) -> Vec<String> {
 }
 
 /// Copies the per-language session template files into a fresh session root.
+/// Files Atomis owns are refreshed on every attach so a workspace picks up
+/// template fixes. Manifests are NOT: they are where dependencies live, and
+/// overwriting one would silently drop everything the user added.
+async fn copy_once(from: PathBuf, to: PathBuf) -> std::io::Result<u64> {
+    if tokio::fs::try_exists(&to).await.unwrap_or(false) {
+        return Ok(0);
+    }
+    tokio::fs::copy(from, to).await
+}
+
 pub async fn scaffold(language: Language, root: &Path) -> std::io::Result<()> {
     let source = project_root();
     let copy = |from: PathBuf, to: PathBuf| async move { tokio::fs::copy(from, to).await };
@@ -317,7 +327,7 @@ pub async fn scaffold(language: Language, root: &Path) -> std::io::Result<()> {
                 root.join("build.zig"),
             )
             .await?;
-            copy(
+            copy_once(
                 source.join("zig/session-template/build.zig.zon"),
                 root.join("build.zig.zon"),
             )
@@ -340,7 +350,7 @@ pub async fn scaffold(language: Language, root: &Path) -> std::io::Result<()> {
             tokio::fs::write(root.join("test_root.zig"), "comptime {}\n").await?;
         }
         Language::Rust => {
-            copy(
+            copy_once(
                 source.join("rust/session-template/Cargo.toml"),
                 root.join("Cargo.toml"),
             )
@@ -352,7 +362,7 @@ pub async fn scaffold(language: Language, root: &Path) -> std::io::Result<()> {
             .await?;
         }
         Language::Go => {
-            copy(
+            copy_once(
                 source.join("go/session-template/go.mod"),
                 root.join("go.mod"),
             )
@@ -364,7 +374,7 @@ pub async fn scaffold(language: Language, root: &Path) -> std::io::Result<()> {
             .await?;
         }
         Language::Ts => {
-            copy(
+            copy_once(
                 source.join("ts/session-template/package.json"),
                 root.join("package.json"),
             )

@@ -51,6 +51,11 @@
   global cache (6.2 s vs 1.6 s for Zig; every later run in that session is
   identical). Sharing one cache across sessions would remove it, at the
   price of letting one session poison another's build artifacts.
+- **Installing dependencies opens the network for that step**: outbound
+  HTTPS only, for the install process only, with the filesystem still
+  confined to the workspace. npm (and any manager that runs install
+  scripts) executes third-party code during it — confined, but executed;
+  the UI says so before you press install.
 - **What the network rules do NOT cover**: Landlock restricts TCP bind and
   connect only, so UDP — DNS lookups included — still works from sandboxed
   code. A unit test pins this boundary so the claim stays honest; closing it
