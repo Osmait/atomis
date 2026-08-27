@@ -1,4 +1,4 @@
-# ZigLive implementation plan
+# Atomis implementation plan
 
 ## Environment baseline
 

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import type { TestCase, TestResultEvent } from "@ziglive/protocol";
+import type { TestCase, TestResultEvent } from "@atomis/protocol";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TestsDrawer } from "./TestsDrawer.js";
 

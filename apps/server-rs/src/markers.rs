@@ -1,6 +1,6 @@
 //! Runtime output marker parsing mirrored from
 //! apps/server/src/compiler/RuntimeOutputParser.ts: strips
-//! `\x1eZIGLIVE_LOG:…\x1f` markers and annotates the preceding text with the
+//! `\x1eATOMIS_LOG:…\x1f` markers and annotates the preceding text with the
 //! marker's source location; stderr gets panic/error heuristics.
 
 #![allow(dead_code)]
@@ -24,7 +24,7 @@ pub struct MarkerParser<'a> {
 
 const MARKER_START: char = '\u{1e}';
 const MARKER_END: char = '\u{1f}';
-const MARKER_PREFIX: &str = "\u{1e}ZIGLIVE_LOG:";
+const MARKER_PREFIX: &str = "\u{1e}ATOMIS_LOG:";
 
 struct ParsedMarker {
     start: usize,
@@ -282,7 +282,7 @@ mod tests {
     #[test]
     fn markers_annotate_preceding_text_and_count_executions() {
         let lines = collect(
-            &["hola\n\u{1e}ZIGLIVE_LOG:1:4:9\u{1f}", "otra\n\u{1e}ZIGLIVE_LOG:1:4:9\u{1f}"],
+            &["hola\n\u{1e}ATOMIS_LOG:1:4:9\u{1f}", "otra\n\u{1e}ATOMIS_LOG:1:4:9\u{1f}"],
             false,
         );
         assert_eq!(lines.len(), 2);
@@ -294,7 +294,7 @@ mod tests {
 
     #[test]
     fn loop_markers_carry_variable_and_value() {
-        let lines = collect(&["iter 1\n\u{1e}ZIGLIVE_LOG:1:3:5:2:5:i:1\u{1f}"], false);
+        let lines = collect(&["iter 1\n\u{1e}ATOMIS_LOG:1:3:5:2:5:i:1\u{1f}"], false);
         let info = lines[0].2.as_ref().and_then(|l| l.loop_info.as_ref()).expect("loop");
         assert_eq!((info.line, info.column, info.variable.as_str(), info.value.as_str()), (2, 5, "i", "1"));
     }

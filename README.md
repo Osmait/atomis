@@ -1,8 +1,8 @@
-# ZigLive
+# Atomis
 
 A loopback-only **Zig, Rust, Go, TypeScript/JavaScript, Python, C and C++** playground inspired by RunJS: Monaco + real language servers (ZLS / rust-analyzer), cancellable native compilation/execution, per-test results, and inline local values produced by AST instrumentation without changing visible code.
 
-> **El código se ejecuta localmente con tus permisos.** ZigLive is not a security sandbox. Pause Auto Run before pasting untrusted code.
+> **El código se ejecuta localmente con tus permisos.** Atomis is not a security sandbox. Pause Auto Run before pasting untrusted code.
 
 ## Requirements
 
@@ -17,7 +17,7 @@ A loopback-only **Zig, Rust, Go, TypeScript/JavaScript, Python, C and C++** play
 - Optional, enables C/C++ sessions: clang/clang++ 15+ on `PATH` (also used by the instrumenter's AST dump); `clangd` is optional for editor features
 - Corepack/pnpm 11.24.0
 
-ZigLive never downloads toolchains at runtime. Releases: <https://ziglang.org/download/>, <https://zigtools.org/zls/releases/0.16.0/> and <https://rustup.rs>. The Rust instrumenter's crates (`syn`, `proc-macro2`, `quote`, `unicode-ident`) are vendored in `rust/instrumenter/vendor/` so builds stay offline.
+Atomis never downloads toolchains at runtime. Releases: <https://ziglang.org/download/>, <https://zigtools.org/zls/releases/0.16.0/> and <https://rustup.rs>. The Rust instrumenter's crates (`syn`, `proc-macro2`, `quote`, `unicode-ident`) are vendored in `rust/instrumenter/vendor/` so builds stay offline.
 
 Pinned application stack: React 19.2.8, Monaco Editor 0.56.0, Monaco Vim 0.4.4, Vite 8.2.2, Fastify 5.12.1, `ws` 8.21.3, Zod 4.4.3 and TypeScript 7.0.2. Exact resolutions are recorded in `pnpm-lock.yaml`.
 
@@ -29,7 +29,7 @@ pnpm install
 pnpm run doctor
 ```
 
-`pnpm` 11 reserves `pnpm doctor` for pnpm's own environment doctor, so use the explicit package-script spelling `pnpm run doctor` for the ZigLive doctor.
+`pnpm` 11 reserves `pnpm doctor` for pnpm's own environment doctor, so use the explicit package-script spelling `pnpm run doctor` for the Atomis doctor.
 
 ## Development
 
@@ -42,7 +42,7 @@ This first builds `runzig-instrument` and the shared protocol, then starts:
 - UI: <http://127.0.0.1:5173>
 - orchestrator: `127.0.0.1:4317` (Rust/axum, proxied by Vite)
 
-Override the server port with `ZIGLIVE_PORT`; update the Vite proxy when using a non-default development port.
+Override the server port with `ATOMIS_PORT`; update the Vite proxy when using a non-default development port.
 
 ## Test and production
 
@@ -61,7 +61,7 @@ Useful focused commands:
 ```bash
 zig build test
 cargo test --manifest-path apps/server-rs/Cargo.toml
-pnpm --filter @ziglive/web test
+pnpm --filter @atomis/web test
 pnpm typecheck
 pnpm lint    # oxlint (strict, no any/unknown) + cargo clippy -D warnings
 ```
@@ -75,13 +75,13 @@ GitHub Actions (patterns borrowed from GitButler and Clash Verge Rev):
 
 ## Desktop app (Tauri)
 
-`apps/desktop` wraps ZigLive in a Tauri v2 window with the Rust server embedded as a **sidecar**: a ~5 MB native binary (`binaries/ziglive-server-<triple>`) that picks a free port, announces it on stdout, and serves the API, the WebSockets and the built web UI; the window navigates to it once ready. Instrumenters, session templates and runtimes ship as bundle resources (`ZIGLIVE_ROOT` points the server at them). Language toolchains (zig, cargo, go, node, python3, clang) are still taken from the host machine — the doctor/degraded flow applies as in the browser.
+`apps/desktop` wraps Atomis in a Tauri v2 window with the Rust server embedded as a **sidecar**: a ~5 MB native binary (`binaries/atomis-server-<triple>`) that picks a free port, announces it on stdout, and serves the API, the WebSockets and the built web UI; the window navigates to it once ready. Instrumenters, session templates and runtimes ship as bundle resources (`ATOMIS_ROOT` points the server at them). Language toolchains (zig, cargo, go, node, python3, clang) are still taken from the host machine — the doctor/degraded flow applies as in the browser.
 
 ```sh
 pnpm desktop:build                           # toolchains + web build + Rust sidecar + resources
-pnpm --filter @ziglive/desktop bundle:linux  # AppImage/deb/rpm (use NO_STRIP=true if linuxdeploy fails)
-pnpm --filter @ziglive/desktop bundle:mac    # .app / .dmg
-pnpm --filter @ziglive/desktop dev           # dev window against the Vite dev server (pnpm dev first)
+pnpm --filter @atomis/desktop bundle:linux  # AppImage/deb/rpm (use NO_STRIP=true if linuxdeploy fails)
+pnpm --filter @atomis/desktop bundle:mac    # .app / .dmg
+pnpm --filter @atomis/desktop dev           # dev window against the Vite dev server (pnpm dev first)
 ```
 
 Bundles land in `apps/desktop/src-tauri/target/release/bundle/`. The backend rewrite in Rust (axum, same WS protocol) will replace the sidecar later.
@@ -108,7 +108,7 @@ Keyboard: **Ctrl/Cmd+Enter** run · **Ctrl/Cmd+S** format the document (ZLS / ru
 
 ## Workspace
 
-Each browser session gets `/tmp/ziglive/<random-id>/` with a visible multi-file `src/` project, a generated mirror, runtime/source maps, `build.zig`, a local cache and output. Text assets are mirrored so `@embedFile("input.txt")` works; execution uses `src/` as cwd so runtime reads such as `readFileAlloc(..., "input.txt", ...)` work too. Projects are capped at 64 files and 8 MiB. Session IDs and bearer tokens are random; absolute paths and traversal segments are rejected. Workspaces are removed on disconnect/shutdown and abandoned directories older than 24 hours are removed at startup.
+Each browser session gets `/tmp/atomis/<random-id>/` with a visible multi-file `src/` project, a generated mirror, runtime/source maps, `build.zig`, a local cache and output. Text assets are mirrored so `@embedFile("input.txt")` works; execution uses `src/` as cwd so runtime reads such as `readFileAlloc(..., "input.txt", ...)` work too. Projects are capped at 64 files and 8 MiB. Session IDs and bearer tokens are random; absolute paths and traversal segments are rejected. Workspaces are removed on disconnect/shutdown and abandoned directories older than 24 hours are removed at startup.
 
 ## Credits
 

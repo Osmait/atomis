@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-/** A JSON wire value: what can travel over the ZigLive WebSockets. */
+/** A JSON wire value: what can travel over the Atomis WebSockets. */
 export type JsonValue =
 	| string
 	| number

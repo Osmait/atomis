@@ -213,13 +213,13 @@ function mochaColors(background: string): Record<string, string> {
 }
 
 export function registerZig(monaco: typeof Monaco): void {
-	monaco.editor.defineTheme("ziglive-dark", {
+	monaco.editor.defineTheme("atomis-dark", {
 		base: "vs-dark",
 		inherit: true,
 		rules: mochaRules,
 		colors: mochaColors("#1e1e2e"),
 	});
-	monaco.editor.defineTheme("ziglive-zen", {
+	monaco.editor.defineTheme("atomis-zen", {
 		base: "vs-dark",
 		inherit: true,
 		rules: mochaRules,

@@ -241,7 +241,7 @@ pub async fn run(
     *session.probes.lock().await = outcome.probes.clone();
     emit(RunnerEvent::Catalog(outcome.probes.clone()));
     emit(RunnerEvent::Diagnostic {
-        owner: "ziglive-instrumenter".to_string(),
+        owner: "atomis-instrumenter".to_string(),
         diagnostics: outcome.diagnostics.clone(),
     });
     if !outcome.diagnostics.is_empty() {
@@ -288,7 +288,7 @@ pub async fn run(
     });
 
     emit(RunnerEvent::State(RunState::Running));
-    let runtime_module = session.root.join("generated/__ziglive_runtime.mjs");
+    let runtime_module = session.root.join("generated/__atomis_runtime.mjs");
     let entry = session.root.join("generated/main.ts");
     let execution = execute_program(
         &outcome.probes,

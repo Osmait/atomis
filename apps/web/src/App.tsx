@@ -11,7 +11,7 @@ import type {
 	CreateSessionResponse,
 	Language,
 	ProbeDescriptor,
-} from "@ziglive/protocol";
+} from "@atomis/protocol";
 import type * as MonacoApi from "monaco-editor";
 import {
 	initVimMode,
@@ -508,7 +508,7 @@ export function App(): React.JSX.Element {
 		if (!selection) return;
 		try {
 			const text = await navigator.clipboard.readText();
-			editor.executeEdits("ziglive.clipboard", [
+			editor.executeEdits("atomis.clipboard", [
 				{ range: selection, text, forceMoveMarkers: true },
 			]);
 		} catch (error) {
@@ -849,7 +849,7 @@ export function App(): React.JSX.Element {
 
 	useEffect(() => {
 		monacoRef.current?.editor.setTheme(
-			layout.zen ? "ziglive-zen" : "ziglive-dark",
+			layout.zen ? "atomis-zen" : "atomis-dark",
 		);
 	}, [layout.zen, session]);
 
@@ -926,7 +926,7 @@ export function App(): React.JSX.Element {
 	if (startupError)
 		return (
 			<main className="startup">
-				<h1>ZigLive</h1>
+				<h1>Atomis</h1>
 				<h2>Environment error</h2>
 				<pre>{startupError}</pre>
 				<p>
@@ -938,7 +938,7 @@ export function App(): React.JSX.Element {
 	if (!session)
 		return (
 			<main className="startup">
-				<h1>ZigLive</h1>
+				<h1>Atomis</h1>
 				<p>Running environment doctor…</p>
 			</main>
 		);
@@ -1082,7 +1082,7 @@ export function App(): React.JSX.Element {
 								path={activeFile?.uri ?? session.documentUri}
 								language={editorLanguage}
 								value={visibleSource}
-								theme={zen ? "ziglive-zen" : "ziglive-dark"}
+								theme={zen ? "atomis-zen" : "atomis-dark"}
 								beforeMount={registerAllLanguages}
 								onMount={handleMount}
 								onChange={onChange}

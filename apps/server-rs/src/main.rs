@@ -1,4 +1,4 @@
-//! ZigLive backend (Rust rewrite): axum server with the same HTTP + WS
+//! Atomis backend (Rust rewrite): axum server with the same HTTP + WS
 //! contract as apps/server. The Node sidecar stays the reference
 //! implementation until the Playwright e2e suite passes against this binary.
 
@@ -157,10 +157,10 @@ async fn ws_lsp_route(
 
 #[tokio::main]
 async fn main() {
-    // `ziglive-server --doctor` replaces the old `tsx apps/server/doctor.ts`.
+    // `atomis-server --doctor` replaces the old `tsx apps/server/doctor.ts`.
     if std::env::args().any(|argument| argument == "--doctor") {
         let checks = doctor::run_doctor().await;
-        println!("ZigLive doctor\n");
+        println!("Atomis doctor\n");
         let mut failed = false;
         for check in &checks {
             println!("{} {}", if check.ok { "✓" } else { "✗" }, check.name);
@@ -185,7 +185,7 @@ async fn main() {
         )
         .init();
 
-    let port: u16 = std::env::var("ZIGLIVE_PORT")
+    let port: u16 = std::env::var("ATOMIS_PORT")
         .ok()
         .and_then(|value| value.parse().ok())
         .unwrap_or(4317);
@@ -203,7 +203,7 @@ async fn main() {
         .route("/ws/lsp", get(ws_lsp_route));
 
     let production = std::env::var("NODE_ENV").is_ok_and(|v| v == "production");
-    let web_dist = std::env::var("ZIGLIVE_WEB_DIST")
+    let web_dist = std::env::var("ATOMIS_WEB_DIST")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|_| packs::project_root().join("apps/web/dist"));
     if production && web_dist.exists() {
@@ -220,8 +220,8 @@ async fn main() {
     let bound = listener.local_addr().expect("local addr");
     state.port.store(bound.port(), Ordering::SeqCst);
     // Same announce line the Tauri shell parses from the Node sidecar.
-    println!("ZIGLIVE_LISTENING={}", bound.port());
-    tracing::info!(%bound, "ziglive-server (rust) ready — el código se ejecuta localmente con tus permisos");
+    println!("ATOMIS_LISTENING={}", bound.port());
+    tracing::info!(%bound, "atomis-server (rust) ready — el código se ejecuta localmente con tus permisos");
 
     let shutdown_state = Arc::clone(&state);
     axum::serve(listener, app)

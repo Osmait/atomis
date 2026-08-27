@@ -1,4 +1,4 @@
-import type { AppDiagnostic } from "@ziglive/protocol";
+import type { AppDiagnostic } from "@atomis/protocol";
 
 /**
  * Diagnostic aggregation shared by the problems panel, the error lens and

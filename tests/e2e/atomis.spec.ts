@@ -75,7 +75,7 @@ async function replaceEditor(
 	await page
 		.context()
 		.grantPermissions(["clipboard-read", "clipboard-write"], {
-			origin: process.env.ZIGLIVE_BASE_URL ?? "http://127.0.0.1:5173",
+			origin: process.env.ATOMIS_BASE_URL ?? "http://127.0.0.1:5173",
 		});
 	await page.evaluate(
 		async (text) => await navigator.clipboard.writeText(text),
@@ -184,7 +184,7 @@ pub fn main(init: std.process.Init) !void {
 test("Vim mode keeps native clipboard shortcuts", async ({ page, context }) => {
 	const pageErrors: string[] = [];
 	await context.grantPermissions(["clipboard-read", "clipboard-write"], {
-		origin: process.env.ZIGLIVE_BASE_URL ?? "http://127.0.0.1:5173",
+		origin: process.env.ATOMIS_BASE_URL ?? "http://127.0.0.1:5173",
 	});
 	page.on("pageerror", (error) => pageErrors.push(error.message));
 	await openClean(page);
@@ -503,7 +503,7 @@ async function openRust(page: import("@playwright/test").Page): Promise<boolean>
 	if (!doctor) return false;
 	await page.evaluate(() => {
 		localStorage.clear();
-		localStorage.setItem("ziglive.language.v1", "rust");
+		localStorage.setItem("atomis.language.v1", "rust");
 	});
 	await page.reload();
 	await expect(page.locator(".file-tree")).toBeVisible();
@@ -993,7 +993,7 @@ async function openGo(page: import("@playwright/test").Page): Promise<boolean> {
 	if (!available) return false;
 	await page.evaluate(() => {
 		localStorage.clear();
-		localStorage.setItem("ziglive.language.v1", "go");
+		localStorage.setItem("atomis.language.v1", "go");
 	});
 	await page.reload();
 	await expect(page.locator(".file-tree")).toBeVisible();
@@ -1070,7 +1070,7 @@ test("ts sessions run with inline values, tests and non-blocking type errors", a
 	await page.goto("/");
 	await page.evaluate(() => {
 		localStorage.clear();
-		localStorage.setItem("ziglive.language.v1", "ts");
+		localStorage.setItem("atomis.language.v1", "ts");
 	});
 	await page.reload();
 	await expect(page.locator(".file-tree")).toBeVisible();
@@ -1139,7 +1139,7 @@ test("python sessions run with inline values, tests and tracebacks", async ({
 	test.skip(!available, "python3 not available");
 	await page.evaluate(() => {
 		localStorage.clear();
-		localStorage.setItem("ziglive.language.v1", "py");
+		localStorage.setItem("atomis.language.v1", "py");
 	});
 	await page.reload();
 	await expect(page.locator(".file-tree")).toBeVisible();
@@ -1202,7 +1202,7 @@ async function openCFamily(
 	if (!available) return false;
 	await page.evaluate((lang) => {
 		localStorage.clear();
-		localStorage.setItem("ziglive.language.v1", lang);
+		localStorage.setItem("atomis.language.v1", lang);
 	}, language);
 	await page.reload();
 	await expect(page.locator(".file-tree")).toBeVisible();

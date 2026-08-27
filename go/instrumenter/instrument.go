@@ -1,4 +1,4 @@
-// Package main implements golive-instrument: the ZigLive source instrumenter
+// Package main implements golive-instrument: the Atomis source instrumenter
 // for Go. It mirrors the runzig/rustlive contract — parse one file, record
 // probe insertion points for simple short/var declarations and source markers
 // for direct fmt/log statements, then splice the calls into the ORIGINAL text
@@ -123,7 +123,7 @@ func (c *collector) recordProbe(ident *ast.Ident, end token.Pos, unsupported str
 		c.insertions = append(c.insertions, insertion{
 			offset: offset,
 			text: fmt.Sprintf(
-				"; __ziglive_probe(%q, %d, %d, %q, %s)",
+				"; __atomis_probe(%q, %d, %d, %q, %s)",
 				id, r.StartLine, r.StartColumn, ident.Name, ident.Name,
 			),
 		})
@@ -193,7 +193,7 @@ func (c *collector) visitStmt(stmt ast.Stmt) {
 			c.insertions = append(c.insertions, insertion{
 				offset: end,
 				text: fmt.Sprintf(
-					"; __ziglive_log_loop(%d, %d, %d, %d, %d, %d, %q, %s)",
+					"; __atomis_log_loop(%d, %d, %d, %d, %d, %d, %q, %s)",
 					fd, c.fileID, position.Line, position.Column,
 					loop.line, loop.column, loop.variable, loop.variable,
 				),
@@ -203,7 +203,7 @@ func (c *collector) visitStmt(stmt ast.Stmt) {
 		c.insertions = append(c.insertions, insertion{
 			offset: end,
 			text: fmt.Sprintf(
-				"; __ziglive_log(%d, %d, %d, %d)",
+				"; __atomis_log(%d, %d, %d, %d)",
 				fd, c.fileID, position.Line, position.Column,
 			),
 		})
@@ -292,8 +292,8 @@ func (c *collector) walkChildren(node ast.Node) {
 // Instrument parses source and splices probe/log calls into the original
 // text, preserving byte order and the newline count.
 func Instrument(source string, uri string, autoInspect bool, manualIDs []string, fileID int) Output {
-	if strings.Contains(source, "__ziglive_probe(") ||
-		strings.Contains(source, "__ziglive_log") {
+	if strings.Contains(source, "__atomis_probe(") ||
+		strings.Contains(source, "__atomis_log") {
 		return Output{Generated: source, HasGenerated: true}
 	}
 	fset := token.NewFileSet()

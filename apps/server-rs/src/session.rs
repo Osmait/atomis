@@ -128,7 +128,7 @@ impl Session {
         let temporary = destination
             .parent()
             .unwrap_or(Path::new("."))
-            .join(format!(".ziglive-{}-{}.tmp", std::process::id(), random_hex(8)));
+            .join(format!(".atomis-{}-{}.tmp", std::process::id(), random_hex(8)));
         tokio::fs::write(&temporary, source)
             .await
             .map_err(|e| e.to_string())?;
@@ -272,7 +272,7 @@ impl SessionManager {
     pub fn new() -> Self {
         SessionManager {
             sessions: Mutex::new(HashMap::new()),
-            root: std::env::temp_dir().join("ziglive"),
+            root: std::env::temp_dir().join("atomis"),
             toolchain: tokio::sync::OnceCell::new(),
         }
     }

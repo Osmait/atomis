@@ -27,7 +27,7 @@ pub struct LanguagePack {
 }
 
 pub fn project_root() -> PathBuf {
-    match std::env::var("ZIGLIVE_ROOT") {
+    match std::env::var("ATOMIS_ROOT") {
         Ok(root) => PathBuf::from(root),
         // Dev fallback: this crate lives at <root>/apps/server-rs.
         Err(_) => Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."),
@@ -346,8 +346,8 @@ pub async fn scaffold(language: Language, root: &Path) -> std::io::Result<()> {
             )
             .await?;
             copy(
-                source.join("rust/runtime/ziglive_runtime.rs"),
-                root.join("generated/ziglive_runtime.rs"),
+                source.join("rust/runtime/atomis_runtime.rs"),
+                root.join("generated/atomis_runtime.rs"),
             )
             .await?;
         }
@@ -358,8 +358,8 @@ pub async fn scaffold(language: Language, root: &Path) -> std::io::Result<()> {
             )
             .await?;
             copy(
-                source.join("go/runtime/ziglive_runtime.go"),
-                root.join("generated/ziglive_runtime.go"),
+                source.join("go/runtime/atomis_runtime.go"),
+                root.join("generated/atomis_runtime.go"),
             )
             .await?;
         }
@@ -370,8 +370,8 @@ pub async fn scaffold(language: Language, root: &Path) -> std::io::Result<()> {
             )
             .await?;
             copy(
-                source.join("ts/runtime/ziglive_runtime.mjs"),
-                root.join("generated/__ziglive_runtime.mjs"),
+                source.join("ts/runtime/atomis_runtime.mjs"),
+                root.join("generated/__atomis_runtime.mjs"),
             )
             .await?;
             let type_roots = source
@@ -409,15 +409,15 @@ pub async fn scaffold(language: Language, root: &Path) -> std::io::Result<()> {
         }
         Language::C => {
             copy(
-                source.join("cfamily/runtime/ziglive_runtime.h"),
-                root.join("generated/ziglive_runtime.h"),
+                source.join("cfamily/runtime/atomis_runtime.h"),
+                root.join("generated/atomis_runtime.h"),
             )
             .await?;
         }
         Language::Cpp => {
             copy(
-                source.join("cfamily/runtime/ziglive_runtime.hpp"),
-                root.join("generated/ziglive_runtime.hpp"),
+                source.join("cfamily/runtime/atomis_runtime.hpp"),
+                root.join("generated/atomis_runtime.hpp"),
             )
             .await?;
         }

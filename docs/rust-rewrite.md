@@ -19,11 +19,11 @@ sidecar Node, un solo lenguaje en el desktop, menos RAM.
    fixtures grabadas del server Node.
 2. **HTTP + sesiones** — `/api/health`, `/api/doctor`, `POST /api/sessions`
    (origin guard, tokens, scaffold multilingüe copiando templates), gestión
-   de workspaces efímeros en `/tmp/ziglive`.
+   de workspaces efímeros en `/tmp/atomis`.
 3. **Runtime WS** — `/ws/runtime`: document store versionado, RunScheduler
    (debounce, cancelación), ProcessSupervisor (spawn con límites/timeout,
    fd3 para probes vía pipes), lectores NDJSON (probes/tests) y el parser de
-   marcadores `\x1eZIGLIVE_LOG` compartido.
+   marcadores `\x1eATOMIS_LOG` compartido.
 4. **Runners por lenguaje** — portar uno a uno empezando por zig (el e2e de
    zig es el más rico), luego rust/go/ts/py/c/cpp. Los instrumentadores ya
    son binarios/scripts externos: solo cambia quién los orquesta.
@@ -38,13 +38,13 @@ sidecar Node, un solo lenguaje en el desktop, menos RAM.
   store, scheduler, supervisor con fd 3, lectores NDJSON, parser de
   marcadores), los 7 runners y el proxy LSP.
 - **La suite Playwright completa (23/23) pasa contra el server Rust**
-  (harness: `ZIGLIVE_PORT=4319 cargo run` + `ZIGLIVE_WEB_PORT=5175
-  ZIGLIVE_PROXY=http://127.0.0.1:4319 vite` + `ZIGLIVE_BASE_URL` en
-  Playwright; el server acepta ese origen vía `ZIGLIVE_DEV_ORIGIN`).
+  (harness: `ATOMIS_PORT=4319 cargo run` + `ATOMIS_WEB_PORT=5175
+  ATOMIS_PROXY=http://127.0.0.1:4319 vite` + `ATOMIS_BASE_URL` en
+  Playwright; el server acepta ese origen vía `ATOMIS_DEV_ORIGIN`).
 - La respuesta de `POST /api/sessions` es byte-idéntica a la de Node tras
   normalizar ids (incluido el orden ICU de archivos).
 - El sidecar del desktop ya usa el binario Rust (5 MB, antes ~90 MB de
-  Node SEA); mismos env vars y línea `ZIGLIVE_LISTENING`.
+  Node SEA); mismos env vars y línea `ATOMIS_LISTENING`.
 - `pnpm dev:rs` levanta cargo + vite para desarrollo contra Rust.
 - **Swap completado**: `apps/server` retirado; `pnpm dev`/`start`/
   `doctor`/`test`/`build` apuntan al binario Rust (`--doctor` reemplaza

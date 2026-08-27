@@ -6,7 +6,7 @@ use rand::RngCore;
 
 /// Mirrors apps/server/src/security/origin.ts: only the server's own origin,
 /// plus the Vite dev origin outside production, plus an optional extra dev
-/// origin for parallel harnesses (ZIGLIVE_DEV_ORIGIN).
+/// origin for parallel harnesses (ATOMIS_DEV_ORIGIN).
 pub fn valid_origin(origin: Option<&str>, server_port: u16) -> bool {
     let Some(origin) = origin else { return false };
     if origin == format!("http://127.0.0.1:{server_port}") {
@@ -16,7 +16,7 @@ pub fn valid_origin(origin: Option<&str>, server_port: u16) -> bool {
     if !production && origin == "http://127.0.0.1:5173" {
         return true;
     }
-    if let Ok(extra) = std::env::var("ZIGLIVE_DEV_ORIGIN") {
+    if let Ok(extra) = std::env::var("ATOMIS_DEV_ORIGIN") {
         if !production && extra.split(',').any(|o| o.trim() == origin) {
             return true;
         }
@@ -172,8 +172,8 @@ mod tests {
 
     #[test]
     fn file_urls_encode_the_whatwg_path_set() {
-        let url = path_to_file_url(std::path::Path::new("/tmp/ziglive/a b/main.zig"));
-        assert_eq!(url, "file:///tmp/ziglive/a%20b/main.zig");
+        let url = path_to_file_url(std::path::Path::new("/tmp/atomis/a b/main.zig"));
+        assert_eq!(url, "file:///tmp/atomis/a%20b/main.zig");
     }
 
     #[test]

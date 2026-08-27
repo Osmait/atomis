@@ -35,10 +35,10 @@ pub fn run() {
       let web_dist = resources.join("web-dist");
       let sidecar = app
         .shell()
-        .sidecar("ziglive-server")?
-        .env("ZIGLIVE_ROOT", resources.as_os_str())
-        .env("ZIGLIVE_WEB_DIST", web_dist.as_os_str())
-        .env("ZIGLIVE_PORT", "0")
+        .sidecar("atomis-server")?
+        .env("ATOMIS_ROOT", resources.as_os_str())
+        .env("ATOMIS_WEB_DIST", web_dist.as_os_str())
+        .env("ATOMIS_PORT", "0")
         .env("NODE_ENV", "production");
       let (mut events, child) = sidecar.spawn()?;
       *app.state::<Sidecar>().0.lock().unwrap() = Some(child);
@@ -49,7 +49,7 @@ pub fn run() {
           match event {
             CommandEvent::Stdout(line) => {
               let line = String::from_utf8_lossy(&line);
-              if let Some(port) = line.trim().strip_prefix("ZIGLIVE_LISTENING=") {
+              if let Some(port) = line.trim().strip_prefix("ATOMIS_LISTENING=") {
                 let url = format!("http://127.0.0.1:{port}");
                 if let Some(window) = handle.get_webview_window("main") {
                   if let Ok(parsed) = url.parse() {

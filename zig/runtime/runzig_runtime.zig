@@ -44,7 +44,7 @@ fn writeAllFd3(bytes: []const u8) void {
 pub inline fn logSource(comptime meta: LogMeta) void {
     var marker_buffer: [96]u8 = undefined;
     var marker_writer: std.Io.Writer = .fixed(&marker_buffer);
-    marker_writer.print("\x1eZIGLIVE_LOG:{d}:{d}:{d}\x1f", .{ meta.file_id, meta.line, meta.column }) catch return;
+    marker_writer.print("\x1eATOMIS_LOG:{d}:{d}:{d}\x1f", .{ meta.file_id, meta.line, meta.column }) catch return;
     writeAllFd(2, marker_writer.buffered());
 }
 
@@ -127,7 +127,7 @@ inline fn emitLogSourceLoop(comptime meta: LogLoopMeta, value_ptr: anytype) void
 
     var marker_buffer: [MAX_PREVIEW + 256]u8 = undefined;
     var marker_writer: std.Io.Writer = .fixed(&marker_buffer);
-    marker_writer.print("\x1eZIGLIVE_LOG:{d}:{d}:{d}:{d}:{d}:{s}:", .{
+    marker_writer.print("\x1eATOMIS_LOG:{d}:{d}:{d}:{d}:{d}:{s}:", .{
         meta.file_id,
         meta.line,
         meta.column,

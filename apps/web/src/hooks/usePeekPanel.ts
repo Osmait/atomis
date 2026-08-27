@@ -71,7 +71,7 @@ export function usePeekPanel(options: PeekPanelOptions): PeekState {
 		};
 		layoutOverlay();
 		const overlay = {
-			getId: () => "ziglive.peek",
+			getId: () => "atomis.peek",
 			getDomNode: () => overlayNode,
 			getPosition: () => null,
 		};

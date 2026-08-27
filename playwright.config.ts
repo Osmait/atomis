@@ -8,13 +8,13 @@ export default defineConfig({
 	workers: 1,
 	reporter: [["list"]],
 	use: {
-		baseURL: process.env.ZIGLIVE_BASE_URL ?? "http://127.0.0.1:5173",
+		baseURL: process.env.ATOMIS_BASE_URL ?? "http://127.0.0.1:5173",
 		trace: "retain-on-failure",
 		...devices["Desktop Chrome"],
 	},
 	webServer: {
 		command: "pnpm dev",
-		url: process.env.ZIGLIVE_BASE_URL ?? "http://127.0.0.1:5173",
+		url: process.env.ATOMIS_BASE_URL ?? "http://127.0.0.1:5173",
 		timeout: 120_000,
 		reuseExistingServer: true,
 	},

@@ -44,7 +44,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -am "chore(release): v${{ steps.bump.outputs.version }}"
-          git tag -a "v${{ steps.bump.outputs.version }}" -m "ZigLive v${{ steps.bump.outputs.version }}"
+          git tag -a "v${{ steps.bump.outputs.version }}" -m "Atomis v${{ steps.bump.outputs.version }}"
           git push origin HEAD "refs/tags/v${{ steps.bump.outputs.version }}"
 
   build:
@@ -98,7 +98,7 @@ jobs:
       - name: Build sidecar + resources (pnpm desktop:build)
         run: pnpm desktop:build
       - name: Bundle (${{ matrix.bundle }})
-        run: pnpm --filter @ziglive/desktop bundle:${{ matrix.bundle }}
+        run: pnpm --filter @atomis/desktop bundle:${{ matrix.bundle }}
       - name: Collect bundles
         shell: bash
         run: |
@@ -138,7 +138,7 @@ jobs:
           - **Linux x86_64**: AppImage, .deb y .rpm
           - **macOS Apple Silicon**: .dmg — sin firmar: la primera vez ábrelo
             con clic derecho → Abrir, o ejecuta
-            `xattr -d com.apple.quarantine /Applications/ziglive.app`
+            `xattr -d com.apple.quarantine /Applications/atomis.app`
 
           Los toolchains de lenguaje (zig, cargo, go, node, python3, clang)
           se toman de la máquina anfitriona; sin ellos la app arranca en
@@ -146,6 +146,6 @@ jobs:
           NOTES
           gh release create "v$VERSION" dist-release/* \
             --repo "$GITHUB_REPOSITORY" \
-            --title "ZigLive v$VERSION" \
+            --title "Atomis v$VERSION" \
             --notes-file notes.md \
             --generate-notes

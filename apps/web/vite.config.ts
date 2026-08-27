@@ -13,14 +13,14 @@ export default defineConfig({
 	},
 	server: {
 		host: "127.0.0.1",
-		port: Number(process.env.ZIGLIVE_WEB_PORT ?? 5173),
+		port: Number(process.env.ATOMIS_WEB_PORT ?? 5173),
 		strictPort: true,
 		proxy: {
 			"/api": {
-				target: process.env.ZIGLIVE_PROXY ?? "http://127.0.0.1:4317",
+				target: process.env.ATOMIS_PROXY ?? "http://127.0.0.1:4317",
 			},
 			"/ws": {
-				target: (process.env.ZIGLIVE_PROXY ?? "http://127.0.0.1:4317").replace(
+				target: (process.env.ATOMIS_PROXY ?? "http://127.0.0.1:4317").replace(
 					"http",
 					"ws",
 				),

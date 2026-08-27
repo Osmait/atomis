@@ -1,4 +1,4 @@
-//! ZigLive session runtime for Rust: reports probe values as NDJSON on fd 3
+//! Atomis session runtime for Rust: reports probe values as NDJSON on fd 3
 //! and stderr source markers for instrumented log statements, mirroring the
 //! Zig `runzig_runtime.zig` protocol. Injected as a module at the end of the
 //! generated entry file; never part of the visible sources.
@@ -66,19 +66,19 @@ fn truncate_preview(preview: String) -> (String, bool) {
 pub struct Wrap<T>(pub T);
 
 pub trait DebugProbe {
-    fn ziglive_preview(&self) -> (String, String);
+    fn atomis_preview(&self) -> (String, String);
 }
 pub trait FallbackProbe {
-    fn ziglive_preview(&self) -> (String, String);
+    fn atomis_preview(&self) -> (String, String);
 }
 
 impl<T: std::fmt::Debug> DebugProbe for Wrap<&T> {
-    fn ziglive_preview(&self) -> (String, String) {
+    fn atomis_preview(&self) -> (String, String) {
         (format!("{:?}", self.0), short_type(std::any::type_name::<T>()))
     }
 }
 impl<T> FallbackProbe for &Wrap<&T> {
-    fn ziglive_preview(&self) -> (String, String) {
+    fn atomis_preview(&self) -> (String, String) {
         let name = short_type(std::any::type_name::<T>());
         (format!("<sin Debug: {name}>"), name)
     }
@@ -114,7 +114,7 @@ pub fn emit_probe(
 }
 
 pub fn emit_log(fd: i32, file_id: u32, line: u32, column: u32) {
-    let marker = format!("\u{1e}ZIGLIVE_LOG:{file_id}:{line}:{column}\u{1f}");
+    let marker = format!("\u{1e}ATOMIS_LOG:{file_id}:{line}:{column}\u{1f}");
     let guard = LOCK.lock();
     write_fd(fd, marker.as_bytes());
     drop(guard);
@@ -132,7 +132,7 @@ pub fn emit_log_loop(
 ) {
     let (preview, _) = truncate_preview(value_preview);
     let marker = format!(
-        "\u{1e}ZIGLIVE_LOG:{file_id}:{line}:{column}:{loop_line}:{loop_column}:{variable}:{preview}\u{1f}"
+        "\u{1e}ATOMIS_LOG:{file_id}:{line}:{column}:{loop_line}:{loop_column}:{variable}:{preview}\u{1f}"
     );
     let guard = LOCK.lock();
     write_fd(fd, marker.as_bytes());
@@ -140,13 +140,13 @@ pub fn emit_log_loop(
 }
 
 #[macro_export]
-macro_rules! ziglive_probe {
+macro_rules! atomis_probe {
     ($id:expr, $line:expr, $col:expr, $name:expr, $val:expr) => {{
         #[allow(unused_imports)]
-        use $crate::__ziglive_runtime::{DebugProbe as _, FallbackProbe as _};
+        use $crate::__atomis_runtime::{DebugProbe as _, FallbackProbe as _};
         let (preview, type_name) =
-            (&$crate::__ziglive_runtime::Wrap($val)).ziglive_preview();
-        $crate::__ziglive_runtime::emit_probe(
+            (&$crate::__atomis_runtime::Wrap($val)).atomis_preview();
+        $crate::__atomis_runtime::emit_probe(
             $id,
             $name,
             $line,
@@ -160,18 +160,18 @@ macro_rules! ziglive_probe {
 }
 
 #[macro_export]
-macro_rules! ziglive_log {
+macro_rules! atomis_log {
     ($fd:expr, $file:expr, $line:expr, $col:expr) => {
-        $crate::__ziglive_runtime::emit_log($fd, $file, $line, $col)
+        $crate::__atomis_runtime::emit_log($fd, $file, $line, $col)
     };
 }
 
 #[macro_export]
-macro_rules! ziglive_log_loop {
+macro_rules! atomis_log_loop {
     ($fd:expr, $file:expr, $line:expr, $col:expr, $lline:expr, $lcol:expr, $var:expr, $val:expr) => {{
         #[allow(unused_imports)]
-        use $crate::__ziglive_runtime::{DebugProbe as _, FallbackProbe as _};
-        let (preview, _) = (&$crate::__ziglive_runtime::Wrap($val)).ziglive_preview();
-        $crate::__ziglive_runtime::emit_log_loop($fd, $file, $line, $col, $lline, $lcol, $var, preview);
+        use $crate::__atomis_runtime::{DebugProbe as _, FallbackProbe as _};
+        let (preview, _) = (&$crate::__atomis_runtime::Wrap($val)).atomis_preview();
+        $crate::__atomis_runtime::emit_log_loop($fd, $file, $line, $col, $lline, $lcol, $var, preview);
     }};
 }

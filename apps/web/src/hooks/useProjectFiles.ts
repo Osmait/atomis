@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import type { Monaco } from "@monaco-editor/react";
-import type { CreateSessionResponse, Language } from "@ziglive/protocol";
+import type { CreateSessionResponse, Language } from "@atomis/protocol";
 import type * as MonacoApi from "monaco-editor";
 import { ENTRY_FILES, languageForPath } from "../languages.js";
 import type { LspClient } from "../lsp/LspClient.js";

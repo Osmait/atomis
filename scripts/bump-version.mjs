@@ -50,7 +50,7 @@ writeFileSync(tauriConf, `${JSON.stringify(conf, null, 2)}\n`);
 // Cargo manifests: first `version = "…"` line of each [package] section,
 // plus the matching package entry in each Cargo.lock so builds stay clean.
 const cargoPackages = [
-	{ toml: "apps/server-rs/Cargo.toml", lock: "apps/server-rs/Cargo.lock", name: "ziglive-server" },
+	{ toml: "apps/server-rs/Cargo.toml", lock: "apps/server-rs/Cargo.lock", name: "atomis-server" },
 	{ toml: "apps/desktop/src-tauri/Cargo.toml", lock: "apps/desktop/src-tauri/Cargo.lock", name: "app" },
 ];
 for (const { toml, lock, name } of cargoPackages) {

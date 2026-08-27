@@ -1,4 +1,4 @@
-"""ZigLive session runtime for Python.
+"""Atomis session runtime for Python.
 
 Loaded automatically at interpreter startup because the generated mirror is
 on PYTHONPATH, so the probe builtins exist before ANY user module executes —
@@ -60,7 +60,7 @@ def _stream(fd):
 def _log(fd, file_id, line, column):
     try:
         _stream(fd).write(
-            f"{_MARKER_START}ZIGLIVE_LOG:{file_id}:{line}:{column}{_MARKER_END}"
+            f"{_MARKER_START}ATOMIS_LOG:{file_id}:{line}:{column}{_MARKER_END}"
         )
     except Exception:  # noqa: BLE001
         pass
@@ -74,13 +74,13 @@ def _log_loop(fd, file_id, line, column, loop_line, loop_column, variable, value
     preview, _ = _truncate(preview)
     try:
         _stream(fd).write(
-            f"{_MARKER_START}ZIGLIVE_LOG:{file_id}:{line}:{column}"
+            f"{_MARKER_START}ATOMIS_LOG:{file_id}:{line}:{column}"
             f":{loop_line}:{loop_column}:{variable}:{preview}{_MARKER_END}"
         )
     except Exception:  # noqa: BLE001
         pass
 
 
-builtins.__ziglive_probe = _probe
-builtins.__ziglive_log = _log
-builtins.__ziglive_log_loop = _log_loop
+builtins.__atomis_probe = _probe
+builtins.__atomis_log = _log
+builtins.__atomis_log_loop = _log_loop

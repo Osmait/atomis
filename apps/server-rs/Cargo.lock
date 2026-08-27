@@ -18,6 +18,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
+name = "atomis-server"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "futures-util",
+ "libc",
+ "rand 0.8.8",
+ "regex",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-util",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "axum"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1021,24 +1039,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
-]
-
-[[package]]
-name = "ziglive-server"
-version = "0.1.0"
-dependencies = [
- "axum",
- "futures-util",
- "libc",
- "rand 0.8.8",
- "regex",
- "serde",
- "serde_json",
- "tokio",
- "tokio-util",
- "tower-http",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

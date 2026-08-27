@@ -41,6 +41,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@atomis/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
       '@fontsource/ibm-plex-mono':
         specifier: ^5.3.0
         version: 5.3.0
@@ -50,9 +53,6 @@ importers:
       '@monaco-editor/react':
         specifier: 4.7.0
         version: 4.7.0(monaco-editor@0.56.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      '@ziglive/protocol':
-        specifier: workspace:*
-        version: link:../../packages/protocol
       lucide-static:
         specifier: ^1.34.0
         version: 1.34.0

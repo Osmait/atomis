@@ -1,14 +1,14 @@
 [package]
-name = "ziglive_session"
+name = "atomis_session"
 version = "0.0.0"
 edition = "2021"
 
 [[bin]]
-name = "ziglive-check"
+name = "atomis-check"
 path = "src/main.rs"
 
 [[bin]]
-name = "ziglive-session"
+name = "atomis-session"
 path = "generated/main.rs"
 
 [profile.dev]

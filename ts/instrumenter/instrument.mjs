@@ -1,4 +1,4 @@
-// tslive-instrument: the ZigLive source instrumenter for TypeScript and
+// tslive-instrument: the Atomis source instrumenter for TypeScript and
 // JavaScript. Mirrors the runzig/rustlive/golive contract — parse one file
 // with the repo's TypeScript compiler API, record probe insertion points for
 // simple const/let/var declarations (top level included: module bodies are
@@ -36,8 +36,8 @@ function probeId(uri, range, name) {
 
 export function instrument(source, uri, autoInspect, manualIds, fileId) {
 	if (
-		source.includes("__ziglive_probe(") ||
-		source.includes("__ziglive_log")
+		source.includes("__atomis_probe(") ||
+		source.includes("__atomis_log")
 	) {
 		return { generated: source, probes: [], parseDiagnostics: [] };
 	}
@@ -101,7 +101,7 @@ export function instrument(source, uri, autoInspect, manualIds, fileId) {
 		if (active)
 			insertions.push({
 				offset: statementEnd,
-				text: `; __ziglive_probe(${JSON.stringify(id)}, ${range.startLine}, ${range.startColumn}, ${JSON.stringify(name)}, ${name});`,
+				text: `; __atomis_probe(${JSON.stringify(id)}, ${range.startLine}, ${range.startColumn}, ${JSON.stringify(name)}, ${name});`,
 			});
 		probes.push({
 			probeId: id,
@@ -200,12 +200,12 @@ export function instrument(source, uri, autoInspect, manualIds, fileId) {
 				if (enclosing?.variable)
 					insertions.push({
 						offset: node.end,
-						text: `; __ziglive_log_loop(${fd}, ${fileId}, ${at.line}, ${at.column}, ${enclosing.line}, ${enclosing.column}, ${JSON.stringify(enclosing.variable)}, ${enclosing.variable});`,
+						text: `; __atomis_log_loop(${fd}, ${fileId}, ${at.line}, ${at.column}, ${enclosing.line}, ${enclosing.column}, ${JSON.stringify(enclosing.variable)}, ${enclosing.variable});`,
 					});
 				else
 					insertions.push({
 						offset: node.end,
-						text: `; __ziglive_log(${fd}, ${fileId}, ${at.line}, ${at.column});`,
+						text: `; __atomis_log(${fd}, ${fileId}, ${at.line}, ${at.column});`,
 					});
 			}
 		}

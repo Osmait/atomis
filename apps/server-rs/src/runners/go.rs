@@ -223,7 +223,7 @@ pub async fn run(
     *session.probes.lock().await = outcome.probes.clone();
     emit(RunnerEvent::Catalog(outcome.probes.clone()));
     emit(RunnerEvent::Diagnostic {
-        owner: "ziglive-instrumenter".to_string(),
+        owner: "atomis-instrumenter".to_string(),
         diagnostics: outcome.diagnostics.clone(),
     });
     if !outcome.diagnostics.is_empty() {

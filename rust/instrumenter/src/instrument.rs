@@ -261,7 +261,7 @@ impl<'a, 'ast> Visit<'ast> for Collector<'a> {
         let statement_end = local.span().byte_range().end;
         let active = self.active(&id);
         let insertion = format!(
-            " crate::ziglive_probe!(\"{id}\", {line}, {column}, \"{name}\", &{name});",
+            " crate::atomis_probe!(\"{id}\", {line}, {column}, \"{name}\", &{name});",
             line = range.start_line,
             column = range.start_column,
         );
@@ -313,13 +313,13 @@ impl<'a, 'ast> Visit<'ast> for Collector<'a> {
             .and_then(|meta| meta.variable.clone().map(|variable| (meta.clone(), variable)));
         let insertion = match enclosing {
             Some((meta, variable)) => format!(
-                " crate::ziglive_log_loop!({fd}, {file}, {line}, {column}, {lline}, {lcolumn}, \"{variable}\", &{variable});",
+                " crate::atomis_log_loop!({fd}, {file}, {line}, {column}, {lline}, {lcolumn}, \"{variable}\", &{variable});",
                 file = self.file_id,
                 lline = meta.line,
                 lcolumn = meta.column,
             ),
             None => format!(
-                " crate::ziglive_log!({fd}, {file}, {line}, {column});",
+                " crate::atomis_log!({fd}, {file}, {line}, {column});",
                 file = self.file_id,
             ),
         };
@@ -335,7 +335,7 @@ pub fn instrument(
     file_id: u32,
     entry: bool,
 ) -> Output {
-    if source.contains("ziglive_probe!(") || source.contains("ziglive_log") {
+    if source.contains("atomis_probe!(") || source.contains("atomis_log") {
         return Output {
             generated: Some(source.to_string()),
             probes: Vec::new(),
@@ -384,7 +384,7 @@ pub fn instrument(
         }
     }
     if entry {
-        generated.push_str("\n#[path = \"ziglive_runtime.rs\"]\nmod __ziglive_runtime;\n");
+        generated.push_str("\n#[path = \"atomis_runtime.rs\"]\nmod __atomis_runtime;\n");
     }
     debug_assert_eq!(
         source.matches('\n').count() + if entry { 2 } else { 0 },
@@ -407,7 +407,7 @@ mod tests {
     fn probes_simple_lets_and_reports_complex_patterns() {
         let output = instrument(SAMPLE, "file:///main.rs", true, &[], 1, false);
         let generated = output.generated.unwrap();
-        assert!(generated.contains("let price: i32 = 40; crate::ziglive_probe!("));
+        assert!(generated.contains("let price: i32 = 40; crate::atomis_probe!("));
         assert!(generated.contains("\"price\", &price);"));
         assert_eq!(SAMPLE.matches('\n').count(), generated.matches('\n').count());
         let supported: Vec<_> = output.probes.iter().filter(|p| p.supported).collect();
@@ -423,8 +423,8 @@ mod tests {
         let output = instrument(SAMPLE, "file:///main.rs", true, &[], 7, false);
         let generated = output.generated.unwrap();
         assert!(generated
-            .contains("crate::ziglive_log_loop!(1, 7, 5, 9, 4, 5, \"i\", &i);"));
-        assert!(generated.contains("crate::ziglive_log!(2, 7, 7, 5);"));
+            .contains("crate::atomis_log_loop!(1, 7, 5, 9, 4, 5, \"i\", &i);"));
+        assert!(generated.contains("crate::atomis_log!(2, 7, 7, 5);"));
     }
 
     #[test]
@@ -436,7 +436,7 @@ mod tests {
             .probes
             .iter()
             .all(|probe| probe.insertion_byte.is_none()));
-        assert!(!none.generated.unwrap().contains("ziglive_probe"));
+        assert!(!none.generated.unwrap().contains("atomis_probe"));
         let selected = instrument(
             SAMPLE,
             "file:///main.rs",
@@ -453,7 +453,7 @@ mod tests {
         let source = "#[test]\nfn caso() {\n    let x = 4;\n    assert_eq!(4, x);\n}\n";
         let output = instrument(source, "file:///main.rs", true, &[], 1, false);
         assert!(output.probes.is_empty());
-        assert!(!output.generated.unwrap().contains("ziglive_probe"));
+        assert!(!output.generated.unwrap().contains("atomis_probe"));
     }
 
     #[test]
@@ -462,7 +462,7 @@ mod tests {
         assert!(output
             .generated
             .unwrap()
-            .ends_with("#[path = \"ziglive_runtime.rs\"]\nmod __ziglive_runtime;\n"));
+            .ends_with("#[path = \"atomis_runtime.rs\"]\nmod __atomis_runtime;\n"));
         let bad = instrument("fn main() {\n    let x = ;\n}\n", "file:///main.rs", true, &[], 1, false);
         assert!(bad.generated.is_none());
         assert_eq!(bad.parse_diagnostics[0].line, 2);
@@ -471,7 +471,7 @@ mod tests {
 
     #[test]
     fn instrumented_sources_pass_through_unchanged() {
-        let source = "fn main() { let x = 1; crate::ziglive_probe!(\"a\", 1, 1, \"x\", &x); }\n";
+        let source = "fn main() { let x = 1; crate::atomis_probe!(\"a\", 1, 1, \"x\", &x); }\n";
         let output = instrument(source, "file:///main.rs", true, &[], 1, false);
         assert_eq!(output.generated.as_deref(), Some(source));
         assert!(output.probes.is_empty());

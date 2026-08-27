@@ -1,5 +1,5 @@
 import type React from "react";
-import type { Language } from "@ziglive/protocol";
+import type { Language } from "@atomis/protocol";
 import {
 	applyBitop,
 	bitArray,

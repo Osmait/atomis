@@ -1,4 +1,4 @@
-// ZigLive session runtime for TypeScript/JavaScript. Loaded via `node
+// Atomis session runtime for TypeScript/JavaScript. Loaded via `node
 // --import` so the globals exist before ANY user module executes; probe
 // values flow as NDJSON on fd 3 and log markers on the stream that the
 // original console call writes to.
@@ -46,7 +46,7 @@ function typeName(value) {
 	return kind;
 }
 
-globalThis.__ziglive_probe = (probeId, line, column, name, value) => {
+globalThis.__atomis_probe = (probeId, line, column, name, value) => {
 	const { preview, truncated } = truncate(renderPreview(value));
 	const record = {
 		protocolVersion: 1,
@@ -63,11 +63,11 @@ globalThis.__ziglive_probe = (probeId, line, column, name, value) => {
 	writeFd(3, `${JSON.stringify(record)}\n`);
 };
 
-globalThis.__ziglive_log = (fd, fileId, line, column) => {
-	writeFd(fd, `${MARKER_START}ZIGLIVE_LOG:${fileId}:${line}:${column}${MARKER_END}`);
+globalThis.__atomis_log = (fd, fileId, line, column) => {
+	writeFd(fd, `${MARKER_START}ATOMIS_LOG:${fileId}:${line}:${column}${MARKER_END}`);
 };
 
-globalThis.__ziglive_log_loop = (
+globalThis.__atomis_log_loop = (
 	fd,
 	fileId,
 	line,
@@ -80,6 +80,6 @@ globalThis.__ziglive_log_loop = (
 	const { preview } = truncate(renderPreview(value));
 	writeFd(
 		fd,
-		`${MARKER_START}ZIGLIVE_LOG:${fileId}:${line}:${column}:${loopLine}:${loopColumn}:${variable}:${preview}${MARKER_END}`,
+		`${MARKER_START}ATOMIS_LOG:${fileId}:${line}:${column}:${loopLine}:${loopColumn}:${variable}:${preview}${MARKER_END}`,
 	);
 };
