@@ -56,6 +56,21 @@ for (const entry of entries) {
 	}
 	cpSync(source, join(resources, entry), { recursive: true });
 }
+// The TypeScript instrumenter imports the compiler from the repo's
+// node_modules, which the bundle does not carry — so node inside the
+// AppImage cannot resolve it. Staging the package next to the script puts it
+// where node looks first.
+const tsCompiler = join(root, "node_modules/typescript-ast");
+if (existsSync(tsCompiler)) {
+	cpSync(
+		tsCompiler,
+		join(resources, "ts/instrumenter/node_modules/typescript-ast"),
+		{ recursive: true, dereference: true },
+	);
+} else {
+	console.warn("⚠ missing resource (skipped): node_modules/typescript-ast");
+}
+
 cpSync(join(root, "apps/web/dist"), join(resources, "web-dist"), {
 	recursive: true,
 });

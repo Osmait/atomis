@@ -289,6 +289,9 @@ impl LspProxy {
         };
         let args = packs::lsp_args(self.language, &self.session.root);
         let mut builder = tokio::process::Command::new(command);
+        // A language server is a system tool too: an inherited bundle path
+        // would break it the same way it breaks a compiler.
+        crate::supervisor::scrub_bundle_env(&mut builder);
         builder
             .args(&args)
             .current_dir(&self.session.root)
