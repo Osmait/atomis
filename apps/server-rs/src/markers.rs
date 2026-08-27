@@ -40,9 +40,7 @@ fn find_marker(buffer: &str) -> Option<ParsedMarker> {
     while let Some(offset) = buffer[search_from..].find(MARKER_PREFIX) {
         let start = search_from + offset;
         let body_start = start + MARKER_PREFIX.len();
-        let Some(end_offset) = buffer[body_start..].find(MARKER_END) else {
-            return None;
-        };
+        let end_offset = buffer[body_start..].find(MARKER_END)?;
         let body = &buffer[body_start..body_start + end_offset];
         let end = body_start + end_offset + MARKER_END.len_utf8();
         if let Some(parsed) = parse_body(body, start, end) {
@@ -256,12 +254,10 @@ mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
 
-    fn collect(
-        chunks: &[&str],
-        detect_errors: bool,
-    ) -> Vec<(String, OutputCategory, Option<LogSourceLocation>)> {
-        let sink: Arc<Mutex<Vec<(String, OutputCategory, Option<LogSourceLocation>)>>> =
-            Arc::new(Mutex::new(Vec::new()));
+    type Emitted = (String, OutputCategory, Option<LogSourceLocation>);
+
+    fn collect(chunks: &[&str], detect_errors: bool) -> Vec<Emitted> {
+        let sink: Arc<Mutex<Vec<Emitted>>> = Arc::new(Mutex::new(Vec::new()));
         let out = Arc::clone(&sink);
         let mut file_ids = HashMap::new();
         file_ids.insert(1, "src/main.zig".to_string());

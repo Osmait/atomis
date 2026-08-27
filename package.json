@@ -26,7 +26,8 @@
     "py:test": "python3 -m unittest discover -s python/instrumenter -p 'instrument_test.py'",
     "cfamily:test": "node --test cfamily/instrumenter/instrument.test.mjs",
     "desktop:build": "pnpm build && node scripts/desktop-build.mjs",
-    "desktop:bundle": "pnpm desktop:build && pnpm --filter @ziglive/desktop bundle:linux"
+    "desktop:bundle": "pnpm desktop:build && pnpm --filter @ziglive/desktop bundle:linux",
+    "lint": "pnpm --filter @ziglive/web lint && cargo clippy --manifest-path apps/server-rs/Cargo.toml --all-targets -- -D warnings"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",

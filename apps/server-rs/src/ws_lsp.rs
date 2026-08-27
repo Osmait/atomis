@@ -141,7 +141,7 @@ fn filter_observed_unused(
                     && probe.insertion_byte.is_some()
                     && u64::from(probe.original_range.start_line) - 1 == line
                     && character >= u64::from(probe.original_range.start_column) - 1
-                    && character <= u64::from(probe.original_range.end_column) - 1
+                    && character < u64::from(probe.original_range.end_column)
             })
         })
         .cloned()
@@ -340,10 +340,7 @@ impl LspProxy {
             let Some(mut stdout) = stdout else { return };
             let mut framer = LspFramer::new();
             let mut buffer = [0u8; 64 * 1024];
-            loop {
-                let Ok(n) = stdout.read(&mut buffer).await else {
-                    break;
-                };
+            while let Ok(n) = stdout.read(&mut buffer).await {
                 if n == 0 {
                     break;
                 }

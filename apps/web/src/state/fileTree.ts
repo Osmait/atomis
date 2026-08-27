@@ -17,6 +17,9 @@ export interface FileRow {
 
 export type TreeRow = FolderRow | FileRow;
 
+const parentOf = (path: string): string =>
+	path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+
 /**
  * Derives the hierarchical tree rows from flat project paths. Folders are
  * implicit (they exist because files live inside them), plus any locally
@@ -53,8 +56,6 @@ export function buildTreeRows(options: {
 
 	const childFolders = new Map<string, string[]>();
 	const childFiles = new Map<string, string[]>();
-	const parentOf = (path: string): string =>
-		path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
 	for (const folder of folders) {
 		const parent = parentOf(folder);
 		childFolders.set(parent, [...(childFolders.get(parent) ?? []), folder]);
@@ -69,7 +70,7 @@ export function buildTreeRows(options: {
 
 	const rows: TreeRow[] = [];
 	const walk = (parent: string, depth: number): void => {
-		const sortedFolders = (childFolders.get(parent) ?? []).sort((a, b) =>
+		const sortedFolders = (childFolders.get(parent) ?? []).toSorted((a, b) =>
 			a.localeCompare(b),
 		);
 		for (const folder of sortedFolders) {
@@ -85,7 +86,7 @@ export function buildTreeRows(options: {
 			});
 			if (!collapsed) walk(folder, depth + 1);
 		}
-		const sortedFiles = (childFiles.get(parent) ?? []).sort((a, b) =>
+		const sortedFiles = (childFiles.get(parent) ?? []).toSorted((a, b) =>
 			a.localeCompare(b),
 		);
 		for (const file of sortedFiles)

@@ -1,51 +1,26 @@
 import type * as Monaco from "monaco-editor";
+import {
+	answerServerRequest,
+	asShape,
+	completionInsertText,
+	fromMonacoBounds,
+	normalizeHoverContents,
+	toMonacoPosition,
+	toMonacoRange,
+	type JsonValue,
+	type LspDiagnostic,
+	type LspLocation,
+	type LspPosition,
+	type LspRange,
+	type LspTextEdit,
+	type RpcMessage,
+} from "./protocol.js";
 
-interface RpcMessage {
-	jsonrpc?: string;
-	id?: number | string | null;
-	method?: string;
-	params?: unknown;
-	result?: unknown;
-	error?: { code?: number; message?: string };
-}
-
-interface LspPosition {
-	line: number;
-	character: number;
-}
-interface LspRange {
-	start: LspPosition;
-	end: LspPosition;
-}
-interface LspTextEdit {
-	range: LspRange;
-	newText: string;
-}
-interface LspDiagnostic {
-	range: LspRange;
-	message: string;
-	severity?: number;
-	code?: string | number;
-	source?: string;
-}
-interface Location {
-	uri: string;
-	range: LspRange;
-}
-
-function position(position: LspPosition): Monaco.Position {
-	return {
-		lineNumber: position.line + 1,
-		column: position.character + 1,
-	} as Monaco.Position;
+function position(value: LspPosition): Monaco.Position {
+	return toMonacoPosition(value) as Monaco.Position;
 }
 function range(value: LspRange): Monaco.Range {
-	return {
-		startLineNumber: value.start.line + 1,
-		startColumn: value.start.character + 1,
-		endLineNumber: value.end.line + 1,
-		endColumn: value.end.character + 1,
-	} as Monaco.Range;
+	return toMonacoRange(value) as Monaco.Range;
 }
 
 function completionKind(
@@ -91,7 +66,7 @@ export class LspClient {
 		number,
 		{
 			method: string;
-			resolve: (value: unknown) => void;
+			resolve: (value: JsonValue | null) => void;
 			reject: (reason: Error) => void;
 		}
 	>();
@@ -100,14 +75,14 @@ export class LspClient {
 	private readonly pendingOpens = new Map<string, Monaco.editor.ITextModel>();
 	private initialized = false;
 	private lastVersion = 0;
-	private capabilities: Record<string, unknown> = {};
+	private capabilities: Record<string, JsonValue> = {};
 
 	public constructor(
 		private readonly monaco: typeof Monaco,
 		private readonly model: Monaco.editor.ITextModel,
 		private readonly workspaceUri: string,
 		private readonly onCapabilities: (
-			capabilities: Record<string, unknown>,
+			capabilities: Record<string, JsonValue>,
 		) => void,
 		private readonly onDiagnostics: (
 			uri: string,
@@ -135,10 +110,10 @@ export class LspClient {
 	}
 
 	private async initialize(documentVersion: number): Promise<void> {
-		let result: { capabilities: Record<string, unknown> } | null = null;
+		let result: { capabilities: Record<string, JsonValue> } | null = null;
 		try {
 			result = await this.request<{
-				capabilities: Record<string, unknown>;
+				capabilities: Record<string, JsonValue>;
 			}>("initialize", {
 			processId: null,
 			rootUri: this.workspaceUri,
@@ -254,10 +229,10 @@ export class LspClient {
 							}
 						: {}),
 					provideCompletionItems: async (model, at) => {
-						let response: { items?: unknown[] } | unknown[] | null;
+						let response: { items?: JsonValue[] } | JsonValue[] | null;
 						try {
 							response = await this.request<
-								{ items?: unknown[] } | unknown[] | null
+								{ items?: JsonValue[] } | JsonValue[] | null
 							>("textDocument/completion", this.documentPosition(model, at));
 						} catch (error) {
 							this.onStatus(
@@ -270,7 +245,7 @@ export class LspClient {
 							: (response?.items ?? []);
 						return {
 							suggestions: items.map((raw) => {
-								const item = raw as {
+								const item = asShape<{
 									label: string;
 									detail?: string;
 									documentation?: string | { value?: string };
@@ -280,7 +255,7 @@ export class LspClient {
 									textEdit?: LspTextEdit;
 									sortText?: string;
 									filterText?: string;
-								};
+								}>(raw);
 								const documentation =
 									typeof item.documentation === "string"
 										? item.documentation
@@ -290,8 +265,7 @@ export class LspClient {
 									detail: item.detail,
 									documentation,
 									kind: completionKind(this.monaco, item.kind),
-									insertText:
-										item.textEdit?.newText ?? item.insertText ?? item.label,
+									insertText: completionInsertText(item),
 									...(item.insertTextFormat === 2
 										? {
 												insertTextRules:
@@ -316,22 +290,11 @@ export class LspClient {
 				this.monaco.languages.registerHoverProvider(this.languageId, {
 					provideHover: async (model, at) => {
 						const hover = await this.request<{
-							contents?: unknown;
+							contents?: JsonValue;
 							range?: LspRange;
 						} | null>("textDocument/hover", this.documentPosition(model, at));
 						if (!hover) return null;
-						const raw = Array.isArray(hover.contents)
-							? hover.contents
-							: [hover.contents];
-						const contents = raw.filter(Boolean).map((entry) => {
-							if (typeof entry === "string") return { value: entry };
-							const value = entry as { value?: string; language?: string };
-							return {
-								value: value.language
-									? `\`\`\`${value.language}\n${value.value ?? ""}\n\`\`\``
-									: (value.value ?? ""),
-							};
-						});
+						const contents = normalizeHoverContents(hover.contents);
 						return {
 							contents,
 							...(hover.range ? { range: range(hover.range) } : {}),
@@ -344,7 +307,7 @@ export class LspClient {
 			this.disposables.push(
 				this.monaco.languages.registerDefinitionProvider(this.languageId, {
 					provideDefinition: async (model, at) => {
-						const response = await this.request<Location | Location[] | null>(
+						const response = await this.request<LspLocation | LspLocation[] | null>(
 							"textDocument/definition",
 							this.documentPosition(model, at),
 						);
@@ -375,12 +338,13 @@ export class LspClient {
 				}),
 			);
 
-		const semantic = capabilities.semanticTokensProvider as
+		const semantic = asShape<
 			| {
 					legend?: { tokenTypes?: string[]; tokenModifiers?: string[] };
-					full?: unknown;
+					full?: JsonValue;
 			  }
-			| undefined;
+			| undefined
+		>(capabilities.semanticTokensProvider);
 		if (semantic?.legend && semantic.full)
 			this.disposables.push(
 				this.monaco.languages.registerDocumentSemanticTokensProvider(this.languageId, {
@@ -418,16 +382,12 @@ export class LspClient {
 							| null
 						>("textDocument/inlayHint", {
 							textDocument: { uri: model.uri.toString() },
-							range: {
-								start: {
-									line: requestedRange.startLineNumber - 1,
-									character: requestedRange.startColumn - 1,
-								},
-								end: {
-									line: requestedRange.endLineNumber - 1,
-									character: requestedRange.endColumn - 1,
-								},
-							},
+							range: fromMonacoBounds(
+								requestedRange.startLineNumber,
+								requestedRange.startColumn,
+								requestedRange.endLineNumber,
+								requestedRange.endColumn,
+							),
 						});
 						return {
 							hints: (hints ?? []).map((hint) => ({
@@ -457,35 +417,27 @@ export class LspClient {
 									command?: {
 										title: string;
 										command: string;
-										arguments?: unknown[];
+										arguments?: JsonValue[];
 									};
 							  }[]
 							| null
 						>("textDocument/codeAction", {
 							textDocument: { uri: model.uri.toString() },
-							range: {
-								start: {
-									line: selectedRange.startLineNumber - 1,
-									character: selectedRange.startColumn - 1,
-								},
-								end: {
-									line: selectedRange.endLineNumber - 1,
-									character: selectedRange.endColumn - 1,
-								},
-							},
+							range: fromMonacoBounds(
+								selectedRange.startLineNumber,
+								selectedRange.startColumn,
+								selectedRange.endLineNumber,
+								selectedRange.endColumn,
+							),
 							context: {
 								diagnostics: context.markers.map((marker) => ({
 									message: marker.message,
-									range: {
-										start: {
-											line: marker.startLineNumber - 1,
-											character: marker.startColumn - 1,
-										},
-										end: {
-											line: marker.endLineNumber - 1,
-											character: marker.endColumn - 1,
-										},
-									},
+									range: fromMonacoBounds(
+										marker.startLineNumber,
+										marker.startColumn,
+										marker.endLineNumber,
+										marker.endColumn,
+									),
 								})),
 							},
 						});
@@ -566,14 +518,14 @@ export class LspClient {
 				if (pending.method === "initialize")
 					pending.reject(new Error(message.error.message ?? "LSP error"));
 				else pending.resolve(null);
-			} else pending.resolve(message.result);
+			} else pending.resolve(message.result ?? null);
 			return;
 		}
 		if (message.method === "textDocument/publishDiagnostics") {
-			const params = message.params as {
+			const params = asShape<{
 				uri?: string;
 				diagnostics?: LspDiagnostic[];
-			};
+			}>(message.params);
 			if (!params.uri) return;
 			const model = this.monaco.editor.getModel(
 				this.monaco.Uri.parse(params.uri),
@@ -604,7 +556,8 @@ export class LspClient {
 		} else if (message.method === "window/showMessage") {
 			this.onStatus(
 				String(
-					(message.params as { message?: string })?.message ?? "Language server message",
+					asShape<{ message?: string } | undefined>(message.params)?.message ??
+						"Language server message",
 				),
 			);
 		} else if (message.method === "ziglive/lspRestarted") {
@@ -615,32 +568,26 @@ export class LspClient {
 	}
 
 	private answerServerRequest(message: RpcMessage): void {
-		let result: unknown = null;
-		if (message.method === "workspace/configuration")
-			result = ((message.params as { items?: unknown[] })?.items ?? []).map(
-				() => ({}),
-			);
-		else if (message.method === "workspace/applyEdit")
-			result = {
-				applied: false,
-				failureReason: "Server initiated edits are not supported",
-			};
 		this.socket?.send(
-			JSON.stringify({ jsonrpc: "2.0", id: message.id, result }),
+			JSON.stringify({
+				jsonrpc: "2.0",
+				id: message.id,
+				result: answerServerRequest(message.method, message.params),
+			}),
 		);
 	}
 
-	private notify(method: string, params: unknown): void {
+	private notify(method: string, params: object): void {
 		if (this.socket?.readyState === WebSocket.OPEN)
 			this.socket.send(JSON.stringify({ jsonrpc: "2.0", method, params }));
 	}
 
-	private request<T>(method: string, params: unknown): Promise<T> {
+	private request<T>(method: string, params: object): Promise<T> {
 		const id = this.nextId++;
 		return new Promise<T>((resolve, reject) => {
 			this.pending.set(id, {
 				method,
-				resolve: (value) => resolve(value as T),
+				resolve: (value) => resolve(asShape<T>(value)),
 				reject,
 			});
 			this.socket?.send(JSON.stringify({ jsonrpc: "2.0", id, method, params }));

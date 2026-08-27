@@ -63,6 +63,7 @@ zig build test
 cargo test --manifest-path apps/server-rs/Cargo.toml
 pnpm --filter @ziglive/web test
 pnpm typecheck
+pnpm lint    # oxlint (strict, no any/unknown) + cargo clippy -D warnings
 ```
 
 ## Desktop app (Tauri)

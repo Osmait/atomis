@@ -42,11 +42,14 @@ pub struct ProcessResult {
     pub duration_ms: f64,
 }
 
+pub type TextSink<'a> = Box<dyn FnMut(&str) + Send + 'a>;
+pub type BytesSink<'a> = Box<dyn FnMut(&[u8]) + Send + 'a>;
+
 #[derive(Default)]
 pub struct StreamCallbacks<'a> {
-    pub stdout: Option<Box<dyn FnMut(&str) + Send + 'a>>,
-    pub stderr: Option<Box<dyn FnMut(&str) + Send + 'a>>,
-    pub probe: Option<Box<dyn FnMut(&[u8]) + Send + 'a>>,
+    pub stdout: Option<TextSink<'a>>,
+    pub stderr: Option<TextSink<'a>>,
+    pub probe: Option<BytesSink<'a>>,
 }
 
 pub struct RunOptions<'a> {

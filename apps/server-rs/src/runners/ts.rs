@@ -122,8 +122,7 @@ fn parse_tap_output(stdout: &str) -> Vec<TapResult> {
             if error_re.is_match(inner) {
                 let indent = inner.len() - inner.trim_start().len() + 2;
                 let mut collected: Vec<String> = Vec::new();
-                for body in cursor + 1..lines.len() {
-                    let body_line = lines[body];
+                for &body_line in lines.iter().skip(cursor + 1) {
                     if body_line.trim().is_empty() && !collected.is_empty() {
                         collected.push(String::new());
                         continue;

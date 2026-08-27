@@ -100,6 +100,9 @@ impl<'a> ProbeReader<'a> {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
+// The Test* prefix IS the wire format: serde derives the "test_start"/
+// "test_result"/… kind tags from these names.
+#[allow(clippy::enum_variant_names)]
 pub enum RawTestEvent {
     TestStart {
         index: u32,

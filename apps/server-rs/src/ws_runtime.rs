@@ -19,15 +19,6 @@ fn to_json(event: &ServerEvent) -> String {
     serde_json::to_string(event).unwrap_or_else(|_| "{}".to_string())
 }
 
-fn project_files_json(snapshot: &Snapshot) -> String {
-    serde_json::json!({
-        "type": "project.files",
-        "documentVersion": snapshot.version,
-        "files": snapshot.files,
-    })
-    .to_string()
-}
-
 fn run_disabled_message(language: Language) -> String {
     if language == Language::Rust {
         "Run is disabled: Rust 1.75+ is required. Run pnpm run doctor.".to_string()

@@ -67,8 +67,7 @@ pub fn discover_rust_tests(files: &[crate::protocol::ProjectFile]) -> Vec<TestCa
                 continue;
             }
             let mut advanced = false;
-            for lookahead in index + 1..lines.len() {
-                let line = lines[lookahead];
+            for (lookahead, &line) in lines.iter().enumerate().skip(index + 1) {
                 if let Some(capture) = fn_line().captures(line) {
                     let name = capture.get(1).map(|m| m.as_str()).unwrap_or_default();
                     let indent = line.len() - line.trim_start().len();
@@ -117,7 +116,7 @@ pub fn match_rust_test_name<'a>(catalog: &'a [TestCase], runner_name: &str) -> O
             (*candidate, score)
         })
         .collect();
-    scored.sort_by(|l, r| r.1.cmp(&l.1));
+    scored.sort_by_key(|entry| std::cmp::Reverse(entry.1));
     scored.first().map(|(candidate, _)| *candidate)
 }
 
@@ -141,6 +140,9 @@ fn cargo_project_path(file_name: &str) -> Option<String> {
 }
 
 pub fn parse_cargo_diagnostics(stdout: &str) -> Vec<AppDiagnostic> {
+    static ABORTING: OnceLock<Regex> = OnceLock::new();
+    let aborting = ABORTING
+        .get_or_init(|| Regex::new(r"aborting due to \d+ previous error").expect("static"));
     let mut diagnostics = Vec::new();
     for line in stdout.split('\n') {
         if !line.trim_start().starts_with('{') {
@@ -166,9 +168,6 @@ pub fn parse_cargo_diagnostics(stdout: &str) -> Vec<AppDiagnostic> {
         } else {
             continue;
         };
-        static ABORTING: OnceLock<Regex> = OnceLock::new();
-        let aborting =
-            ABORTING.get_or_init(|| Regex::new(r"aborting due to \d+ previous error").expect("static"));
         if aborting.is_match(text) {
             continue;
         }

@@ -56,15 +56,16 @@ export function groupOutput(entries: readonly TerminalEntry[]): TerminalRow[] {
 				const loopSuffix = location?.loop
 					? ` · bucle ${location.loop.variable}`
 					: "";
+				const start = index;
 				rows.push({
 					kind: "fold",
-					key: `loop:${key}:${index}`,
+					key: `loop:${key}:${start}`,
 					label: `traza · ${key}${loopSuffix}`,
 					entries: entries
-						.slice(index, end)
+						.slice(start, end)
 						.map((grouped, offset) => ({
 							entry: grouped,
-							index: index + offset,
+							index: start + offset,
 						})),
 				});
 				index = end;
@@ -86,15 +87,16 @@ export function groupOutput(entries: readonly TerminalEntry[]): TerminalRow[] {
 				end++;
 			}
 			if (end - index >= STACK_FOLD_MIN) {
+				const start = index;
 				rows.push({
 					kind: "fold",
-					key: `stack:${index}`,
+					key: `stack:${start}`,
 					label: "traza del panic",
 					entries: entries
-						.slice(index, end)
+						.slice(start, end)
 						.map((grouped, offset) => ({
 							entry: grouped,
-							index: index + offset,
+							index: start + offset,
 						})),
 				});
 				index = end;

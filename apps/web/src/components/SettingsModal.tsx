@@ -3,29 +3,14 @@ import { useEffect } from "react";
 import { VALUE_FMTS, type ValueFmt } from "../lowlevel.js";
 import { Lucide } from "./Lucide.js";
 
-export const APP_THEMES = [
-	{ id: "mocha", label: "Mocha", dot: "#1e1e2e" },
-	{ id: "macchiato", label: "Macchiato", dot: "#24273a" },
-	{ id: "crust", label: "Crust", dot: "#11111b" },
-] as const;
-
-export type AppTheme = (typeof APP_THEMES)[number]["id"];
-
-export const APP_FONTS = [
-	{ label: "JetBrains Mono", css: '"JetBrains Mono", ui-monospace, monospace' },
-	{ label: "IBM Plex Mono", css: '"IBM Plex Mono", ui-monospace, monospace' },
-	{ label: "SF Mono", css: 'ui-monospace, "SF Mono", Menlo, monospace' },
-] as const;
-
-export const APP_SIZES = [12, 13, 14, 15] as const;
-
-export const LEADER_OPTIONS = [
-	{ id: "space", label: "Espacio" },
-	{ id: "comma", label: "Coma ," },
-	{ id: "backslash", label: "Barra \\" },
-] as const;
-
-export type LeaderOption = (typeof LEADER_OPTIONS)[number]["id"];
+import {
+	APP_FONTS,
+	APP_SIZES,
+	APP_THEMES,
+	LEADER_OPTIONS,
+	type AppTheme,
+	type LeaderKey,
+} from "../state/appearance.js";
 
 interface Toggle {
 	label: string;
@@ -45,8 +30,8 @@ interface SettingsModalProps {
 	onFont: (index: number) => void;
 	sizeIndex: number;
 	onSize: (index: number) => void;
-	leader: LeaderOption;
-	onLeader: (leader: LeaderOption) => void;
+	leader: LeaderKey;
+	onLeader: (leader: LeaderKey) => void;
 	onClose: () => void;
 }
 
