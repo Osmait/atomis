@@ -1337,3 +1337,27 @@ test("inline logs render output beside its line and toggle off", async ({
 	await setToggle(page, "Inline logs", true);
 	await expect(page.locator(".inline-log")).toContainText("tick 3 ×4");
 });
+
+test("vim gets quick-scope targets and editor-integrated commands", async ({
+	page,
+}) => {
+	await openClean(page);
+	await setToggle(page, "Vim Mode", true);
+	await page.locator(".monaco-editor").click();
+	await page.keyboard.press("Escape");
+	await page.keyboard.type("gg");
+	// Quick-scope: f/t landing spots are underlined while in NORMAL mode.
+	await expect(page.locator(".qs-primary").first()).toBeVisible();
+
+	// gcc toggles the comment through Monaco's action.
+	await page.keyboard.type("gcc");
+	await expect(page.locator(".view-lines")).toContainText("// const std");
+	await page.keyboard.type("gcc");
+	await expect(page.locator(".view-lines")).not.toContainText("// const std");
+
+	// Insert mode must keep the quick-scope overlay away.
+	await page.keyboard.type("i");
+	await expect(page.locator(".qs-primary")).toHaveCount(0);
+	await page.keyboard.press("Escape");
+	await expect(page.locator(".qs-primary").first()).toBeVisible();
+});

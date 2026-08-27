@@ -31,12 +31,17 @@ import { SettingsModal } from "./components/SettingsModal.js";
 import { StatusBar, ZenPill } from "./components/StatusBar.js";
 import { Terminal, type TerminalTab } from "./components/Terminal.js";
 import { TestsDrawer } from "./components/TestsDrawer.js";
+import {
+	installVimExtensions,
+	updateVimAppCommands,
+} from "./editor/vimExtensions.js";
 import { useDismissable } from "./hooks/useDismissable.js";
 import { useEditorDecorations } from "./hooks/useEditorDecorations.js";
 import { useGlobalShortcuts } from "./hooks/useGlobalShortcuts.js";
 import { useKeyboardNav, type TreeNavRow } from "./hooks/useKeyboardNav.js";
 import { useMediaLayout } from "./hooks/useMediaLayout.js";
 import { usePeekPanel } from "./hooks/usePeekPanel.js";
+import { useQuickScope } from "./hooks/useQuickScope.js";
 import { useProjectFiles } from "./hooks/useProjectFiles.js";
 import { useRuntimeEvents } from "./hooks/useRuntimeEvents.js";
 import {
@@ -685,6 +690,7 @@ export function App(): React.JSX.Element {
 				vimCommands.Vim.unmap(shortcut);
 			vimCommands.Vim.unmap("<C-c>", "insert");
 			vimCommands.Vim.defineEx("write", "w", run);
+			installVimExtensions();
 			if (vimEnabledRef.current && vimStatusRef.current)
 				vimRef.current = initVimMode(
 					editor,
@@ -753,6 +759,31 @@ export function App(): React.JSX.Element {
 			setPeek,
 		],
 	);
+
+	useEffect(() => {
+		updateVimAppCommands({
+			run,
+			openOrCreateFile: (name) => {
+				if (!name) {
+					setPaletteOpen(true);
+					return;
+				}
+				if (filesRef.current.some((file) => file.path === name))
+					selectFile(name);
+				else project.createFileNamed(name);
+			},
+			closeActiveTab: () => project.closeTab(activePathRef.current),
+			closeOtherTabs: project.closeOtherTabs,
+		});
+	}, [activePathRef, project, run, selectFile]);
+
+	useQuickScope({
+		editorRef,
+		cursor: cursorPosition,
+		vimEnabled,
+		vimModeLabel,
+		activePath,
+	});
 
 	useEditorDecorations({
 		editorRef,
