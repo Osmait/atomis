@@ -614,6 +614,141 @@ test("Ctrl+S formats the document and returns vim to normal mode", async ({
 	);
 });
 
+test("multi-file imports run in every language", async ({ page }) => {
+	await openClean(page);
+	await expect(page.locator(".state-succeeded")).toBeVisible();
+	const doctor = await page.evaluate(async () => {
+		const response = await fetch("/api/doctor");
+		const body = (await response.json()) as {
+			checks: { name: string; detected: string }[];
+		};
+		return Object.fromEntries(
+			body.checks.map((check) => [check.name, check.detected]),
+		) as Record<string, string>;
+	});
+	const available = (name: string): boolean =>
+		!(doctor[name] ?? "").includes("degraded");
+
+	const flows: {
+		gate: string;
+		entry: string;
+		helper: [string, string];
+		main: string;
+		expect: string;
+	}[] = [
+		{
+			gate: "Rust cargo",
+			entry: "main.rs",
+			helper: ["helper.rs", "pub fn doubled(x: i32) -> i32 {\n    x * 2\n}\n"],
+			main: "mod helper;\n\nfn main() {\n    let result = helper::doubled(21);\n    let _ = result;\n}\n",
+			expect: "42 : i32",
+		},
+		{
+			gate: "Go go",
+			entry: "main.go",
+			helper: [
+				"gohelper.go",
+				"package main\n\nfunc doubled(x int) int {\n\treturn x * 2\n}\n",
+			],
+			main: 'package main\n\nimport "fmt"\n\nfunc main() {\n\tresult := doubled(21)\n\tfmt.Println(result)\n}\n',
+			expect: "42 : int",
+		},
+		{
+			gate: "Node.js",
+			entry: "main.ts",
+			helper: [
+				"tshelper.ts",
+				"export function doubled(x: number): number {\n\treturn x * 2;\n}\n",
+			],
+			main: 'import { doubled } from "./tshelper.ts";\n\nconst result = doubled(21);\nconsole.log(result);\n',
+			expect: "42 : number",
+		},
+		{
+			gate: "Python python3",
+			entry: "main.py",
+			helper: ["pyhelper.py", "def doubled(x):\n    return x * 2\n"],
+			main: "from pyhelper import doubled\n\nresult = doubled(21)\nprint(result)\n",
+			expect: "42 : int",
+		},
+		{
+			gate: "C/C++ clang",
+			entry: "main.c",
+			helper: ["chelper.c", "int doubled(int x) {\n\treturn x * 2;\n}\n"],
+			main: '#include <stdio.h>\n\nint doubled(int x);\n\nint main(void) {\n\tint result = doubled(21);\n\tprintf("%d\\n", result);\n\treturn 0;\n}\n',
+			expect: "42 : int",
+		},
+	];
+	for (const flow of flows) {
+		if (!available(flow.gate)) continue;
+		await treeAction(page, "Crear archivo");
+		await fillTreeDraft(page, flow.helper[0]);
+		await replaceEditor(page, flow.helper[1]);
+		await page.getByRole("button", { name: flow.entry, exact: true }).click();
+		await expect(page.locator(".status-path")).toContainText(flow.entry);
+		await replaceEditor(page, flow.main);
+		await expect(page.getByText(flow.expect, { exact: true })).toBeVisible({
+			timeout: 60_000,
+		});
+	}
+});
+
+test("programs that open TCP/HTTP servers are killed at the timeout", async ({
+	page,
+}) => {
+	await openClean(page);
+	await expect(page.locator(".state-succeeded")).toBeVisible();
+
+	// A Node HTTP server blocks forever: the run must end as timed_out and
+	// the process-group kill must leave nothing listening on the port.
+	await page.getByRole("button", { name: "main.ts", exact: true }).click();
+	await replaceEditor(
+		page,
+		'import { createServer } from "node:http";\n\nconst server = createServer((_req, res) => {\n\tres.end("hola");\n});\nserver.listen(39123, "127.0.0.1", () => {\n\tconsole.log("escuchando en 39123");\n});\n',
+	);
+	await expect(page.locator(".state-timed_out")).toBeVisible({
+		timeout: 30_000,
+	});
+	await expect(page.locator(".panel-content")).toContainText(
+		"escuchando en 39123",
+	);
+	await page.waitForTimeout(600);
+	const httpPortFree = await page.evaluate(async () => {
+		try {
+			await fetch("http://127.0.0.1:39123/", {
+				mode: "no-cors",
+				signal: AbortSignal.timeout(1000),
+			});
+			return false;
+		} catch {
+			return true;
+		}
+	});
+	expect(httpPortFree).toBe(true);
+
+	// Same policy for a raw TCP listener in Python.
+	await page.getByRole("button", { name: "main.py", exact: true }).click();
+	await replaceEditor(
+		page,
+		'import socketserver\n\n\nclass Handler(socketserver.BaseRequestHandler):\n    def handle(self):\n        self.request.sendall(b"hola")\n\n\nwith socketserver.TCPServer(("127.0.0.1", 39124), Handler) as server:\n    print("escuchando en 39124")\n    server.serve_forever()\n',
+	);
+	await expect(page.locator(".state-timed_out")).toBeVisible({
+		timeout: 30_000,
+	});
+	await page.waitForTimeout(600);
+	const tcpPortFree = await page.evaluate(async () => {
+		try {
+			await fetch("http://127.0.0.1:39124/", {
+				mode: "no-cors",
+				signal: AbortSignal.timeout(1000),
+			});
+			return false;
+		} catch {
+			return true;
+		}
+	});
+	expect(tcpPortFree).toBe(true);
+});
+
 test("leader key navigates tree and terminal app-wide", async ({ page }) => {
 	await openClean(page);
 	await expect(page.locator(".state-succeeded")).toBeVisible();

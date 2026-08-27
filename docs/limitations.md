@@ -31,3 +31,16 @@
   tracking from the design mock require allocator hooks and are not built.
 - Addresses (`dirección`) are not reported: probes observe copies, so the
   copy's address would be misleading rather than informative.
+
+## Red y procesos del código del usuario
+
+- **No hay sandbox**: el código se ejecuta localmente con los permisos del
+  usuario (la UI lo advierte al crear la sesión). Un programa puede abrir
+  sockets, leer archivos o usar la red durante su ejecución.
+- **Los servidores no sobreviven**: cualquier proceso que bloquee (un
+  servidor TCP/HTTP, `serve_forever`, un `listen`) muere al agotar el
+  timeout de ejecución (2 s por defecto, máximo 10 s): SIGTERM al process
+  group completo y SIGKILL 250 ms después. El e2e verifica que el puerto
+  queda libre tras el kill en Node y Python.
+- Lo que sí está bloqueado son las descargas de dependencias durante los
+  builds: `CARGO_NET_OFFLINE=true` y `GOPROXY=off` en cargo/go.
