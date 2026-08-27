@@ -1279,19 +1279,6 @@ input:focus-visible,
 	color: var(--dim) !important;
 }
 
-.qs-primary {
-	color: var(--peach) !important;
-	font-weight: 700;
-	text-decoration: underline;
-	text-underline-offset: 2px;
-}
-
-.qs-secondary {
-	color: var(--sky) !important;
-	text-decoration: underline dotted;
-	text-underline-offset: 2px;
-}
-
 .qs-match {
 	color: var(--yellow) !important;
 	font-weight: 700;

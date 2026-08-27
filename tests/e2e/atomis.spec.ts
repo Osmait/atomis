@@ -1346,18 +1346,15 @@ test("vim gets quick-scope targets and editor-integrated commands", async ({
 	await page.locator(".monaco-editor").click();
 	await page.keyboard.press("Escape");
 	await page.keyboard.type("gg");
-	// Quick-scope: the editor stays clean until f awaits its character…
-	await expect(page.locator(".qs-primary")).toHaveCount(0);
+	// clever-f: pressing f alone must not draw anything…
 	await page.keyboard.press("f");
-	await expect(page.locator(".qs-primary").first()).toBeVisible();
-	// …typing the character shows every match of THAT character while
-	// the jump can be repeated with ; — line 1 has several t's…
+	await expect(page.locator(".qs-match")).toHaveCount(0);
+	// …the matches appear once the character is chosen (several t's on
+	// line 1), persist across ; repeats, and any other key clears them.
 	await page.keyboard.press("t");
-	await expect(page.locator(".qs-primary")).toHaveCount(0);
-	expect(await page.locator(".qs-match").count()).toBeGreaterThan(0);
+	await expect(page.locator(".qs-match").first()).toBeVisible();
 	await page.keyboard.press(";");
 	expect(await page.locator(".qs-match").count()).toBeGreaterThan(0);
-	// …and any other key clears the overlay.
 	await page.keyboard.press("j");
 	await expect(page.locator(".qs-match")).toHaveCount(0);
 	await page.keyboard.type("gg");
@@ -1371,6 +1368,7 @@ test("vim gets quick-scope targets and editor-integrated commands", async ({
 	// Insert mode must never arm the overlay, even on an f keypress.
 	await page.keyboard.type("i");
 	await page.keyboard.press("f");
-	await expect(page.locator(".qs-primary")).toHaveCount(0);
+	await page.keyboard.press("t");
+	await expect(page.locator(".qs-match")).toHaveCount(0);
 	await page.keyboard.press("Escape");
 });
