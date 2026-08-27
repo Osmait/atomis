@@ -154,8 +154,10 @@ pub async fn run(command: &str, args: &[String], options: RunOptions<'_>) -> Pro
 
     if let Some(policy) = &options.sandbox {
         // The ruleset is built here, in the parent: the child may only run
-        // allocation-free syscalls between fork and exec.
-        match crate::sandbox::prepare(policy, crate::sandbox::detect_support()) {
+        // allocation-free syscalls between fork and exec. Whatever we are
+        // about to exec has to be reachable, wherever it was installed.
+        let policy = crate::sandbox::with_program(policy, command);
+        match crate::sandbox::prepare(&policy, crate::sandbox::detect_support()) {
             Ok(Some(ruleset)) => unsafe {
                 cmd.pre_exec(move || crate::sandbox::restrict(&ruleset));
             },

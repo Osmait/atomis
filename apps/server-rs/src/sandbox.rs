@@ -149,6 +149,65 @@ pub fn policy_for(workspace: &Path, project_root: &Path, home: Option<&Path>) ->
     }
 }
 
+/// Resolves `program` the way exec will: an absolute or relative path as
+/// given, a bare name through PATH. Symlinks are followed, because what the
+/// ruleset must name is the file the kernel ends up opening.
+fn resolve_program(program: &str) -> Option<PathBuf> {
+    let direct = Path::new(program);
+    if direct.components().count() > 1 {
+        return direct.canonicalize().ok();
+    }
+    std::env::var_os("PATH").and_then(|paths| {
+        std::env::split_paths(&paths)
+            .map(|dir| dir.join(program))
+            .find_map(|candidate| candidate.canonicalize().ok())
+    })
+}
+
+/// The same policy, plus read+execute on the directory the program lives
+/// in.
+///
+/// The allowlist above covers toolchains installed by a package manager or
+/// by the usual per-user managers, and misses every other arrangement — a
+/// tarball unpacked into a scratch directory, which is exactly how CI
+/// runners install Zig. The failure is silent and unhelpful: exec is denied,
+/// so the build dies in milliseconds with nothing on stderr. Granting the
+/// directory of whatever we are about to run costs nothing and covers every
+/// layout, including the `lib/` sitting next to the binary that Zig, Go and
+/// clang all read their standard library from.
+pub fn with_program(policy: &SandboxPolicy, program: &str) -> SandboxPolicy {
+    let Some(directory) = resolve_program(program).and_then(|path| path.parent().map(Path::to_path_buf))
+    else {
+        return policy.clone();
+    };
+    // A toolchain laid out as `<prefix>/bin/thing` keeps its standard
+    // library in `<prefix>/lib` (Zig, Go and clang all do), so the prefix is
+    // what has to be reachable — but never when the prefix is the home
+    // itself, which would hand over everything a `~/bin` user owns.
+    let grant = match directory.file_name() {
+        Some(name) if name == "bin" => match directory.parent() {
+            Some(prefix)
+                if prefix.parent().is_some()
+                    && policy.home.as_deref() != Some(prefix) =>
+            {
+                prefix.to_path_buf()
+            }
+            _ => directory,
+        },
+        _ => directory,
+    };
+    if policy
+        .read_only
+        .iter()
+        .any(|allowed| grant.starts_with(allowed))
+    {
+        return policy.clone();
+    }
+    let mut next = policy.clone();
+    next.read_only.push(grant);
+    next
+}
+
 /// Ports a dependency fetch needs: HTTPS, plus plain HTTP for the
 /// redirects some registries still serve.
 pub const FETCH_PORTS: &[u16] = &[443, 80];
@@ -383,6 +442,94 @@ mod tests {
             .status()
             .map(|status| status.success())
             .unwrap_or(false)
+    }
+
+    /// A toolchain unpacked outside every allowlisted prefix — how CI
+    /// runners install Zig, and how anyone using a tarball installs
+    /// anything — must still be runnable, or the build dies in
+    /// milliseconds with nothing on stderr to say why.
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn a_toolchain_outside_the_allowlist_can_still_be_executed() {
+        if !detect_support().available() {
+            eprintln!("landlock unavailable: skipping enforcement test");
+            return;
+        }
+        let root = std::env::temp_dir().join(format!(
+            "atomis-toolchain-test-{}",
+            std::process::id()
+        ));
+        let toolchain = root.join("some-lang-1.2.3");
+        std::fs::create_dir_all(&toolchain).expect("toolchain dir");
+        let program = toolchain.join("lang");
+        std::fs::copy("/bin/true", &program).expect("copy");
+        let mut permissions =
+            std::fs::metadata(&program).expect("metadata").permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
+        std::fs::set_permissions(&program, permissions).expect("chmod");
+        let workspace = root.join("workspace");
+        std::fs::create_dir_all(&workspace).expect("workspace");
+
+        let policy = policy_for(&workspace, Path::new("/nonexistent"), None);
+        let path = program.to_string_lossy().into_owned();
+        assert!(
+            !run_sandboxed(&policy, &[&path]),
+            "the bare policy should not reach a toolchain it never heard of"
+        );
+        let granted = with_program(&policy, &path);
+        assert!(
+            run_sandboxed(&granted, &[&path]),
+            "granting the program's own directory should make it runnable"
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_bin_directory_grants_the_prefix_but_never_a_home() {
+        let root = std::env::temp_dir()
+            .join(format!("atomis-prefix-test-{}", std::process::id()))
+            .canonicalize()
+            .unwrap_or_else(|_| {
+                let path = std::env::temp_dir()
+                    .join(format!("atomis-prefix-test-{}", std::process::id()));
+                std::fs::create_dir_all(&path).expect("root");
+                path.canonicalize().expect("canonical root")
+            });
+        let install = |dir: &Path| {
+            std::fs::create_dir_all(dir).expect("bin dir");
+            let program = dir.join("lang");
+            std::fs::copy("/bin/true", &program).expect("copy");
+            program
+        };
+
+        // <prefix>/bin/thing needs <prefix>, where lib/ lives.
+        let prefix = root.join("lang-1.0");
+        let program = install(&prefix.join("bin"));
+        let policy = policy_for(&root.join("ws"), Path::new("/nonexistent"), None);
+        let granted = with_program(&policy, &program.to_string_lossy());
+        assert!(granted.read_only.iter().any(|path| path == &prefix));
+
+        // ~/bin/thing must not drag the whole home along.
+        let home = root.join("fakehome");
+        let home_program = install(&home.join("bin"));
+        let home_policy =
+            policy_for(&root.join("ws"), Path::new("/nonexistent"), Some(&home));
+        let home_granted =
+            with_program(&home_policy, &home_program.to_string_lossy());
+        assert!(!home_granted.read_only.iter().any(|path| path == &home));
+        assert!(home_granted
+            .read_only
+            .iter()
+            .any(|path| path == &home.join("bin")));
+
+        // Nothing to resolve, nothing to add.
+        assert_eq!(
+            with_program(&policy, "definitely-not-a-real-binary"),
+            policy
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
