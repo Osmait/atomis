@@ -1282,11 +1282,45 @@ input:focus-visible,
 	color: var(--dim) !important;
 }
 
-/* Workspace switch: the shell dims briefly instead of reloading. */
+/* Workspace switch: the shell eases back instead of reloading, and the
+   new tree unfolds row by row like an accordion. */
 .app-shell.switching {
-	filter: saturate(0.6);
-	opacity: 0.45;
+	opacity: 0.6;
 	pointer-events: none;
+}
+
+.tree-rows {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-height: 0;
+}
+
+.tree-rows > * {
+	animation: tree-unfold 170ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
+	animation-delay: calc(var(--row, 0) * 14ms);
+	transform-origin: top;
+}
+
+@keyframes tree-unfold {
+	from {
+		max-height: 0;
+		opacity: 0;
+		transform: translateY(-3px);
+	}
+	to {
+		max-height: 40px;
+		opacity: 1;
+		transform: none;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.app-shell,
+	.tree-rows > * {
+		animation: none;
+		transition: none;
+	}
 }
 
 .workspace-picker .palette-results {

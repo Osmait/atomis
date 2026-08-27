@@ -1574,7 +1574,7 @@ test("persistent workspaces keep their files across reloads", async ({
 	// Switching is an in-place swap, not a page reload: a marker planted on
 	// window must survive it, and the runtime must still be live afterwards.
 	await page.evaluate(() => {
-		(window as unknown as { atomisSpaProbe?: number }).atomisSpaProbe = 7;
+		(window as object as { atomisSpaProbe?: number }).atomisSpaProbe = 7;
 	});
 
 	// A scratch session is a different, empty place…
@@ -1586,7 +1586,7 @@ test("persistent workspaces keep their files across reloads", async ({
 	await expect(page.getByLabel("persisted.zig")).toHaveCount(0);
 	expect(
 		await page.evaluate(
-			() => (window as unknown as { atomisSpaProbe?: number }).atomisSpaProbe,
+			() => (window as object as { atomisSpaProbe?: number }).atomisSpaProbe,
 		),
 	).toBe(7);
 	// The rebuilt socket still runs code in the new session.
@@ -1598,10 +1598,26 @@ test("persistent workspaces keep their files across reloads", async ({
 
 	// …and the workspace is still listed, with its files, until deleted.
 	await treeAction(page, "Switch workspace…");
-	await page.getByText(name).click();
+	await page.locator(".workspace-open", { hasText: name }).click();
 	await expect(page.getByLabel("persisted.zig")).toBeVisible({
 		timeout: 30_000,
 	});
+
+	// Re-opening the ACTIVE workspace is a no-op: the live session (and the
+	// inline values it produced) must survive the click.
+	await replaceEditor(
+		page,
+		'const std = @import("std");\n\npub fn main() void {\n\tconst kept: i32 = 41;\n\t_ = kept;\n}\n',
+	);
+	await expect(page.getByText("41 : i32", { exact: true })).toBeVisible({
+		timeout: 60_000,
+	});
+	const before = await page.locator(".branch-status b").textContent();
+	await treeAction(page, "Switch workspace…");
+	await page.locator(".workspace-open", { hasText: name }).click();
+	await expect(page.locator(".palette-overlay")).toHaveCount(0);
+	await expect(page.locator(".branch-status b")).toHaveText(before ?? "");
+	await expect(page.getByText("41 : i32", { exact: true })).toBeVisible();
 
 	page.on("dialog", (dialog) => void dialog.accept());
 	await treeAction(page, "Switch workspace…");

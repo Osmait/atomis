@@ -16,6 +16,8 @@ interface FileTreeProps {
 	draftValue: string;
 	draftInvalid: boolean;
 	failsByFile: ReadonlyMap<string, number>;
+	/** Changing this replays the unfold animation (one workspace = one key). */
+	revealKey: string;
 	onToggleSrc: () => void;
 	onSelect: (path: string) => void;
 	onToggleFolder: (path: string) => void;
@@ -31,6 +33,14 @@ interface FileTreeProps {
 	onDraftCommit: (value: string) => void;
 	onDraftCancel: () => void;
 	onOpenContextMenu: (menu: TreeContextMenuState) => void;
+}
+
+/**
+ * Per-row stagger for the unfold: later rows start later, capped so a big
+ * tree still finishes quickly.
+ */
+function rowDelay(index: number): React.CSSProperties {
+	return { "--row": Math.min(index, 12) } as React.CSSProperties;
 }
 
 /** The project sidebar: src root row with its ⋯ menu, inline creation and
@@ -223,6 +233,8 @@ export function FileTree(props: FileTreeProps): React.JSX.Element {
 					</div>
 				)}
 				{draft && draft.kind !== "rename" && draft.base === "" && draftRow(0)}
+				{/* Remounting on the workspace key replays the accordion. */}
+				<div className="tree-rows" key={props.revealKey}>
 				{!props.srcCollapsed &&
 					rows.map((row, rowIndex) => {
 						const kbSelected = props.focused && rowIndex === props.treeSel;
@@ -232,7 +244,10 @@ export function FileTree(props: FileTreeProps): React.JSX.Element {
 									<div
 										className={`tree-folder-row${kbSelected ? " kb-sel" : ""}`}
 										data-tree-folder={row.path}
-										style={{ paddingLeft: `${10 + row.depth * 14}px` }}
+										style={{
+											paddingLeft: `${10 + row.depth * 14}px`,
+											...rowDelay(rowIndex),
+										}}
 									>
 										<button
 											className="tree-folder"
@@ -276,7 +291,10 @@ export function FileTree(props: FileTreeProps): React.JSX.Element {
 								data-tree-path={row.path}
 								key={row.path}
 								onClick={() => props.onSelect(row.path)}
-								style={{ paddingLeft: `${22 + row.depth * 14}px` }}
+								style={{
+									paddingLeft: `${22 + row.depth * 14}px`,
+									...rowDelay(rowIndex),
+								}}
 								title={row.path}
 							>
 								<FileIcon path={row.path} /> {row.name}
@@ -290,6 +308,7 @@ export function FileTree(props: FileTreeProps): React.JSX.Element {
 							</button>
 						);
 					})}
+				</div>
 			</div>
 		</aside>
 	);

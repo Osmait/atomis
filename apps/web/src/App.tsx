@@ -1057,8 +1057,12 @@ export function App(): React.JSX.Element {
 	// model effects rebuild themselves around it.
 	const switchToWorkspace = useCallback(
 		(id: string | undefined): void => {
-			saveActiveWorkspace(id);
 			setWorkspacePickerOpen(false);
+			// Re-opening the workspace you are already in would throw away a
+			// live session (and flash the tree) to arrive exactly where you
+			// started.
+			if (id === sessionRef.current?.workspace?.id) return;
+			saveActiveWorkspace(id);
 			setSwitching(true);
 			for (const client of Object.values(lspClientsRef.current))
 				client?.dispose();
@@ -1251,6 +1255,7 @@ export function App(): React.JSX.Element {
 						onToggleSrc={() =>
 							project.setSrcCollapsed((previous) => !previous)
 						}
+						revealKey={session.sessionId}
 						rows={treeRows}
 						srcCollapsed={project.srcCollapsed}
 						treeSel={treeSel}

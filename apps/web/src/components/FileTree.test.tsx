@@ -49,6 +49,7 @@ function renderTree(
 			draftValue=""
 			failsByFile={new Map([["src/utils/helper.zig", 2]])}
 			focused={false}
+			revealKey="test"
 			rows={rows}
 			srcCollapsed={false}
 			treeSel={0}
