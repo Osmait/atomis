@@ -1365,6 +1365,22 @@ test("vim gets quick-scope targets and editor-integrated commands", async ({
 	await page.keyboard.type("gcc");
 	await expect(page.locator(".view-lines")).not.toContainText("// const std");
 
+	// vim-surround (gs namespace): gsw wraps the word, gsc swaps the
+	// pair (single keypress into the status-bar dialog), gsd removes it.
+	await page.keyboard.type("gg");
+	await page.keyboard.type('gsw"');
+	await expect(page.locator(".view-lines")).toContainText('"const" std');
+	await page.keyboard.type('gsc"');
+	await page.keyboard.press("'");
+	await expect(page.locator(".view-lines")).toContainText("'const' std");
+	await page.keyboard.type("gsd'");
+	await expect(page.locator(".view-lines")).not.toContainText("'const'");
+	// visual gs wraps the selection.
+	await page.keyboard.type("viwgs)");
+	await expect(page.locator(".view-lines")).toContainText("(const) std");
+	await page.keyboard.type("gsd)");
+	await expect(page.locator(".view-lines")).not.toContainText("(const)");
+
 	// Insert mode must never arm the overlay, even on an f keypress.
 	await page.keyboard.type("i");
 	await page.keyboard.press("f");

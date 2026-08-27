@@ -1,5 +1,14 @@
 import type * as MonacoApi from "monaco-editor";
 import { VimMode } from "monaco-vim";
+import {
+	changePairEdits,
+	deletePairEdits,
+	findEnclosingPair,
+	surroundPairFor,
+	wrapEdits,
+	type Position,
+	type SurroundEdit,
+} from "../state/surround.js";
 
 /**
  * App-level vim commands on top of monaco-vim: LSP/editor actions behind
@@ -17,12 +26,27 @@ export interface VimAppCommands {
 
 interface VimAdapter {
 	editor?: MonacoApi.editor.IStandaloneCodeEditor;
+	openDialog?: (
+		template: Node,
+		callback: ((value: string) => void) | undefined,
+		options: {
+			bottom?: boolean;
+			onKeyDown?: (
+				event: KeyboardEvent,
+				value: string,
+				close: () => void,
+			) => boolean;
+		},
+	) => void;
 }
 
 interface VimApi {
 	defineAction: (
 		name: string,
-		fn: (cm: VimAdapter) => void,
+		fn: (
+			cm: VimAdapter,
+			args?: { selectedCharacter?: string },
+		) => void,
 	) => void;
 	mapCommand: (
 		keys: string,
@@ -48,6 +72,37 @@ const commands: VimAppCommands = {
 
 export function updateVimAppCommands(next: VimAppCommands): void {
 	Object.assign(commands, next);
+}
+
+function applyEdits(
+	editor: MonacoApi.editor.IStandaloneCodeEditor,
+	edits: SurroundEdit[],
+): void {
+	if (!edits.length) return;
+	editor.pushUndoStop();
+	editor.executeEdits(
+		"vim-surround",
+		edits.map((edit) => ({
+			range: {
+				startLineNumber: edit.startLine,
+				startColumn: edit.startColumn,
+				endLineNumber: edit.endLine,
+				endColumn: edit.endColumn,
+			},
+			text: edit.text,
+			forceMoveMarkers: true,
+		})),
+	);
+	editor.pushUndoStop();
+}
+
+function cursorOf(
+	editor: MonacoApi.editor.IStandaloneCodeEditor,
+): Position | undefined {
+	const position = editor.getPosition();
+	return position
+		? { line: position.lineNumber, column: position.column }
+		: undefined;
 }
 
 let installed = false;
@@ -98,6 +153,133 @@ export function installVimExtensions(): void {
 
 	vim.defineAction("atomisWriteRun", () => commands.run());
 	vim.mapCommand("ZZ", "action", "atomisWriteRun", {}, { context: "normal" });
+
+	// ── vim-surround under the gs namespace: after an operator key (y/d/c)
+	// vim commits the built-in full match instantly, so ys/ds/cs sequences
+	// can never reach a custom mapping — gs is a free, non-operator prefix.
+	// gsw = surround word · gss = line · gsd = delete pair · gsc = change
+	// pair · visual gs = wrap selection ──
+	vim.defineAction("atomisSurroundWord", (cm, args) => {
+		const editor = cm.editor;
+		const pair = surroundPairFor(args?.selectedCharacter ?? "");
+		const position = editor?.getPosition();
+		const model = editor?.getModel();
+		if (!editor || !pair || !position || !model) return;
+		const word = model.getWordAtPosition(position);
+		if (!word) return;
+		applyEdits(editor, [
+			...wrapEdits(
+				{ line: position.lineNumber, column: word.startColumn },
+				{ line: position.lineNumber, column: word.endColumn },
+				pair,
+			),
+		]);
+	});
+	vim.mapCommand("gsw<character>", "action", "atomisSurroundWord", {}, {
+		context: "normal",
+	});
+
+	vim.defineAction("atomisSurroundLine", (cm, args) => {
+		const editor = cm.editor;
+		const pair = surroundPairFor(args?.selectedCharacter ?? "");
+		const position = editor?.getPosition();
+		const model = editor?.getModel();
+		if (!editor || !pair || !position || !model) return;
+		const text = model.getLineContent(position.lineNumber);
+		const first = text.length - text.trimStart().length + 1;
+		applyEdits(editor, [
+			...wrapEdits(
+				{ line: position.lineNumber, column: first },
+				{ line: position.lineNumber, column: text.length + 1 },
+				pair,
+			),
+		]);
+	});
+	vim.mapCommand("gss<character>", "action", "atomisSurroundLine", {}, {
+		context: "normal",
+	});
+
+	vim.defineAction("atomisSurroundVisual", (cm, args) => {
+		const editor = cm.editor;
+		const pair = surroundPairFor(args?.selectedCharacter ?? "");
+		const selection = editor?.getSelection();
+		if (!editor || !pair || !selection) return;
+		applyEdits(editor, [
+			...wrapEdits(
+				{
+					line: selection.startLineNumber,
+					column: selection.startColumn,
+				},
+				{ line: selection.endLineNumber, column: selection.endColumn },
+				pair,
+			),
+		]);
+		vim.exitVisualMode(cm);
+	});
+	vim.mapCommand("gs<character>", "action", "atomisSurroundVisual", {}, {
+		context: "visual",
+	});
+
+	vim.defineAction("atomisDeleteSurround", (cm, args) => {
+		const editor = cm.editor;
+		const model = editor?.getModel();
+		const cursor = editor ? cursorOf(editor) : undefined;
+		if (!editor || !model || !cursor) return;
+		const found = findEnclosingPair(
+			model.getLinesContent(),
+			cursor,
+			args?.selectedCharacter ?? "",
+		);
+		if (found) applyEdits(editor, deletePairEdits(found));
+	});
+	vim.mapCommand("gsd<character>", "action", "atomisDeleteSurround", {}, {
+		context: "normal",
+	});
+
+	vim.defineAction("atomisChangeSurround", (cm, args) => {
+		const editor = cm.editor;
+		const model = editor?.getModel();
+		const cursor = editor ? cursorOf(editor) : undefined;
+		if (!editor || !model || !cursor) return;
+		const found = findEnclosingPair(
+			model.getLinesContent(),
+			cursor,
+			args?.selectedCharacter ?? "",
+		);
+		if (!found) return;
+		const change = (char: string): void => {
+			const next = surroundPairFor(char);
+			if (next) applyEdits(editor, changePairEdits(found, next));
+		};
+		if (!cm.openDialog) return;
+		// The status bar escapes string templates, so the input must be a
+		// real DOM node; onKeyDown grabs the very first keypress so no
+		// Enter is needed.
+		const template = document.createElement("span");
+		template.append("surround with: ");
+		const field = document.createElement("input");
+		field.type = "text";
+		field.style.width = "4ch";
+		field.spellcheck = false;
+		template.append(field);
+		cm.openDialog(
+			template,
+			(value) => change(value[0] ?? ""),
+			{
+			bottom: true,
+			onKeyDown: (event, _value, close) => {
+				event.preventDefault();
+				event.stopPropagation();
+				close();
+				if (event.key.length === 1) change(event.key);
+				return true;
+			},
+			},
+		);
+	});
+	vim.mapCommand("gsc<character>", "action", "atomisChangeSurround", {}, {
+		context: "normal",
+	});
 
 	vim.defineEx("edit", "e", (_cm, params) =>
 		commands.openOrCreateFile(params.args?.[0]),
