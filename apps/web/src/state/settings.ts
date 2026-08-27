@@ -14,6 +14,8 @@ export interface Settings {
 	debounceMs: number;
 	timeoutMs: number;
 	manualProbeIds: string[];
+	/** Confine spawned processes to the workspace (server-enforced). */
+	sandbox: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -22,6 +24,9 @@ export const DEFAULT_SETTINGS: Settings = {
 	debounceMs: 400,
 	timeoutMs: 2000,
 	manualProbeIds: [],
+	// The session response reports what the kernel supports; until then
+	// assume it is on, so a run never escapes the sandbox by racing it.
+	sandbox: true,
 };
 
 export interface LayoutState {

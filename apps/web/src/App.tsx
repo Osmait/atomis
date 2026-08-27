@@ -415,6 +415,14 @@ export function App(): React.JSX.Element {
 				filesRef.current = projectFiles;
 				setFiles(projectFiles);
 				setSession(created);
+				// The kernel decides whether the sandbox can be honoured;
+				// a stored preference never turns it on where it cannot run.
+				if (created.sandboxSupport === "unsupported")
+					setSettings((previous) => {
+						const next = { ...previous, sandbox: false };
+						settingsRef.current = next;
+						return next;
+					});
 			} catch (error) {
 				setStartupError(
 					error instanceof Error ? error.message : String(error),
@@ -1085,6 +1093,12 @@ export function App(): React.JSX.Element {
 	const degradedMessages = Object.entries(session.degraded)
 		.filter(([key]) => key.startsWith(activeLanguage))
 		.map(([, message]) => message ?? "");
+	const sandboxAvailable = session.sandboxSupport !== "unsupported";
+	const sandboxHint = !sandboxAvailable
+		? "needs Linux 6.7+ with Landlock"
+		: session.sandboxSupport === "files"
+			? "workspace-only files"
+			: "workspace-only files · no TCP";
 	const drawerToneFor = (testId: string): string =>
 		caseTone(testsDone, testResults.get(testId));
 
@@ -1427,6 +1441,17 @@ export function App(): React.JSX.Element {
 									return !previous;
 								});
 							},
+						},
+						{
+							label: "Sandbox",
+							hint: sandboxHint,
+							on: settings.sandbox,
+							disabled: !sandboxAvailable,
+							act: () =>
+								sendSettings({
+									...settings,
+									sandbox: !settings.sandbox,
+								}),
 						},
 						{
 							label: "Vim Mode",

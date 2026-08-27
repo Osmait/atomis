@@ -70,6 +70,31 @@ pub async fn run_doctor() -> Vec<DoctorCheck> {
         help: Some("Install Node 22, then run: corepack enable && pnpm run doctor".to_string()),
     });
 
+    let sandbox = crate::sandbox::detect_support();
+    checks.push(DoctorCheck {
+        name: "Sandbox".to_string(),
+        // Informational: Atomis runs without it, degraded to "your code has
+        // your permissions".
+        ok: true,
+        detected: match sandbox {
+            crate::sandbox::SandboxSupport::FilesAndNetwork => {
+                "Landlock: workspace-only files, no TCP (UDP not covered)".to_string()
+            }
+            crate::sandbox::SandboxSupport::FilesOnly => {
+                "Landlock: workspace-only files (kernel < 6.7: TCP not confined)".to_string()
+            }
+            crate::sandbox::SandboxSupport::Unsupported => {
+                "unavailable — code runs with your permissions".to_string()
+            }
+        },
+        expected: "Linux 6.7+ with Landlock (optional, enables Settings → Sandbox)".to_string(),
+        command: "landlock_create_ruleset(ABI)".to_string(),
+        help: (!sandbox.available()).then(|| {
+            "Enable CONFIG_SECURITY_LANDLOCK and add landlock to lsm= on the kernel command line"
+                .to_string()
+        }),
+    });
+
     for tool in ["zig", "zls"] {
         let args: &[&str] = if tool == "zig" {
             &["version"]
@@ -221,6 +246,7 @@ pub async fn run_doctor() -> Vec<DoctorCheck> {
                 cancel: tokio_util::sync::CancellationToken::new(),
                 probe_fd: true,
                 env: Vec::new(),
+                sandbox: None,
                 callbacks: StreamCallbacks {
                     stdout: None,
                     stderr: None,

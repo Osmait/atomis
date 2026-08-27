@@ -623,7 +623,12 @@ test("Ctrl+S formats the document and returns vim to normal mode", async ({
 
 test("multi-file imports run in every language", async ({ page }) => {
 	await openClean(page);
-	await expect(page.locator(".state-succeeded")).toBeVisible();
+	// A sandboxed session starts with cold toolchain caches (they live in
+	// the workspace, not the user's home), so the first compile of each
+	// language pays a one-off penalty; this spec compiles five of them.
+	await expect(page.locator(".state-succeeded")).toBeVisible({
+		timeout: 60_000,
+	});
 	const doctor = await page.evaluate(async () => {
 		const response = await fetch("/api/doctor");
 		const body = (await response.json()) as {
@@ -705,6 +710,22 @@ test("programs that open TCP/HTTP servers are killed at the timeout", async ({
 	await openClean(page);
 	await expect(page.locator(".state-succeeded")).toBeVisible();
 
+	// The sandbox denies the network outright where the kernel supports it,
+	// so a server never binds; this spec is about the fallback policy that
+	// applies with the sandbox off (or on kernels below Landlock ABI 4).
+	const sandboxed = await page.evaluate(async () => {
+		const response = await fetch("/api/sessions", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ language: "zig", scaffold: "minimal" }),
+		});
+		return (
+			((await response.json()) as { sandboxSupport?: string })
+				.sandboxSupport === "files+network"
+		);
+	});
+	if (sandboxed) await setToggle(page, "Sandbox", false);
+
 	// A Node HTTP server blocks forever: the run must end as timed_out and
 	// the process-group kill must leave nothing listening on the port.
 	await page.getByRole("button", { name: "main.ts", exact: true }).click();
@@ -754,6 +775,7 @@ test("programs that open TCP/HTTP servers are killed at the timeout", async ({
 		}
 	});
 	expect(tcpPortFree).toBe(true);
+	if (sandboxed) await setToggle(page, "Sandbox", true);
 });
 
 test("leader key navigates tree and terminal app-wide", async ({ page }) => {
@@ -1466,4 +1488,55 @@ test("vim LSP keys, folds and workspace ex commands", async ({ page }) => {
 	await page.keyboard.type(":only");
 	await page.keyboard.press("Enter");
 	await expect(page.locator(".buffer-tab")).toHaveCount(1);
+});
+
+test("the sandbox confines the workspace and can be turned off", async ({
+	page,
+}) => {
+	await openClean(page);
+	const support = await page.evaluate(async () => {
+		const response = await fetch("/api/sessions", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ language: "zig", scaffold: "minimal" }),
+		});
+		return ((await response.json()) as { sandboxSupport?: string })
+			.sandboxSupport;
+	});
+	test.skip(
+		support === "unsupported",
+		"kernel without Landlock: nothing to enforce",
+	);
+
+	// Writing outside the session workspace: /tmp is the parent of every
+	// workspace, so it needs no fixture on the host and is never granted.
+	await replaceEditor(
+		page,
+		`const std = @import("std");
+
+const probe = "/tmp/atomis-escape-probe.txt";
+
+pub fn main(init: std.process.Init) void {
+    if (std.Io.Dir.createFileAbsolute(init.io, probe, .{})) |file| {
+        file.close(init.io);
+        std.Io.Dir.deleteFileAbsolute(init.io, probe) catch {};
+        std.debug.print("ESCAPED\\n", .{});
+    } else |_| {
+        std.debug.print("CONFINED\\n", .{});
+    }
+}
+`,
+	);
+	await expect(page.locator(".state-succeeded")).toBeVisible({
+		timeout: 60_000,
+	});
+	await expect(page.locator(".output-list")).toContainText("CONFINED");
+
+	// The same program escapes once the toggle is off.
+	await setToggle(page, "Sandbox", false);
+	await page.locator(".run-button").click();
+	await expect(page.locator(".output-list")).toContainText("ESCAPED", {
+		timeout: 60_000,
+	});
+	await setToggle(page, "Sandbox", true);
 });

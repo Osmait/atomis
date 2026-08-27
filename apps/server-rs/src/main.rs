@@ -20,6 +20,7 @@ mod ndjson;
 mod packs;
 mod protocol;
 mod runners;
+mod sandbox;
 mod scheduler;
 mod session;
 mod state;

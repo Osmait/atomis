@@ -25,6 +25,9 @@ pub struct SessionSettings {
     pub debounce_ms: u64,
     pub timeout_ms: u64,
     pub manual_probe_ids: Vec<String>,
+    /// Confine every process this session spawns to its workspace. On by
+    /// default wherever the kernel can enforce it.
+    pub sandbox: bool,
 }
 
 impl Default for SessionSettings {
@@ -34,6 +37,7 @@ impl Default for SessionSettings {
             auto_inspect: true,
             debounce_ms: 400,
             timeout_ms: 2000,
+            sandbox: crate::sandbox::detect_support().available(),
             manual_probe_ids: Vec::new(),
         }
     }
@@ -68,9 +72,22 @@ pub struct Session {
     pub probes: Mutex<Vec<ProbeDescriptor>>,
     pub support: HashMap<Language, LanguageSupport>,
     pub runtime_connected: AtomicBool,
+    /// Allowlist handed to every child process while the sandbox is on.
+    pub sandbox_policy: std::sync::Arc<crate::sandbox::SandboxPolicy>,
 }
 
 impl Session {
+    /// The policy for this session's children, or `None` when the user
+    /// turned the sandbox off.
+    pub fn sandbox(
+        &self,
+        settings: &SessionSettings,
+    ) -> Option<std::sync::Arc<crate::sandbox::SandboxPolicy>> {
+        settings
+            .sandbox
+            .then(|| std::sync::Arc::clone(&self.sandbox_policy))
+    }
+
     pub async fn current(&self) -> Snapshot {
         self.snapshot.lock().await.clone()
     }
@@ -334,7 +351,14 @@ impl SessionManager {
         let token = random_base64url(32);
         let root = self.root.join(&id);
         let source_root = root.join("src");
-        for dir in [&source_root, &root.join("generated"), &root.join(".zig-cache")] {
+        for dir in [
+            &source_root,
+            &root.join("generated"),
+            &root.join(".zig-cache"),
+            // Sandboxed toolchains write their caches here (see sandbox.rs).
+            &root.join(".tmp"),
+            &root.join(".cache"),
+        ] {
             tokio::fs::create_dir_all(dir)
                 .await
                 .map_err(|e| e.to_string())?;
@@ -462,6 +486,13 @@ impl SessionManager {
             .map(|(_, s)| s.clone())
             .unwrap_or_else(|| crate::protocol::DEFAULT_ZIG_SOURCE.to_string());
 
+        let sandbox_policy = std::sync::Arc::new(crate::sandbox::policy_for(
+            &root,
+            &crate::packs::project_root(),
+            std::env::var_os("HOME")
+                .map(std::path::PathBuf::from)
+                .as_deref(),
+        ));
         let session = Arc::new(Session {
             id: id.clone(),
             token: token.clone(),
@@ -481,6 +512,7 @@ impl SessionManager {
             probes: Mutex::new(Vec::new()),
             support,
             runtime_connected: AtomicBool::new(false),
+            sandbox_policy,
         });
         self.sessions.lock().await.insert(id.clone(), session);
 
@@ -514,6 +546,8 @@ impl SessionManager {
             initial_source,
             files: initial_files,
             degraded,
+            sandbox_support: crate::sandbox::detect_support().as_str().to_string(),
+            sandbox: crate::sandbox::detect_support().available(),
         })
     }
 

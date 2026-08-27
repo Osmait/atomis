@@ -219,6 +219,7 @@ async fn handle_message(
             debounce_ms,
             timeout_ms,
             manual_probe_ids,
+            sandbox,
             ..
         } => {
             *session.settings.lock().await = SessionSettings {
@@ -227,6 +228,10 @@ async fn handle_message(
                 debounce_ms,
                 timeout_ms,
                 manual_probe_ids,
+                // A client that predates the toggle keeps the default.
+                sandbox: sandbox.unwrap_or_else(|| {
+                    crate::sandbox::detect_support().available()
+                }),
             };
             Ok(())
         }

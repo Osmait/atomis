@@ -34,9 +34,30 @@
 
 ## Network and user-code processes
 
-- **There is no sandbox**: code runs locally with the user's permissions
-  (the UI warns about this when the session is created). A program can open
-  sockets, read files or use the network while it runs.
+- **Optional sandbox (Linux)**: with **Settings → Sandbox** on (the default
+  wherever the kernel supports it), every process a session spawns —
+  instrumenters, compilers AND the user's program — is confined by a
+  Landlock ruleset: read+execute on toolchains and system paths, read+write
+  on that session's workspace only, and no TCP at all on Landlock ABI 4+
+  (Linux 6.7+). `build.zig`, cargo build scripts and proc-macros are user
+  code too, which is why compilation is confined as well. The session
+  response reports what the kernel can enforce (`files+network`, `files`,
+  `unsupported`) and `pnpm run doctor` shows it. macOS and older kernels get
+  no enforcement; the toggle is disabled there.
+- **Cost**: the enforcement itself is free — a warm run measures the same
+  sandboxed or not (93 ms vs 94 ms for the Zig sample). What the sandbox
+  does cost is a cold start: toolchain caches are redirected into the
+  workspace, so the first compile of a session cannot reuse the user's
+  global cache (6.2 s vs 1.6 s for Zig; every later run in that session is
+  identical). Sharing one cache across sessions would remove it, at the
+  price of letting one session poison another's build artifacts.
+- **What the network rules do NOT cover**: Landlock restricts TCP bind and
+  connect only, so UDP — DNS lookups included — still works from sandboxed
+  code. A unit test pins this boundary so the claim stays honest; closing it
+  needs a seccomp filter (not implemented).
+- The sandbox raises the bar substantially but **is not a virtual machine**:
+  kernel bugs and side channels are out of scope, and with the toggle off
+  code runs with the user's full permissions (the UI says so).
 - **Servers do not survive**: any blocking process (a TCP/HTTP server,
   `serve_forever`, a `listen`) dies when the execution timeout expires
   (2 s by default, 10 s max): SIGTERM to the whole process group and

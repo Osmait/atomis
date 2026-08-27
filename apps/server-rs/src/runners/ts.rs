@@ -271,6 +271,7 @@ pub async fn run(
             cancel: cancel.clone(),
             probe_fd: false,
             env: Vec::new(),
+            sandbox: session.sandbox(settings),
             callbacks: StreamCallbacks::default(),
         },
     )
@@ -296,6 +297,7 @@ pub async fn run(
         &cancel,
         &events,
         ExecuteConfig {
+            sandbox: session.sandbox(settings),
             command: "node".to_string(),
             args: vec![
                 "--import".into(),
@@ -396,6 +398,7 @@ async fn run_tests(
             cancel: cancel.clone(),
             probe_fd: false,
             env: Vec::new(),
+            sandbox: session.sandbox(settings),
             callbacks: StreamCallbacks::default(),
         },
     )

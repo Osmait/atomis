@@ -180,6 +180,11 @@ pub struct CreateSessionResponse {
     pub initial_source: String,
     pub files: Vec<ProjectFile>,
     pub degraded: serde_json::Map<String, serde_json::Value>,
+    /// What this kernel can enforce: "files+network", "files" or
+    /// "unsupported".
+    pub sandbox_support: String,
+    /// Whether new sessions start sandboxed (true wherever it is available).
+    pub sandbox: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
@@ -309,6 +314,8 @@ pub enum RuntimeClientMessage {
         timeout_ms: u64,
         #[serde(rename = "manualProbeIds")]
         manual_probe_ids: Vec<String>,
+        #[serde(default)]
+        sandbox: Option<bool>,
     },
 }
 

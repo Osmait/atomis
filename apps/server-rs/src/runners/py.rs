@@ -153,6 +153,7 @@ pub async fn run(
         &cancel,
         &events,
         ExecuteConfig {
+            sandbox: session.sandbox(settings),
             command: "python3".to_string(),
             args: vec!["-u".into(), entry.to_string_lossy().into_owned()],
             cwd: session.root.join("src"),
@@ -322,6 +323,7 @@ async fn run_tests(
                 cancel: cancel.clone(),
                 probe_fd: true,
                 env: py_env(&session.root, false),
+                sandbox: session.sandbox(settings),
                 callbacks: StreamCallbacks {
                     stdout: None,
                     stderr: Some(Box::new(move |chunk: &str| {

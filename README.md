@@ -2,7 +2,7 @@
 
 A loopback-only **Zig, Rust, Go, TypeScript/JavaScript, Python, C and C++** playground inspired by RunJS: Monaco + real language servers (ZLS / rust-analyzer), cancellable native compilation/execution, per-test results, and inline local values produced by AST instrumentation without changing visible code.
 
-> **Code runs locally with your permissions.** Atomis is not a security sandbox. Pause Auto Run before pasting untrusted code.
+> **Sandboxed where the kernel allows it.** On Linux with Landlock (6.7+ for the network rules), every process a session spawns is confined to its own workspace with no TCP — toggle it in Settings → Sandbox, check `pnpm run doctor` for the level your kernel enforces. Everywhere else, and with the toggle off, code runs locally with your permissions: pause Auto Run before pasting untrusted code.
 
 ## Requirements
 
