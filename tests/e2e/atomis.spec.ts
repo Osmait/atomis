@@ -1734,6 +1734,24 @@ test("Allow network lets code call out while files stay confined", async ({
 	await setToggle(page, "Allow network", false);
 });
 
+test("the caret starts in the editor, ready to type", async ({ page }) => {
+	// Deliberately not openClean: opening the settings dialog and closing it
+	// leaves the caret in the editor by itself, which would hide the bug.
+	await page.goto("/");
+	await page.evaluate(() => localStorage.clear());
+	await page.reload();
+	await expect(page.locator(".monaco-editor")).toBeVisible();
+	// Which element Monaco focuses is its business and has changed between
+	// versions, so ask the question the user would: is the caret in there?
+	await expect
+		.poll(() =>
+			page.evaluate(() =>
+				Boolean(document.activeElement?.closest(".monaco-editor")),
+			),
+		)
+		.toBe(true);
+});
+
 test("the toolbar, the tabs and the status bar can each be put away", async ({
 	page,
 }) => {

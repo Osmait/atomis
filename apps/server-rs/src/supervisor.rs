@@ -88,11 +88,68 @@ fn kill_group(pid: i32, signal: i32) {
     }
 }
 
+/// Strips the variables an AppImage points at its own bundle.
+///
+/// The AppImage runtime exports PYTHONHOME, PERLLIB, LD_LIBRARY_PATH and a
+/// dozen more so the bundled GUI finds its libraries, and every process we
+/// spawn inherits them. A system toolchain that reads one then looks for its
+/// own files inside our bundle: python dies with "Failed to import encodings
+/// module" before running a line. Variables pointing into the bundle are
+/// dropped; a colon-separated list keeps whatever entries point elsewhere.
+pub(crate) fn scrub_bundle_env(command: &mut tokio::process::Command) {
+    let Some(bundle) = std::env::var_os("APPDIR") else {
+        return;
+    };
+    let bundle = bundle.to_string_lossy().into_owned();
+    if bundle.is_empty() {
+        return;
+    }
+    for (key, value) in std::env::vars() {
+        match scrub_value(&value, &bundle) {
+            Scrubbed::Untouched => {}
+            Scrubbed::Remove => {
+                command.env_remove(&key);
+            }
+            Scrubbed::Replace(kept) => {
+                command.env(&key, kept);
+            }
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum Scrubbed {
+    /// Nothing in the value points into the bundle.
+    Untouched,
+    /// Everything did: the variable has no meaning outside the bundle.
+    Remove,
+    /// A path list with entries worth keeping.
+    Replace(String),
+}
+
+fn scrub_value(value: &str, bundle: &str) -> Scrubbed {
+    if !value.contains(bundle) {
+        return Scrubbed::Untouched;
+    }
+    let kept: Vec<&str> = value
+        .split(':')
+        .filter(|entry| !entry.is_empty() && !entry.contains(bundle))
+        .collect();
+    if kept.is_empty() {
+        Scrubbed::Remove
+    } else {
+        Scrubbed::Replace(kept.join(":"))
+    }
+}
+
+
 pub async fn run(command: &str, args: &[String], options: RunOptions<'_>) -> ProcessResult {
     let started = Instant::now();
     let mut result = ProcessResult::default();
 
     let mut cmd = tokio::process::Command::new(command);
+    // Before anything else: an inherited bundle path breaks system tools.
+    scrub_bundle_env(&mut cmd);
     cmd.args(args)
         .current_dir(&options.cwd)
         .stdin(Stdio::null())
@@ -291,4 +348,42 @@ pub async fn run(command: &str, args: &[String], options: RunOptions<'_>) -> Pro
     }
     result.duration_ms = started.elapsed().as_secs_f64() * 1000.0;
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{scrub_value, Scrubbed};
+
+    const BUNDLE: &str = "/tmp/.mount_atomisAbCdEf";
+
+    #[test]
+    fn a_variable_that_only_names_the_bundle_is_dropped() {
+        // What actually broke Python: PYTHONHOME pointed at the AppImage,
+        // where no standard library lives.
+        assert_eq!(
+            scrub_value("/tmp/.mount_atomisAbCdEf/usr/", BUNDLE),
+            Scrubbed::Remove
+        );
+        assert_eq!(
+            scrub_value("/tmp/.mount_atomisAbCdEf/usr/share/pyshared/:", BUNDLE),
+            Scrubbed::Remove
+        );
+    }
+
+    #[test]
+    fn a_path_list_keeps_the_entries_pointing_elsewhere() {
+        assert_eq!(
+            scrub_value(
+                "/tmp/.mount_atomisAbCdEf/usr/bin:/usr/bin:/home/dev/.cargo/bin",
+                BUNDLE
+            ),
+            Scrubbed::Replace("/usr/bin:/home/dev/.cargo/bin".to_string())
+        );
+    }
+
+    #[test]
+    fn everything_else_is_left_alone() {
+        assert_eq!(scrub_value("/usr/bin:/bin", BUNDLE), Scrubbed::Untouched);
+        assert_eq!(scrub_value("", BUNDLE), Scrubbed::Untouched);
+    }
 }
