@@ -779,6 +779,10 @@ export function App(): React.JSX.Element {
 				sendSettings(next);
 				setTimeout(run, 0);
 			});
+
+			// Nothing else claims the caret on load, so the window opens with
+			// no place to type. The editor is what you came for.
+			editor.focus();
 		},
 		[
 			activePathRef,
