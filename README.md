@@ -99,6 +99,35 @@ Everything else applies unchanged: whoever opens that URL runs code on this
 machine with your permissions, and the sandbox confines the code you run, not
 the server. Keep the tailnet to devices you own.
 
+### Always on
+
+`pnpm start:remote` lasts as long as the terminal. To have Atomis up whenever
+the machine is:
+
+```bash
+pnpm build
+scripts/install-service.sh     # --uninstall to undo
+```
+
+It installs a systemd **user** service (no root) and enables lingering, so the
+service starts at boot rather than at login. The unit gets an explicit `PATH`
+resolved at install time: a unit starts from an empty environment, and the
+login shell's `PATH` would not survive a reboot anyway — fnm points `node` at
+`/run/user/<uid>/fnm_multishells/<pid>-<ts>`, a directory owned by one shell,
+so the installer records the symlink target instead. Toolchains missing at
+install time are reported and simply stay disabled.
+
+The `tailscale serve` half is set up once and lives in tailscaled's own state,
+which is restored on boot, so the service never touches it. That step is the
+one that needs HTTPS certificates on the tailnet, and root unless you have run
+`sudo tailscale set --operator=$USER`; the installer tells you which is
+missing and is safe to re-run.
+
+```bash
+systemctl --user status atomis
+journalctl --user -u atomis -f
+```
+
 ## CI/CD
 
 GitHub Actions (patterns borrowed from GitButler and Clash Verge Rev):
