@@ -1,5 +1,11 @@
 import { readStoredItem, writeStoredItem } from "./storage.js";
 import {
+	DEFAULT_FONT,
+	DEFAULT_SIZE,
+	isAppSize,
+	MONO_FONTS,
+} from "./fonts.js";
+import {
 	DEFAULT_THEME,
 	isAppTheme,
 	THEME_IDS,
@@ -24,13 +30,6 @@ export const APP_THEMES = THEME_IDS.map((id) => ({
 
 export type { AppTheme };
 
-export const APP_FONTS = [
-	{ label: "JetBrains Mono", css: '"JetBrains Mono", ui-monospace, monospace' },
-	{ label: "IBM Plex Mono", css: '"IBM Plex Mono", ui-monospace, monospace' },
-	{ label: "SF Mono", css: 'ui-monospace, "SF Mono", Menlo, monospace' },
-] as const;
-
-export const APP_SIZES = [12, 13, 14, 15] as const;
 
 /**
  * The leader is stored as the `KeyboardEvent.key` it matches, so any key can
@@ -120,15 +119,41 @@ export function leaderLabel(key: LeaderKey): string {
 
 export interface Appearance {
 	theme: AppTheme;
-	fontIndex: number;
-	sizeIndex: number;
+	/** A MONO_FONTS id. Stored by name, not position, so the catalog can
+	 * grow and reorder without silently changing everyone's font. */
+	font: string;
+	/** Type size in px. */
+	fontSize: number;
 	leader: LeaderKey;
+}
+
+/** Order of the three fonts offered before the catalog grew. */
+const LEGACY_FONTS = ["jetbrains", "plex", "sfmono"];
+/** Sizes 12–15, which is what a stored index pointed into. */
+const LEGACY_SIZES = [12, 13, 14, 15];
+
+/** Reads the font id, migrating a stored `fontIndex` from the old format. */
+function normalizeFont(stored: Partial<Appearance> & { fontIndex?: number }): string {
+	if (typeof stored.font === "string" && MONO_FONTS.some((f) => f.id === stored.font))
+		return stored.font;
+	if (typeof stored.fontIndex === "number")
+		return LEGACY_FONTS[stored.fontIndex] ?? DEFAULT_FONT;
+	return DEFAULT_FONT;
+}
+
+/** Reads the size in px, migrating a stored `sizeIndex` from the old format. */
+function normalizeSize(stored: Partial<Appearance> & { sizeIndex?: number }): number {
+	if (typeof stored.fontSize === "number" && isAppSize(stored.fontSize))
+		return stored.fontSize;
+	if (typeof stored.sizeIndex === "number")
+		return LEGACY_SIZES[stored.sizeIndex] ?? DEFAULT_SIZE;
+	return DEFAULT_SIZE;
 }
 
 export const DEFAULT_APPEARANCE: Appearance = {
 	theme: DEFAULT_THEME,
-	fontIndex: 0,
-	sizeIndex: 1,
+	font: DEFAULT_FONT,
+	fontSize: DEFAULT_SIZE,
 	leader: DEFAULT_LEADER,
 };
 
@@ -138,21 +163,11 @@ export function loadAppearance(): Appearance {
 	try {
 		const stored = JSON.parse(
 			readStoredItem(APPEARANCE_KEY) ?? "{}",
-		) as Partial<Appearance>;
+		) as Partial<Appearance> & { fontIndex?: number; sizeIndex?: number };
 		return {
 			theme: isAppTheme(stored.theme) ? stored.theme : DEFAULT_THEME,
-			fontIndex:
-				typeof stored.fontIndex === "number" &&
-				stored.fontIndex >= 0 &&
-				stored.fontIndex < APP_FONTS.length
-					? stored.fontIndex
-					: 0,
-			sizeIndex:
-				typeof stored.sizeIndex === "number" &&
-				stored.sizeIndex >= 0 &&
-				stored.sizeIndex < APP_SIZES.length
-					? stored.sizeIndex
-					: 1,
+			font: normalizeFont(stored),
+			fontSize: normalizeSize(stored),
 			leader: normalizeLeader(stored.leader),
 		};
 	} catch {

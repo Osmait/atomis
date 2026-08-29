@@ -1,17 +1,21 @@
 import type React from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { VALUE_FMTS, type ValueFmt } from "../lowlevel.js";
 import { Lucide } from "./Lucide.js";
 
 import {
-	APP_FONTS,
-	APP_SIZES,
 	APP_THEMES,
 	isUsableLeader,
 	leaderLabel,
 	LEADER_OPTIONS,
 	type LeaderKey,
 } from "../state/appearance.js";
+import {
+	APP_SIZES,
+	detectAvailableFonts,
+	fontStack,
+	MONO_FONTS,
+} from "../state/fonts.js";
 import { paletteOf, type AppTheme, type Palette } from "../state/themes.js";
 
 /** Which tab a behaviour toggle belongs to. */
@@ -44,10 +48,10 @@ interface SettingsModalProps {
 	/** Hovering a theme paints the window without committing to it. */
 	previewTheme: AppTheme | undefined;
 	onPreview: (theme: AppTheme | undefined) => void;
-	fontIndex: number;
-	onFont: (index: number) => void;
-	sizeIndex: number;
-	onSize: (index: number) => void;
+	font: string;
+	onFont: (id: string) => void;
+	fontSize: number;
+	onSize: (size: number) => void;
 	leader: LeaderKey;
 	onLeader: (leader: LeaderKey) => void;
 	onClose: () => void;
@@ -144,9 +148,9 @@ export function SettingsModal({
 	onTheme,
 	previewTheme,
 	onPreview,
-	fontIndex,
+	font,
 	onFont,
-	sizeIndex,
+	fontSize,
 	onSize,
 	leader,
 	onLeader,
@@ -155,6 +159,9 @@ export function SettingsModal({
 	const [tab, setTab] = useState<TabId>("run");
 
 	const [capturing, setCapturing] = useState(false);
+	// Measuring every family touches the canvas, so do it once per opening
+	// rather than on each render.
+	const installed = useMemo(() => detectAvailableFonts(), []);
 
 	useEffect(() => {
 		const onKey = (event: KeyboardEvent): void => {
@@ -295,25 +302,41 @@ export function SettingsModal({
 							</section>
 							<section className="settings-section">
 								<div className="settings-title">Typography</div>
-								<div className="settings-pills">
-									{APP_FONTS.map((font, index) => (
-										<button
-											className={fontIndex === index ? "active" : ""}
-											key={font.label}
-											onClick={() => onFont(index)}
-											style={{ fontFamily: font.css }}
-										>
-											{font.label}
-										</button>
-									))}
+								<div className="font-grid">
+									{MONO_FONTS
+										// Installed first: what you can actually use here.
+										.toSorted(
+											(left, right) =>
+												Number(installed.has(right.id)) -
+												Number(installed.has(left.id)),
+										)
+										.map((entry) => {
+											const here = installed.has(entry.id);
+											return (
+												<button
+													className={`font-card${font === entry.id ? " active" : ""}${here ? "" : " missing"}`}
+													key={entry.id}
+													onClick={() => onFont(entry.id)}
+													style={here ? { fontFamily: fontStack(entry.id) } : {}}
+													title={
+														here
+															? entry.label
+															: `${entry.label} — not installed on this device`
+													}
+												>
+													{entry.label}
+													{!here && <span className="font-missing">·</span>}
+												</button>
+											);
+										})}
 								</div>
 								<div className="settings-sizes">
 									<span>Size</span>
-									{APP_SIZES.map((size, index) => (
+									{APP_SIZES.map((size) => (
 										<button
-											className={sizeIndex === index ? "active" : ""}
+											className={fontSize === size ? "active" : ""}
 											key={size}
-											onClick={() => onSize(index)}
+											onClick={() => onSize(size)}
 										>
 											{size}
 										</button>

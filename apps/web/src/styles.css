@@ -2724,6 +2724,54 @@ input:focus-visible,
 	text-align: right;
 }
 
+.font-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(126px, 1fr));
+	gap: 5px;
+	max-height: 190px;
+	overflow-y: auto;
+}
+
+.font-card {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 6px;
+	padding: 6px 10px;
+	border-radius: 5px;
+	font-size: 12px;
+	color: var(--overlay);
+	box-shadow: inset 0 0 0 1px var(--surface0);
+	text-align: left;
+	white-space: nowrap;
+	overflow: hidden;
+}
+
+.font-card:hover {
+	color: var(--text);
+	box-shadow: inset 0 0 0 1px var(--mauve-border);
+}
+
+.font-card.active {
+	color: var(--text);
+	background: var(--mauve-dim);
+	box-shadow: inset 0 0 0 1px var(--mauve-border);
+}
+
+/* Offered, but this device would fall back to another family. */
+.font-card.missing {
+	color: var(--dim);
+}
+
+.font-missing {
+	color: var(--overlay-dim);
+	flex: none;
+}
+
+.settings-sizes {
+	flex-wrap: wrap;
+}
+
 .leader-row {
 	display: flex;
 	align-items: center;

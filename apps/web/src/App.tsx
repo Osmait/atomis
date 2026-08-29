@@ -62,8 +62,6 @@ import { LspClient } from "./lsp/LspClient.js";
 import { lspSeverityName, type JsonValue } from "./lsp/protocol.js";
 import {
 	APPEARANCE_KEY,
-	APP_FONTS,
-	APP_SIZES,
 	loadAppearance,
 	saveAppearance,
 	type Appearance,
@@ -97,6 +95,7 @@ import {
 } from "./state/chrome.js";
 import { subscribeToPreferences } from "./state/storage.js";
 import { cssVariables, paletteOf, type AppTheme } from "./state/themes.js";
+import { fontStack } from "./state/fonts.js";
 import { defineEditorThemes } from "./editor/theme.js";
 import {
 	INLINE_LOGS_KEY,
@@ -1315,7 +1314,7 @@ export function App(): React.JSX.Element {
 		<main
 			className={`app-shell${zen ? " zen" : ""} dock-${dockEffective}${layout.termMax ? " term-max" : ""}${switching ? " switching" : ""}`}
 			data-theme={activeTheme}
-			style={{ fontFamily: APP_FONTS[appearance.fontIndex]?.css }}
+			style={{ fontFamily: fontStack(appearance.font) }}
 		>
 			<div className="workspace">
 				{treeVisible && (
@@ -1393,17 +1392,14 @@ export function App(): React.JSX.Element {
 								onChange={onChange}
 								options={{
 									automaticLayout: true,
-									fontFamily:
-										APP_FONTS[appearance.fontIndex]?.css ??
-										'"JetBrains Mono", "SFMono-Regular", Consolas, monospace',
+									fontFamily: fontStack(appearance.font),
 									fontLigatures: true,
-									fontSize: APP_SIZES[appearance.sizeIndex] ?? 13,
+									fontSize: appearance.fontSize,
 									glyphMargin: true,
 									inlineSuggest: { enabled: true },
-									lineHeight: (APP_SIZES[appearance.sizeIndex] ?? 13) + 11,
-									suggestFontSize: APP_SIZES[appearance.sizeIndex] ?? 13,
-									suggestLineHeight:
-										(APP_SIZES[appearance.sizeIndex] ?? 13) + 11,
+									lineHeight: appearance.fontSize + 11,
+									suggestFontSize: appearance.fontSize,
+									suggestLineHeight: appearance.fontSize + 11,
 									minimap: { enabled: false },
 									overviewRulerBorder: false,
 									padding: { top: 14 },
@@ -1663,13 +1659,13 @@ export function App(): React.JSX.Element {
 				})()}
 			{settingsOpen && (
 				<SettingsModal
-					fontIndex={appearance.fontIndex}
+					font={appearance.font}
 					onClose={() => {
 						setPreviewTheme(undefined);
 						setSettingsOpen(false);
 					}}
-					onFont={(index) => updateAppearance({ fontIndex: index })}
-					onSize={(index) => updateAppearance({ sizeIndex: index })}
+					onFont={(font) => updateAppearance({ font })}
+					onSize={(fontSize) => updateAppearance({ fontSize })}
 					onPreview={setPreviewTheme}
 					onTheme={(theme) => {
 						setPreviewTheme(undefined);
@@ -1682,7 +1678,7 @@ export function App(): React.JSX.Element {
 					}}
 					leader={appearance.leader}
 					onLeader={(leader) => updateAppearance({ leader })}
-					sizeIndex={appearance.sizeIndex}
+					fontSize={appearance.fontSize}
 					theme={appearance.theme}
 					toggles={[
 						{

@@ -1,11 +1,24 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+	type Appearance,
 	DEFAULT_LEADER,
 	isUsableLeader,
 	leaderLabel,
 	LEADER_OPTIONS,
+	loadAppearance,
 	normalizeLeader,
 } from "./appearance.js";
+import { DEFAULT_FONT, DEFAULT_SIZE } from "./fonts.js";
+
+/** Runs the real loader over one stored blob, legacy fields included. */
+function loadStored(stored: object): Appearance {
+	vi.stubGlobal("localStorage", {
+		getItem: (key: string) =>
+			key === "atomis.appearance.v1" ? JSON.stringify(stored) : null,
+		setItem: () => {},
+	});
+	return loadAppearance();
+}
 
 describe("leader key", () => {
 	it("takes any ordinary key, not just the presets", () => {
@@ -58,5 +71,32 @@ describe("leader key", () => {
 		const keys = LEADER_OPTIONS.map((option) => option.key);
 		expect(new Set(keys).size).toBe(keys.length);
 		for (const key of keys) expect(isUsableLeader(key), key).toBe(true);
+	});
+});
+
+describe("typography", () => {
+	it("migrates the stored index from when there were three fonts", () => {
+		expect(loadStored({ fontIndex: 0 }).font).toBe("jetbrains");
+		expect(loadStored({ fontIndex: 1 }).font).toBe("plex");
+		expect(loadStored({ fontIndex: 2 }).font).toBe("sfmono");
+		// Out of range, and the field the old build never wrote.
+		expect(loadStored({ fontIndex: 99 }).font).toBe(DEFAULT_FONT);
+		expect(loadStored({}).font).toBe(DEFAULT_FONT);
+	});
+
+	it("migrates the stored size index into real pixels", () => {
+		expect(loadStored({ sizeIndex: 0 }).fontSize).toBe(12);
+		expect(loadStored({ sizeIndex: 3 }).fontSize).toBe(15);
+		expect(loadStored({ sizeIndex: -1 }).fontSize).toBe(DEFAULT_SIZE);
+	});
+
+	it("prefers the id and the pixel size once they are stored", () => {
+		expect(loadStored({ font: "iosevka", fontIndex: 0 }).font).toBe("iosevka");
+		expect(loadStored({ fontSize: 20, sizeIndex: 0 }).fontSize).toBe(20);
+	});
+
+	it("rejects a font id or size that is not in the catalog", () => {
+		expect(loadStored({ font: "comic-sans" }).font).toBe(DEFAULT_FONT);
+		expect(loadStored({ fontSize: 999 }).fontSize).toBe(DEFAULT_SIZE);
 	});
 });
