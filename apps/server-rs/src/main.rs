@@ -243,8 +243,14 @@ async fn put_preferences(
         )
             .into_response();
     };
+    let patch = request.preferences.clone();
     match preferences::merge(request.preferences).await {
-        Ok(stored) => Json(json!({ "preferences": stored })).into_response(),
+        Ok(stored) => {
+            // Only after the write succeeded, and only the keys that moved.
+            // Errs when no tab is listening, which is not a failure.
+            let _ = state.preference_changes.send(patch);
+            Json(json!({ "preferences": stored })).into_response()
+        }
         Err(error) => (StatusCode::BAD_REQUEST, Json(json!({ "error": error }))).into_response(),
     }
 }

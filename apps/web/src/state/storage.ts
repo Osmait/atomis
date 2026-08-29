@@ -57,6 +57,14 @@ function writeLocal(key: string, value: string): void {
 	}
 }
 
+function removeLocal(key: string): void {
+	try {
+		localStorage.removeItem(key);
+	} catch {
+		// storage unavailable; nothing to remove
+	}
+}
+
 export function readStoredItem(key: string): string | null {
 	const shared = remote?.get(key);
 	return shared ?? readLocal(key);
@@ -121,10 +129,53 @@ export async function hydratePreferences(): Promise<void> {
 	}
 }
 
-/** Test seam: forget the server's copy and any queued write. */
+/** Notified with the keys that a change from another device actually moved. */
+type PreferencesListener = (changed: ReadonlySet<string>) => void;
+
+const listeners = new Set<PreferencesListener>();
+
+/** Subscribe to live changes. Returns the unsubscribe function. */
+export function subscribeToPreferences(listener: PreferencesListener): () => void {
+	listeners.add(listener);
+	return () => {
+		listeners.delete(listener);
+	};
+}
+
+/**
+ * Applies a change another device made, arriving over the runtime socket.
+ *
+ * Deliberately does not queue an upload: the value came from the server, so
+ * sending it back would bounce between devices forever. Keys whose value we
+ * already hold are dropped, which is also what silently absorbs the echo of
+ * our own write — so a device never re-renders because of its own change.
+ */
+export function applyRemotePreferences(
+	incoming: Readonly<Record<string, string | null>>,
+): void {
+	if (remote === null) return;
+	const changed = new Set<string>();
+	for (const [key, value] of Object.entries(incoming)) {
+		if (!SYNCED_KEYS.has(key)) continue;
+		if ((remote.get(key) ?? null) === value) continue;
+		if (value === null) {
+			remote.delete(key);
+			removeLocal(key);
+		} else {
+			remote.set(key, value);
+			writeLocal(key, value);
+		}
+		changed.add(key);
+	}
+	if (changed.size === 0) return;
+	for (const listener of listeners) listener(changed);
+}
+
+/** Test seam: forget the server's copy, queued writes and subscribers. */
 export function resetPreferencesForTest(): void {
 	remote = null;
 	pending = new Map();
 	if (flushTimer !== undefined) clearTimeout(flushTimer);
 	flushTimer = undefined;
+	listeners.clear();
 }

@@ -48,13 +48,13 @@ export const DEFAULT_LAYOUT: LayoutState = {
 	zen: false,
 };
 
-const SETTINGS_KEY = "atomis.settings.v1";
+export const SETTINGS_KEY = "atomis.settings.v1";
 const LAYOUT_KEY = "atomis.layout.v1";
-const VALUE_FMT_KEY = "atomis.value-fmt.v1";
-const VIM_MODE_KEY = "atomis.vim-mode.v1";
+export const VALUE_FMT_KEY = "atomis.value-fmt.v1";
+export const VIM_MODE_KEY = "atomis.vim-mode.v1";
 const LANGUAGE_KEY = "atomis.language.v1";
 const SCAFFOLD_KEY = "atomis.scaffold.v1";
-const INLINE_LOGS_KEY = "atomis.inline-logs.v1";
+export const INLINE_LOGS_KEY = "atomis.inline-logs.v1";
 const SOURCE_KEY = "atomis.source.v1";
 
 export function loadSettings(): Settings {

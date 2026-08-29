@@ -499,6 +499,12 @@ pub enum ServerEvent {
         run_id: Option<String>,
         state: RunState,
     },
+    /// A setting changed on some other device sharing this server.
+    #[serde(rename = "preferences.changed", rename_all = "camelCase")]
+    PreferencesChanged {
+        /// Only the keys that changed; a null value means the key was removed.
+        preferences: crate::preferences::PreferencesPatch,
+    },
     #[serde(rename = "project.files", rename_all = "camelCase")]
     ProjectFiles {
         document_version: u64,

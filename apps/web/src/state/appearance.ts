@@ -50,7 +50,7 @@ export const DEFAULT_APPEARANCE: Appearance = {
 	leader: "space",
 };
 
-const APPEARANCE_KEY = "atomis.appearance.v1";
+export const APPEARANCE_KEY = "atomis.appearance.v1";
 
 export function loadAppearance(): Appearance {
 	try {

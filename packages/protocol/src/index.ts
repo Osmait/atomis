@@ -370,6 +370,14 @@ export type RuntimeServerEvent =
 			error?: string;
 	  }
 	| { type: "deps.output"; stream: "stdout" | "stderr"; chunk: string }
+	/**
+	 * A setting changed on another device sharing this server. Carries only
+	 * the keys that moved; a null value means the key was removed.
+	 */
+	| {
+			type: "preferences.changed";
+			preferences: Record<string, string | null>;
+	  }
 	| {
 			type: "run.state";
 			documentVersion: number;

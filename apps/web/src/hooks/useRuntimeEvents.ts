@@ -27,6 +27,7 @@ import {
 	updateInlineValue,
 	type InlineValue,
 } from "../state/runtimeState.js";
+import { applyRemotePreferences } from "../state/storage.js";
 import type { LogSourceLocation, ProjectFile, TerminalEntry } from "../types.js";
 
 function markerSeverity(
@@ -105,6 +106,12 @@ export function useRuntimeEvents(options: RuntimeEventsOptions) {
 
 	const handleRuntimeEvent = useCallback(
 		(event: RuntimeServerEvent): void => {
+			// Not session state: a setting someone changed on another device.
+			// It carries no documentVersion, so handle it before the gate.
+			if (event.type === "preferences.changed") {
+				applyRemotePreferences(event.preferences);
+				return;
+			}
 			const projectEvent = event as object as {
 				type: "project.files";
 				documentVersion: number;

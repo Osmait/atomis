@@ -22,7 +22,7 @@ export const DEFAULT_CHROME: ChromeSettings = {
 	hideSingleTab: false,
 };
 
-const CHROME_KEY = "atomis.chrome.v1";
+export const CHROME_KEY = "atomis.chrome.v1";
 
 /** Anything stored that is not a real boolean falls back to the default. */
 function readFlag(value: boolean | undefined, fallback: boolean): boolean {

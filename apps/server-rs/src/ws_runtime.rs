@@ -66,6 +66,32 @@ pub async fn handle_runtime(state: Arc<AppState>, session: Arc<Session>, socket:
         }
     });
 
+    // Preferences are not session state, so they arrive out of band: every
+    // open socket gets the same fan-out, and the tab that made the change
+    // recognises its own values and ignores the echo.
+    let preferences = {
+        let mut changes = state.preference_changes.subscribe();
+        let outbox_tx = outbox_tx.clone();
+        tokio::spawn(async move {
+            loop {
+                match changes.recv().await {
+                    Ok(patch) => {
+                        if outbox_tx
+                            .send(ServerEvent::PreferencesChanged { preferences: patch })
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                    // Lagged: this socket missed a change it will pick up on
+                    // the next one, or on its next load. Keep listening.
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                }
+            }
+        })
+    };
+
     // Initial run (or the degraded notice) exactly like the Node server.
     if session
         .support
@@ -137,6 +163,7 @@ pub async fn handle_runtime(state: Arc<AppState>, session: Arc<Session>, socket:
     }
 
     scheduler.close().await;
+    preferences.abort();
     writer.abort();
     session.runtime_connected.store(false, Ordering::SeqCst);
     state.lsp_registry.close_session(&session.id).await;

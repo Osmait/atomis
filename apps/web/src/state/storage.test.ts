@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+	applyRemotePreferences,
 	hydratePreferences,
 	readStoredItem,
 	resetPreferencesForTest,
+	subscribeToPreferences,
 	writeStoredItem,
 } from "./storage.js";
 
@@ -30,6 +32,7 @@ beforeEach(() => {
 	vi.stubGlobal("localStorage", {
 		getItem: (key: string) => local.get(key) ?? null,
 		setItem: (key: string, value: string) => local.set(key, value),
+		removeItem: (key: string) => local.delete(key),
 	});
 	vi.useFakeTimers();
 });
@@ -132,5 +135,91 @@ describe("preferences shared across devices", () => {
 			[THEME]: '{"theme":"a"}',
 			"atomis.vim-mode.v1": "false",
 		});
+	});
+});
+
+describe("changes arriving live from another device", () => {
+	async function hydrated(
+		preferences: Record<string, string> = {},
+	): Promise<void> {
+		stubFetch(() => json({ preferences }));
+		await hydratePreferences();
+	}
+
+	it("applies the new value and reports which keys moved", async () => {
+		await hydrated();
+		const seen: ReadonlySet<string>[] = [];
+		subscribeToPreferences((changed) => seen.push(changed));
+
+		applyRemotePreferences({ [THEME]: '{"theme":"macchiato"}' });
+
+		expect(readStoredItem(THEME)).toBe('{"theme":"macchiato"}');
+		expect(seen).toHaveLength(1);
+		expect([...(seen[0] ?? [])]).toEqual([THEME]);
+	});
+
+	it("ignores the echo of a value we already hold, so no re-render", async () => {
+		await hydrated({ [THEME]: '{"theme":"mocha"}' });
+		let notified = 0;
+		subscribeToPreferences(() => {
+			notified += 1;
+		});
+
+		applyRemotePreferences({ [THEME]: '{"theme":"mocha"}' });
+
+		expect(notified).toBe(0);
+	});
+
+	it("never sends an incoming change back, so two devices cannot loop", async () => {
+		let puts = 0;
+		stubFetch((_url, init) => {
+			if (init?.method === "PUT") puts += 1;
+			return json({ preferences: {} });
+		});
+		await hydratePreferences();
+
+		applyRemotePreferences({ [THEME]: '{"theme":"crust"}' });
+		await vi.runAllTimersAsync();
+
+		expect(puts).toBe(0);
+	});
+
+	it("drops keys that are not synced", async () => {
+		await hydrated();
+		let notified = 0;
+		subscribeToPreferences(() => {
+			notified += 1;
+		});
+
+		applyRemotePreferences({ [LAYOUT]: '{"dock":"bottom"}' });
+
+		expect(notified).toBe(0);
+		expect(readStoredItem(LAYOUT)).toBeNull();
+	});
+
+	it("a null removes the key and falls back to the default", async () => {
+		await hydrated({ [THEME]: '{"theme":"crust"}' });
+		applyRemotePreferences({ [THEME]: null });
+		expect(readStoredItem(THEME)).toBeNull();
+	});
+
+	it("stays quiet when the store was never hydrated", () => {
+		let notified = 0;
+		subscribeToPreferences(() => {
+			notified += 1;
+		});
+		applyRemotePreferences({ [THEME]: '{"theme":"crust"}' });
+		expect(notified).toBe(0);
+	});
+
+	it("stops notifying after unsubscribing", async () => {
+		await hydrated();
+		let notified = 0;
+		const stop = subscribeToPreferences(() => {
+			notified += 1;
+		});
+		stop();
+		applyRemotePreferences({ [THEME]: '{"theme":"crust"}' });
+		expect(notified).toBe(0);
 	});
 });

@@ -61,6 +61,7 @@ import {
 import { LspClient } from "./lsp/LspClient.js";
 import { lspSeverityName, type JsonValue } from "./lsp/protocol.js";
 import {
+	APPEARANCE_KEY,
 	APP_FONTS,
 	APP_SIZES,
 	loadAppearance,
@@ -88,12 +89,18 @@ import {
 } from "./state/runSummary.js";
 import { toggleProbe, type InlineValue } from "./state/runtimeState.js";
 import {
+	CHROME_KEY,
 	loadChrome,
 	saveChrome,
 	tabsVisible,
 	type ChromeSettings,
 } from "./state/chrome.js";
+import { subscribeToPreferences } from "./state/storage.js";
 import {
+	INLINE_LOGS_KEY,
+	SETTINGS_KEY,
+	VALUE_FMT_KEY,
+	VIM_MODE_KEY,
 	loadEntrySource,
 	loadInlineLogs,
 	loadLanguage,
@@ -182,6 +189,25 @@ export function App(): React.JSX.Element {
 	const [switching, setSwitching] = useState(false);
 	const [workspaceError, setWorkspaceError] = useState<string>();
 	const [vimModeLabel, setVimModeLabel] = useState("NORMAL");
+
+	// Settings changed on another device arrive over the runtime socket and
+	// land in the shared store; re-read through the same loaders so what
+	// validates a stored value is the same code either way. Only the keys
+	// that actually moved are reported, so this never re-renders on our own
+	// change — which matters because `settings` gates the auto-run effect.
+	useEffect(
+		() =>
+			subscribeToPreferences((changed) => {
+				if (changed.has(SETTINGS_KEY)) setSettings(loadSettings());
+				if (changed.has(VALUE_FMT_KEY)) setValueFmt(loadValueFmt());
+				if (changed.has(APPEARANCE_KEY)) setAppearance(loadAppearance());
+				if (changed.has(VIM_MODE_KEY)) setVimEnabled(loadVimMode());
+				if (changed.has(INLINE_LOGS_KEY)) setInlineLogs(loadInlineLogs());
+				if (changed.has(CHROME_KEY)) setChrome(loadChrome());
+			}),
+		[],
+	);
+
 	const vimModeRef = useRef("NORMAL");
 	vimModeRef.current = vimModeLabel;
 	const editorRef = useRef<MonacoApi.editor.IStandaloneCodeEditor | undefined>(

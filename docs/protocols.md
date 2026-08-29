@@ -12,6 +12,8 @@ All runtime messages are JSON and versioned at protocol version 1. Shared TypeSc
 
 `PUT /api/preferences` takes `{ "preferences": { key: string | null } }` and **merges** it key by key, `null` deleting, returning the stored result. Merging rather than replacing is what lets two devices change different settings concurrently without either clobbering the other. Keys are bounded (64 keys, 128 bytes per key, 16 KiB per value) and writes are serialized and committed by rename. Both verbs are Origin-guarded like the rest; the GET accepts a missing `Origin` the way the other read endpoints do.
 
+A successful `PUT` is fanned out to every open runtime socket as a `preferences.changed` event carrying the same patch, so a setting changed on one device lands on the others without a reload. The client applies an incoming change without echoing it back — and drops keys whose value it already holds, which absorbs the echo of its own write.
+
 The client keeps only device-shaped state in `localStorage` (panel layout, active workspace, last entry source); everything the settings dialog holds is synced.
 
 ## Runtime WebSocket
