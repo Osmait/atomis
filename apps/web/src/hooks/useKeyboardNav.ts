@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type * as MonacoApi from "monaco-editor";
-import { LEADER_KEYS, type Appearance } from "../state/appearance.js";
+import type { Appearance } from "../state/appearance.js";
 import {
 	moveTreeSelection,
 	resolveNavAction,
@@ -143,7 +143,7 @@ export function useKeyboardNav(options: KeyboardNavOptions): KeyboardNav {
 					paletteOpenRef.current ||
 					Boolean(document.querySelector(".settings-modal")),
 				leaderPending: leaderPendingRef.current,
-				leaderChar: LEADER_KEYS[appearanceRef.current.leader],
+				leaderChar: appearanceRef.current.leader,
 				vimAllows: inMonaco
 					? vimEnabledRef.current && vimModeRef.current === "NORMAL"
 					: true,

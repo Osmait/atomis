@@ -7,6 +7,8 @@ import {
 	APP_FONTS,
 	APP_SIZES,
 	APP_THEMES,
+	isUsableLeader,
+	leaderLabel,
 	LEADER_OPTIONS,
 	type LeaderKey,
 } from "../state/appearance.js";
@@ -152,16 +154,38 @@ export function SettingsModal({
 }: SettingsModalProps): React.JSX.Element {
 	const [tab, setTab] = useState<TabId>("run");
 
+	const [capturing, setCapturing] = useState(false);
+
 	useEffect(() => {
 		const onKey = (event: KeyboardEvent): void => {
 			if (event.key === "Escape") {
 				event.stopPropagation();
-				onClose();
+				// While recording, Escape backs out of the recording only —
+				// otherwise there would be no way to change your mind.
+				if (capturing) setCapturing(false);
+				else onClose();
 			}
 		};
 		window.addEventListener("keydown", onKey, true);
 		return () => window.removeEventListener("keydown", onKey, true);
-	}, [onClose]);
+	}, [capturing, onClose]);
+
+	// Recording swallows the next key press, whatever it is: the dialog's own
+	// shortcuts must not fire while the point is to capture them.
+	useEffect(() => {
+		if (!capturing) return;
+		const onKey = (event: KeyboardEvent): void => {
+			if (event.key === "Escape") return;
+			event.preventDefault();
+			event.stopPropagation();
+			// A modifier on its own is the user still reaching for the key.
+			if (!isUsableLeader(event.key)) return;
+			onLeader(event.key);
+			setCapturing(false);
+		};
+		window.addEventListener("keydown", onKey, true);
+		return () => window.removeEventListener("keydown", onKey, true);
+	}, [capturing, onLeader]);
 
 	const groupToggles = (group: ToggleGroup): Toggle[] =>
 		toggles.filter((toggle) => toggle.group === group);
@@ -308,12 +332,31 @@ export function SettingsModal({
 					{tab === "keyboard" && (
 						<section className="settings-section">
 							<div className="settings-title">Leader key</div>
+							<div className="leader-row">
+								<button
+									className={`leader-capture${capturing ? " capturing" : ""}`}
+									onClick={() => setCapturing((previous) => !previous)}
+								>
+									{capturing ? (
+										"Press any key…"
+									) : (
+										<>
+											Leader is <kbd>{leaderLabel(leader)}</kbd>
+										</>
+									)}
+								</button>
+								{capturing && (
+									<span className="settings-toggle-hint">
+										Esc to keep the current one
+									</span>
+								)}
+							</div>
 							<div className="settings-pills">
 								{LEADER_OPTIONS.map((option) => (
 									<button
-										className={leader === option.id ? "active" : ""}
-										key={option.id}
-										onClick={() => onLeader(option.id)}
+										className={leader === option.key ? "active" : ""}
+										key={option.key}
+										onClick={() => onLeader(option.key)}
 									>
 										{option.label}
 									</button>
