@@ -59,7 +59,8 @@ describe("persistence loaders", () => {
 	it("reject out-of-catalog appearance and language values", () => {
 		stubStorage({
 			"atomis.appearance.v1": JSON.stringify({
-				theme: "dracula",
+				// Was "dracula" until Dracula became a real theme.
+				theme: "no-such-theme",
 				fontIndex: 99,
 				sizeIndex: -1,
 				leader: "tab",

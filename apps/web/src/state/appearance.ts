@@ -1,17 +1,28 @@
 import { readStoredItem, writeStoredItem } from "./storage.js";
+import {
+	DEFAULT_THEME,
+	isAppTheme,
+	THEME_IDS,
+	THEMES,
+	type AppTheme,
+} from "./themes.js";
 
 /**
  * Appearance preferences: theme, typography and the leader key. The option
  * catalogs live next to the persistence code so stored values can be
- * validated; the settings modal renders these same catalogs.
+ * validated; the settings modal renders these same catalogs. The palettes
+ * themselves live in themes.ts, which also generates what the window and
+ * the editor are painted with.
  */
-export const APP_THEMES = [
-	{ id: "mocha", label: "Mocha", dot: "#1e1e2e" },
-	{ id: "macchiato", label: "Macchiato", dot: "#24273a" },
-	{ id: "crust", label: "Crust", dot: "#11111b" },
-] as const;
 
-export type AppTheme = (typeof APP_THEMES)[number]["id"];
+/** Every theme, in the order the settings dialog lists them. */
+export const APP_THEMES = THEME_IDS.map((id) => ({
+	id,
+	label: THEMES[id].label,
+	palette: THEMES[id],
+}));
+
+export type { AppTheme };
 
 export const APP_FONTS = [
 	{ label: "JetBrains Mono", css: '"JetBrains Mono", ui-monospace, monospace' },
@@ -44,7 +55,7 @@ export interface Appearance {
 }
 
 export const DEFAULT_APPEARANCE: Appearance = {
-	theme: "mocha",
+	theme: DEFAULT_THEME,
 	fontIndex: 0,
 	sizeIndex: 1,
 	leader: "space",
@@ -58,9 +69,7 @@ export function loadAppearance(): Appearance {
 			readStoredItem(APPEARANCE_KEY) ?? "{}",
 		) as Partial<Appearance>;
 		return {
-			theme: APP_THEMES.some((entry) => entry.id === stored.theme)
-				? (stored.theme as AppTheme)
-				: "mocha",
+			theme: isAppTheme(stored.theme) ? stored.theme : DEFAULT_THEME,
 			fontIndex:
 				typeof stored.fontIndex === "number" &&
 				stored.fontIndex >= 0 &&

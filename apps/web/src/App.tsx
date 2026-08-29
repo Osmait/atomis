@@ -96,6 +96,8 @@ import {
 	type ChromeSettings,
 } from "./state/chrome.js";
 import { subscribeToPreferences } from "./state/storage.js";
+import { cssVariables, paletteOf, type AppTheme } from "./state/themes.js";
+import { defineEditorThemes } from "./editor/theme.js";
 import {
 	INLINE_LOGS_KEY,
 	SETTINGS_KEY,
@@ -207,6 +209,22 @@ export function App(): React.JSX.Element {
 			}),
 		[],
 	);
+
+	// Hovering a theme in the settings dialog paints the whole window with it
+	// without committing; leaving the row puts the saved one back. So every
+	// consumer reads this, not `appearance.theme`.
+	const [previewTheme, setPreviewTheme] = useState<AppTheme>();
+	const activeTheme = previewTheme ?? appearance.theme;
+	const palette = paletteOf(activeTheme);
+
+	// One place paints the window: the palette becomes the custom properties
+	// the stylesheet already reads, so a new theme needs no CSS of its own.
+	useEffect(() => {
+		const root = document.documentElement;
+		for (const [name, value] of Object.entries(cssVariables(palette)))
+			root.style.setProperty(name, value);
+		root.style.colorScheme = palette.scheme;
+	}, [palette]);
 
 	const vimModeRef = useRef("NORMAL");
 	vimModeRef.current = vimModeLabel;
@@ -1012,10 +1030,13 @@ export function App(): React.JSX.Element {
 	}, [vimEnabled]);
 
 	useEffect(() => {
-		monacoRef.current?.editor.setTheme(
-			layout.zen ? "atomis-zen" : "atomis-dark",
-		);
-	}, [layout.zen, session]);
+		const monaco = monacoRef.current;
+		if (!monaco) return;
+		// Redefining under the same name is what repaints an editor already
+		// on screen; setTheme alone would re-apply the previous colours.
+		defineEditorThemes(monaco, palette);
+		monaco.editor.setTheme(layout.zen ? "atomis-zen" : "atomis-dark");
+	}, [layout.zen, palette, session]);
 
 	const activeFile = files.find((file) => file.path === activePath) ?? files[0];
 	useEffect(() => {
@@ -1293,7 +1314,7 @@ export function App(): React.JSX.Element {
 	return (
 		<main
 			className={`app-shell${zen ? " zen" : ""} dock-${dockEffective}${layout.termMax ? " term-max" : ""}${switching ? " switching" : ""}`}
-			data-theme={appearance.theme}
+			data-theme={activeTheme}
 			style={{ fontFamily: APP_FONTS[appearance.fontIndex]?.css }}
 		>
 			<div className="workspace">
@@ -1364,7 +1385,10 @@ export function App(): React.JSX.Element {
 								language={editorLanguage}
 								value={visibleSource}
 								theme={zen ? "atomis-zen" : "atomis-dark"}
-								beforeMount={registerAllLanguages}
+								beforeMount={(monaco) => {
+									registerAllLanguages(monaco);
+									defineEditorThemes(monaco, palette);
+								}}
 								onMount={handleMount}
 								onChange={onChange}
 								options={{
@@ -1640,10 +1664,18 @@ export function App(): React.JSX.Element {
 			{settingsOpen && (
 				<SettingsModal
 					fontIndex={appearance.fontIndex}
-					onClose={() => setSettingsOpen(false)}
+					onClose={() => {
+						setPreviewTheme(undefined);
+						setSettingsOpen(false);
+					}}
 					onFont={(index) => updateAppearance({ fontIndex: index })}
 					onSize={(index) => updateAppearance({ sizeIndex: index })}
-					onTheme={(theme) => updateAppearance({ theme })}
+					onPreview={setPreviewTheme}
+					onTheme={(theme) => {
+						setPreviewTheme(undefined);
+						updateAppearance({ theme });
+					}}
+					previewTheme={previewTheme}
 					onValueFmt={(fmt) => {
 						setValueFmt(fmt);
 						saveValueFmt(fmt);
@@ -1655,6 +1687,7 @@ export function App(): React.JSX.Element {
 					toggles={[
 						{
 							label: "Auto Run",
+							group: "run",
 							hint: "runs when you stop typing",
 							on: settings.autoRun,
 							disabled: runDisabled,
@@ -1662,6 +1695,7 @@ export function App(): React.JSX.Element {
 						},
 						{
 							label: "Auto Inspect",
+							group: "run",
 							hint: "inline values",
 							on: settings.autoInspect,
 							act: () => {
@@ -1674,6 +1708,7 @@ export function App(): React.JSX.Element {
 						},
 						{
 							label: "Inline logs",
+							group: "editor",
 							hint: "log output next to its line",
 							on: inlineLogs,
 							act: () => {
@@ -1685,6 +1720,7 @@ export function App(): React.JSX.Element {
 						},
 						{
 							label: "Sandbox",
+							group: "run",
 							hint: sandboxHint,
 							on: settings.sandbox,
 							disabled: !sandboxAvailable,
@@ -1696,6 +1732,7 @@ export function App(): React.JSX.Element {
 						},
 						{
 							label: "Allow network",
+							group: "run",
 							hint: networkHint,
 							on: settings.network,
 							disabled: !settings.sandbox && sandboxAvailable,
@@ -1707,24 +1744,28 @@ export function App(): React.JSX.Element {
 						},
 						{
 							label: "Vim Mode",
+							group: "editor",
 							hint: "",
 							on: vimEnabled,
 							act: () => changeVimMode(!vimEnabled),
 						},
 						{
 							label: "Toolbar",
+							group: "appearance",
 							hint: "tabs, auto, settings and Run",
 							on: chrome.toolbar,
 							act: () => updateChrome({ toolbar: !chrome.toolbar }),
 						},
 						{
 							label: "Status bar",
+							group: "appearance",
 							hint: "mode, workspace and cursor along the bottom",
 							on: chrome.statusBar,
 							act: () => updateChrome({ statusBar: !chrome.statusBar }),
 						},
 						{
 							label: "Hide tabs for one file",
+							group: "appearance",
 							hint: "the strip appears once a second file opens",
 							on: chrome.hideSingleTab,
 							disabled: !chrome.toolbar,
@@ -1733,6 +1774,7 @@ export function App(): React.JSX.Element {
 						},
 						{
 							label: "Zen Mode",
+							group: "appearance",
 							hint: "⌘.",
 							on: zen,
 							act: () => {

@@ -8,6 +8,9 @@ import circleCheck from "lucide-static/icons/circle-check.svg?raw";
 import folderOpen from "lucide-static/icons/folder-open.svg?raw";
 import circleDashed from "lucide-static/icons/circle-dashed.svg?raw";
 import circleX from "lucide-static/icons/circle-x.svg?raw";
+import code from "lucide-static/icons/code.svg?raw";
+import keyboard from "lucide-static/icons/keyboard.svg?raw";
+import palette from "lucide-static/icons/palette.svg?raw";
 import ellipsisVertical from "lucide-static/icons/ellipsis-vertical.svg?raw";
 import eraser from "lucide-static/icons/eraser.svg?raw";
 import filePlus from "lucide-static/icons/file-plus.svg?raw";
@@ -40,6 +43,9 @@ const ICONS = {
 	"folder-open": folderOpen,
 	"circle-dashed": circleDashed,
 	"circle-x": circleX,
+	code,
+	keyboard,
+	palette,
 	"ellipsis-vertical": ellipsisVertical,
 	eraser,
 	"file-plus": filePlus,

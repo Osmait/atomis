@@ -1,3 +1,8 @@
+/*
+ * Mocha, as the value every property has before the app applies the saved
+ * theme. themes.ts owns the palettes and writes them onto this same element,
+ * so a theme is a data change and never a stylesheet change.
+ */
 :root {
 	color-scheme: dark;
 	font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
@@ -32,18 +37,6 @@
 	--panel-editor: #1e1e2e;
 	--panel-side: #181825;
 	--panel-border: #11111b;
-}
-
-.app-shell[data-theme="macchiato"] {
-	--panel-editor: #24273a;
-	--panel-side: #1e2030;
-	--panel-border: #181926;
-}
-
-.app-shell[data-theme="crust"] {
-	--panel-editor: #181825;
-	--panel-side: #11111b;
-	--panel-border: #0b0b12;
 }
 
 * {
@@ -224,7 +217,7 @@ input:focus-visible,
 }
 
 .run-button:hover:not(:disabled) {
-	background: #ddbdff;
+	background: var(--mauve-bright);
 }
 
 .run-button.running {
@@ -889,7 +882,7 @@ input:focus-visible,
 	margin: 0 12px 8px 33px;
 	padding: 6px 9px;
 	border-left: 2px solid var(--red);
-	background: rgba(243, 139, 168, 0.07);
+	background: color-mix(in srgb, var(--red) 7%, transparent);
 	border-radius: 0 7px 7px 0;
 	color: var(--red);
 	font-size: 11.5px;
@@ -1195,7 +1188,7 @@ input:focus-visible,
 .palette-overlay {
 	position: fixed;
 	inset: 0;
-	background: rgba(17, 17, 27, 0.72);
+	background: color-mix(in srgb, var(--base) 72%, transparent);
 	display: flex;
 	align-items: flex-start;
 	justify-content: center;
@@ -1631,11 +1624,11 @@ input:focus-visible,
 }
 
 .error-lens-line {
-	background: rgba(243, 139, 168, 0.07);
+	background: color-mix(in srgb, var(--red) 7%, transparent);
 }
 
 .error-lens-warning {
-	background: rgba(249, 226, 175, 0.06);
+	background: color-mix(in srgb, var(--yellow) 6%, transparent);
 }
 
 .error-lens-glyph {
@@ -1678,7 +1671,7 @@ input:focus-visible,
 }
 
 .test-lens-line-failed {
-	background: rgba(243, 139, 168, 0.09);
+	background: color-mix(in srgb, var(--red) 9%, transparent);
 	box-shadow: inset 2px 0 0 var(--red);
 }
 
@@ -1691,7 +1684,7 @@ input:focus-visible,
 }
 
 .log-source-line {
-	background: rgba(203, 166, 247, 0.1);
+	background: color-mix(in srgb, var(--mauve) 10%, transparent);
 }
 
 .log-source-glyph {
@@ -1699,7 +1692,7 @@ input:focus-visible,
 }
 
 .log-loop-line {
-	background: rgba(249, 226, 175, 0.07);
+	background: color-mix(in srgb, var(--yellow) 7%, transparent);
 }
 
 .log-loop-glyph {
@@ -1876,8 +1869,8 @@ input:focus-visible,
 }
 
 .peek-bit.on {
-	background: #1e3326;
-	border-color: #2f5c3d;
+	background: var(--green-bg);
+	border-color: var(--green-border);
 	color: var(--green);
 }
 
@@ -1919,12 +1912,12 @@ input:focus-visible,
 
 .peek-cell.on {
 	color: var(--green);
-	background: #1e3326;
+	background: var(--green-bg);
 }
 
 .peek-bitop-row.result .peek-cell {
 	color: var(--mauve);
-	background: #2a2139;
+	background: var(--mauve-dim);
 }
 
 .peek-bytes {
@@ -2400,8 +2393,8 @@ input:focus-visible,
 }
 
 .case-item.failed {
-	background: #2a1a21;
-	box-shadow: inset 0 0 0 1px #4a2530;
+	background: var(--red-dim);
+	box-shadow: inset 0 0 0 1px var(--red-border);
 }
 
 .case-item.unmatched {
@@ -2464,7 +2457,7 @@ input:focus-visible,
 .settings-backdrop {
 	position: fixed;
 	inset: 0;
-	background: rgba(17, 17, 27, 0.72);
+	background: color-mix(in srgb, var(--base) 72%, transparent);
 	display: flex;
 	align-items: flex-start;
 	justify-content: center;
@@ -2600,18 +2593,135 @@ input:focus-visible,
 	box-shadow: inset 0 0 0 1px var(--mauve-border);
 }
 
-.theme-pill {
+/* The dialog scrolls inside its body so the tabs stay put. */
+.settings-tabs {
+	display: flex;
+	gap: 2px;
+	padding: 0 10px;
+	border-bottom: 1px solid var(--surface0);
+}
+
+.settings-tab {
 	display: flex;
 	align-items: center;
+	gap: 6px;
+	padding: 9px 11px;
+	font-size: 12px;
+	color: var(--overlay);
+	border-bottom: 2px solid transparent;
+	margin-bottom: -1px;
+}
+
+.settings-tab:hover {
+	color: var(--subtext);
+}
+
+.settings-tab.active {
+	color: var(--text);
+	border-bottom-color: var(--mauve);
+}
+
+.settings-body {
+	max-height: 56vh;
+	overflow-y: auto;
+}
+
+.theme-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+	gap: 6px;
+}
+
+.theme-card {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 7px 9px;
+	border-radius: 5px;
+	font-size: 12px;
+	color: var(--overlay);
+	box-shadow: inset 0 0 0 1px var(--surface0);
+	text-align: left;
+}
+
+.theme-card:hover {
+	color: var(--text);
+	box-shadow: inset 0 0 0 1px var(--mauve-border);
+}
+
+.theme-card.active {
+	color: var(--text);
+	background: var(--mauve-dim);
+	box-shadow: inset 0 0 0 1px var(--mauve-border);
+}
+
+/* Four bands: the editor surface, then three accents. */
+.theme-swatches {
+	display: flex;
+	flex: none;
+	width: 30px;
+	height: 14px;
+	border-radius: 3px;
+	overflow: hidden;
+	box-shadow: inset 0 0 0 1px var(--surface1);
+}
+
+.theme-swatches span {
+	flex: 1;
+}
+
+.theme-preview {
+	display: flex;
+	height: 104px;
+	padding: 5px;
+	gap: 5px;
+	border: 1px solid;
+	border-radius: 6px;
+	overflow: hidden;
+}
+
+.theme-preview-side {
+	flex: none;
+	width: 42px;
+	border-radius: 3px;
+	padding: 7px 6px;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.theme-preview-side span {
+	height: 5px;
+	border-radius: 2px;
+}
+
+.theme-preview-side span:nth-child(2) {
+	width: 72%;
+}
+
+.theme-preview-side span:nth-child(3) {
+	width: 55%;
+}
+
+.theme-preview-code {
+	flex: 1;
+	border-radius: 3px;
+	padding: 8px 9px;
+	font-size: 10px;
+	line-height: 1.9;
+	overflow: hidden;
+	white-space: nowrap;
+}
+
+.theme-preview-code > div {
+	display: flex;
 	gap: 7px;
 }
 
-.theme-dot {
-	width: 11px;
-	height: 11px;
-	border-radius: 50%;
-	display: block;
-	box-shadow: inset 0 0 0 1px var(--dim);
+.theme-preview-code > div > span:first-child {
+	width: 9px;
+	flex: none;
+	text-align: right;
 }
 
 .settings-sizes {
