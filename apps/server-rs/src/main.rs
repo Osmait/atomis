@@ -19,6 +19,7 @@ mod doctor;
 mod markers;
 mod ndjson;
 mod packs;
+mod preferences;
 mod protocol;
 mod runners;
 mod sandbox;
@@ -210,6 +211,44 @@ async fn delete_workspace(
     }
 }
 
+#[derive(serde::Deserialize)]
+struct PreferencesRequest {
+    preferences: preferences::PreferencesPatch,
+}
+
+/// Settings shared by every device that opens this server, so the same
+/// Atomis on a laptop and on a tablet agrees with itself.
+async fn get_preferences(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+    if !origin_ok_read(&state, &headers) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    Json(json!({ "preferences": preferences::read().await })).into_response()
+}
+
+/// A patch, not a replacement: a device sends only the keys it changed, so
+/// two devices editing different settings never clobber each other.
+async fn put_preferences(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    body: Option<Json<serde_json::Value>>,
+) -> Response {
+    if !origin_ok(&state, &headers) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let raw = body.map(|Json(value)| value).unwrap_or(json!({}));
+    let Ok(request) = serde_json::from_value::<PreferencesRequest>(raw) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "Invalid preferences request" })),
+        )
+            .into_response();
+    };
+    match preferences::merge(request.preferences).await {
+        Ok(stored) => Json(json!({ "preferences": stored })).into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, Json(json!({ "error": error }))).into_response(),
+    }
+}
+
 fn workspaces_dir_for(id: &str) -> std::path::PathBuf {
     workspace::workspaces_root().join(id)
 }
@@ -375,6 +414,10 @@ async fn main() {
         .route(
             "/api/workspaces/{id}",
             axum::routing::patch(rename_workspace).delete(delete_workspace),
+        )
+        .route(
+            "/api/preferences",
+            get(get_preferences).put(put_preferences),
         )
         .route("/ws/runtime", get(ws_runtime_route))
         .route("/ws/lsp", get(ws_lsp_route));

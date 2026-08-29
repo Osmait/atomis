@@ -19,6 +19,7 @@ import "monaco-editor/editor/contrib/semanticTokens/browser/viewportSemanticToke
 import "monaco-editor/editor/contrib/suggest/browser/suggestController";
 import ReactDOM from "react-dom/client";
 import { App } from "./App.js";
+import { hydratePreferences } from "./state/storage.js";
 import "@fontsource/jetbrains-mono/400.css";
 import "@fontsource/jetbrains-mono/500.css";
 import "@fontsource/jetbrains-mono/700.css";
@@ -32,4 +33,11 @@ self.MonacoEnvironment = {
 };
 loader.config({ monaco });
 
+// Settings live on the server so every device agrees on them, and the
+// loaders that read them run during the first render — so fetch them before
+// mounting rather than repainting the whole UI a moment later. A server that
+// cannot answer falls back to this browser's own storage.
+// hydratePreferences never rejects — a server that cannot answer leaves the
+// browser's own storage in charge — so awaiting it here cannot strand the page.
+await hydratePreferences();
 ReactDOM.createRoot(document.getElementById("root")!).render(<App />);

@@ -28,12 +28,9 @@ pub struct WorkspaceMeta {
     pub updated_at: u64,
 }
 
-/// `$XDG_DATA_HOME/atomis/workspaces`, falling back to `~/.local/share`.
-/// Overridable with ATOMIS_WORKSPACES for tests and packaged builds.
-pub fn workspaces_root() -> PathBuf {
-    if let Some(explicit) = std::env::var_os("ATOMIS_WORKSPACES") {
-        return PathBuf::from(explicit);
-    }
+/// `$XDG_DATA_HOME/atomis`, falling back to `~/.local/share/atomis`:
+/// everything Atomis keeps between runs lives under here.
+pub fn data_root() -> PathBuf {
     let data_home = std::env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)
         .or_else(|| {
@@ -42,7 +39,16 @@ pub fn workspaces_root() -> PathBuf {
                 .map(|home| home.join(".local/share"))
         })
         .unwrap_or_else(std::env::temp_dir);
-    data_home.join("atomis/workspaces")
+    data_home.join("atomis")
+}
+
+/// `$XDG_DATA_HOME/atomis/workspaces`, falling back to `~/.local/share`.
+/// Overridable with ATOMIS_WORKSPACES for tests and packaged builds.
+pub fn workspaces_root() -> PathBuf {
+    if let Some(explicit) = std::env::var_os("ATOMIS_WORKSPACES") {
+        return PathBuf::from(explicit);
+    }
+    data_root().join("workspaces")
 }
 
 /// Ids are generated, never user input; validating them keeps a crafted id

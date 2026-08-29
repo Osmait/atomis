@@ -6,6 +6,14 @@ All runtime messages are JSON and versioned at protocol version 1. Shared TypeSc
 
 `POST /api/sessions` accepts an optional `{ "language": "zig" | "rust" }` body (default `zig`, selecting the initial entry file of the bilingual workspace) and returns a random session ID, a 256-bit bearer token, the session language, tool versions (including `rustc`/`cargo`/`rust-analyzer` when present) and the initial project file catalog with real `file://` URIs. Origin must exactly match the loopback UI origin, or one of the origins listed in `ATOMIS_ALLOWED_ORIGINS` (comma-separated, blank entries ignored) — the reverse-proxy escape hatch used by `pnpm start:remote`, and the only origin override honoured under `NODE_ENV=production`. `ATOMIS_DEV_ORIGIN` and the Vite dev origin are refused there.
 
+## Preferences HTTP
+
+`GET /api/preferences` returns `{ "preferences": { key: string } }` — the UI settings shared by every device that opens this server, stored as one JSON object at `$XDG_DATA_HOME/atomis/preferences.json` (overridable with `ATOMIS_PREFERENCES`). A missing or corrupt file reads as empty rather than failing.
+
+`PUT /api/preferences` takes `{ "preferences": { key: string | null } }` and **merges** it key by key, `null` deleting, returning the stored result. Merging rather than replacing is what lets two devices change different settings concurrently without either clobbering the other. Keys are bounded (64 keys, 128 bytes per key, 16 KiB per value) and writes are serialized and committed by rename. Both verbs are Origin-guarded like the rest; the GET accepts a missing `Origin` the way the other read endpoints do.
+
+The client keeps only device-shaped state in `localStorage` (panel layout, active workspace, last entry source); everything the settings dialog holds is synced.
+
 ## Runtime WebSocket
 
 `/ws/runtime?sessionId=…&token=…` accepts:
