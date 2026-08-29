@@ -3,7 +3,7 @@
 # Atomis
 
 
-A loopback-only **Zig, Rust, Go, TypeScript/JavaScript, Python, C and C++** playground inspired by RunJS: Monaco + real language servers (ZLS / rust-analyzer), cancellable native compilation/execution, per-test results, and inline local values produced by AST instrumentation without changing visible code.
+A local-first **Zig, Rust, Go, TypeScript/JavaScript, Python, C and C++** playground inspired by RunJS: Monaco + real language servers (ZLS / rust-analyzer), cancellable native compilation/execution, per-test results, and inline local values produced by AST instrumentation without changing visible code.
 
 > **Sandboxed where the kernel allows it.** On Linux with Landlock (6.7+ for the network rules), every process a session spawns is confined to its own workspace with no TCP — toggle it in Settings → Sandbox, check `pnpm run doctor` for the level your kernel enforces. Everywhere else, and with the toggle off, code runs locally with your permissions: pause Auto Run before pasting untrusted code.
 
@@ -68,6 +68,36 @@ pnpm --filter @atomis/web test
 pnpm typecheck
 pnpm lint    # oxlint (strict, no any/unknown) + cargo clippy -D warnings
 ```
+
+## Remote access (Tailscale)
+
+Atomis always listens on `127.0.0.1` — there is no option to bind a public
+interface, and the Origin guard is the server's entire access control, so a
+port on the LAN would be an open shell. To reach it from another device, put
+`tailscale serve` in front: tailscaled terminates the remote connection and
+proxies it to the loopback listener, so only your own tailnet devices can get
+through and the port stays invisible to the network.
+
+```bash
+pnpm build
+pnpm start:remote
+```
+
+`scripts/serve-tailscale.mjs` reads this machine's MagicDNS name, publishes
+`https://<machine>.<tailnet>.ts.net` with `tailscale serve`, and starts the
+server with that origin in `ATOMIS_ALLOWED_ORIGINS` — the one env var that
+widens the Origin guard, and the only one honoured in production. It tears the
+`serve` down again on exit. Prerequisites it checks for you: HTTPS Certificates
+enabled for the tailnet (admin console → DNS) and permission to run
+`tailscale serve` (`sudo tailscale set --operator=$USER`, once).
+
+HTTPS is not optional here. `navigator.clipboard` needs a secure context, so
+over plain HTTP the editor's copy and paste fail — which on a tablet, with no
+keyboard shortcuts, is most of the editing.
+
+Everything else applies unchanged: whoever opens that URL runs code on this
+machine with your permissions, and the sandbox confines the code you run, not
+the server. Keep the tailnet to devices you own.
 
 ## CI/CD
 

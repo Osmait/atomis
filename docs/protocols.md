@@ -4,7 +4,7 @@ All runtime messages are JSON and versioned at protocol version 1. Shared TypeSc
 
 ## Session HTTP
 
-`POST /api/sessions` accepts an optional `{ "language": "zig" | "rust" }` body (default `zig`, selecting the initial entry file of the bilingual workspace) and returns a random session ID, a 256-bit bearer token, the session language, tool versions (including `rustc`/`cargo`/`rust-analyzer` when present) and the initial project file catalog with real `file://` URIs. Origin must exactly match the loopback UI origin.
+`POST /api/sessions` accepts an optional `{ "language": "zig" | "rust" }` body (default `zig`, selecting the initial entry file of the bilingual workspace) and returns a random session ID, a 256-bit bearer token, the session language, tool versions (including `rustc`/`cargo`/`rust-analyzer` when present) and the initial project file catalog with real `file://` URIs. Origin must exactly match the loopback UI origin, or one of the origins listed in `ATOMIS_ALLOWED_ORIGINS` (comma-separated, blank entries ignored) — the reverse-proxy escape hatch used by `pnpm start:remote`, and the only origin override honoured under `NODE_ENV=production`. `ATOMIS_DEV_ORIGIN` and the Vite dev origin are refused there.
 
 ## Runtime WebSocket
 

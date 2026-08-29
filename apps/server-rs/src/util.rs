@@ -4,24 +4,53 @@ use std::path::Path;
 
 use rand::RngCore;
 
-/// Mirrors apps/server/src/security/origin.ts: only the server's own origin,
-/// plus the Vite dev origin outside production, plus an optional extra dev
-/// origin for parallel harnesses (ATOMIS_DEV_ORIGIN).
+/// Origin guard: the server's own loopback origin, plus the Vite dev origin
+/// outside production, plus an optional extra dev origin for parallel
+/// harnesses (ATOMIS_DEV_ORIGIN), plus the remote origins of a reverse proxy
+/// that fronts the loopback listener (ATOMIS_ALLOWED_ORIGINS).
 pub fn valid_origin(origin: Option<&str>, server_port: u16) -> bool {
+    let production = std::env::var("NODE_ENV").is_ok_and(|v| v == "production");
+    let remote = std::env::var("ATOMIS_ALLOWED_ORIGINS").unwrap_or_default();
+    let dev = std::env::var("ATOMIS_DEV_ORIGIN").unwrap_or_default();
+    valid_origin_with(origin, server_port, production, &remote, &dev)
+}
+
+/// The rule itself, with the environment passed in so it stays testable
+/// without mutating process-global state from parallel test threads.
+fn valid_origin_with(
+    origin: Option<&str>,
+    server_port: u16,
+    production: bool,
+    remote_allowlist: &str,
+    dev_allowlist: &str,
+) -> bool {
     let Some(origin) = origin else { return false };
     if origin == format!("http://127.0.0.1:{server_port}") {
         return true;
     }
-    let production = std::env::var("NODE_ENV").is_ok_and(|v| v == "production");
+    // Remote access (`tailscale serve`, or any local reverse proxy): the page
+    // origin is the proxy's name, while the proxy itself reaches this process
+    // over loopback, so the listener stays unreachable from the LAN. Honoured
+    // in production because that is the only mode that serves the built UI.
+    if listed(remote_allowlist, origin) {
+        return true;
+    }
     if !production && origin == "http://127.0.0.1:5173" {
         return true;
     }
-    if let Ok(extra) = std::env::var("ATOMIS_DEV_ORIGIN") {
-        if !production && extra.split(',').any(|o| o.trim() == origin) {
-            return true;
-        }
+    if !production && listed(dev_allowlist, origin) {
+        return true;
     }
     false
+}
+
+/// Comma-separated allowlist membership. Blank entries never match, so an
+/// empty variable or a stray comma cannot admit an empty `Origin` header.
+fn listed(allowlist: &str, origin: &str) -> bool {
+    allowlist
+        .split(',')
+        .map(str::trim)
+        .any(|allowed| !allowed.is_empty() && allowed == origin)
 }
 
 /// Node's pathToFileURL for absolute POSIX paths: percent-encodes the WHATWG
@@ -174,6 +203,58 @@ mod tests {
     fn file_urls_encode_the_whatwg_path_set() {
         let url = path_to_file_url(std::path::Path::new("/tmp/atomis/a b/main.zig"));
         assert_eq!(url, "file:///tmp/atomis/a%20b/main.zig");
+    }
+
+    #[test]
+    fn only_the_server_origin_passes_in_production() {
+        assert!(valid_origin_with(Some("http://127.0.0.1:4317"), 4317, true, "", ""));
+        assert!(!valid_origin_with(Some("http://127.0.0.1:4318"), 4317, true, "", ""));
+        assert!(!valid_origin_with(Some("http://127.0.0.1:5173"), 4317, true, "", ""));
+        assert!(!valid_origin_with(Some("http://evil.example"), 4317, true, "", ""));
+        assert!(!valid_origin_with(None, 4317, true, "", ""));
+    }
+
+    #[test]
+    fn dev_origins_are_refused_once_production_is_set() {
+        let dev = "http://127.0.0.1:5199";
+        assert!(valid_origin_with(Some(dev), 4317, false, "", dev));
+        assert!(valid_origin_with(Some("http://127.0.0.1:5173"), 4317, false, "", ""));
+        assert!(!valid_origin_with(Some(dev), 4317, true, "", dev));
+    }
+
+    #[test]
+    fn remote_origins_hold_in_production_and_accept_a_list() {
+        let list = "https://cachyos.tailnet.ts.net, http://cachyos.tailnet.ts.net";
+        assert!(valid_origin_with(
+            Some("https://cachyos.tailnet.ts.net"),
+            4317,
+            true,
+            list,
+            "",
+        ));
+        assert!(valid_origin_with(
+            Some("http://cachyos.tailnet.ts.net"),
+            4317,
+            true,
+            list,
+            "",
+        ));
+        // Neighbouring names on the same tailnet are not the allowed one.
+        assert!(!valid_origin_with(
+            Some("https://other.tailnet.ts.net"),
+            4317,
+            true,
+            list,
+            "",
+        ));
+    }
+
+    #[test]
+    fn a_blank_allowlist_entry_never_admits_a_blank_origin() {
+        assert!(!valid_origin_with(Some(""), 4317, true, "", ""));
+        assert!(!valid_origin_with(Some(""), 4317, true, "https://a.ts.net,", ""));
+        assert!(!valid_origin_with(Some("   "), 4317, true, " , ", ""));
+        assert!(!valid_origin_with(Some("null"), 4317, true, "", ""));
     }
 
     #[test]

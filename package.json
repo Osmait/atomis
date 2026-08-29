@@ -15,6 +15,7 @@
     "test:e2e": "playwright test",
     "build": "pnpm zig:build && pnpm rust:build && pnpm go:build && pnpm -r build && cargo build --release --manifest-path apps/server-rs/Cargo.toml",
     "start": "NODE_ENV=production cargo run --release --manifest-path apps/server-rs/Cargo.toml",
+    "start:remote": "node scripts/serve-tailscale.mjs",
     "desktop": "pnpm --filter @atomis/desktop dev",
     "desktop:linux": "pnpm build && pnpm --filter @atomis/desktop bundle:linux",
     "desktop:mac": "pnpm build && pnpm --filter @atomis/desktop bundle:mac",
