@@ -58,7 +58,7 @@ import {
 } from "../shared/stores/appearance.js";
 import { flattenProblems, type OwnedDiagnostic } from "../shared/lib/diagnostics.js";
 import { buildTreeRows } from "../shared/lib/fileTree.js";
-import { apiFetch, websocketUrl } from "../shared/api/client.js";
+import { websocketUrl } from "../shared/api/client.js";
 import {
 	computeFailsByFile,
 	isActive,
@@ -85,6 +85,7 @@ import { useRuntimeSocket } from "../features/runtime/useRuntimeSocket.js";
 import { useAppearance } from "../features/settings/useAppearance.js";
 import { useVim } from "../features/editor/useVim.js";
 import { useWorkspaces } from "../features/workspaces/useWorkspaces.js";
+import { useSessionLifecycle } from "../features/session/useSessionLifecycle.js";
 import {
 	INLINE_LOGS_KEY,
 	SETTINGS_KEY,
@@ -92,9 +93,7 @@ import {
 	VIM_MODE_KEY,
 	loadEntrySource,
 	loadInlineLogs,
-	loadLanguage,
 	loadLayout,
-	loadScaffold,
 	loadSettings,
 	loadValueFmt,
 	loadVimMode,
@@ -107,10 +106,6 @@ import {
 	type LayoutState,
 	type Settings,
 } from "../shared/stores/settings.js";
-import {
-	loadActiveWorkspace,
-	saveActiveWorkspace,
-} from "../shared/stores/workspaces.js";
 import type { LogSourceLocation, ProjectFile } from "../shared/types.js";
 
 export function App(): React.JSX.Element {
@@ -432,74 +427,28 @@ export function App(): React.JSX.Element {
 	// Opening a session is the same work on first load and on every
 	// workspace switch: tear the old one down, ask for a new one, and let
 	// the socket/LSP effects rebuild themselves around it.
-	const requestSession = useCallback(
-		(workspace: string | undefined): Promise<Response> =>
-			apiFetch("/api/sessions", {
-				method: "POST",
-				headers: { "content-type": "application/json" },
-				body: JSON.stringify({
-					language: loadLanguage(),
-					scaffold: loadScaffold(),
-					...(workspace ? { workspace } : {}),
-				}),
-			}),
-		[],
-	);
+	const { switchToWorkspace, boot } = useSessionLifecycle({
+		activeLanguageRef,
+		closePicker: useCallback(() => setWorkspacePickerOpen(false), []),
+		closeRuntime,
+		entryRef,
+		lspClientsRef,
+		resetRuntime,
+		resetToEntry,
+		sessionRef,
+		setCapabilities,
+		setPeek,
+		setProjectFiles,
+		setSession,
+		setSettings,
+		setStartupError,
+		setStatus,
+		setSwitching,
+		settingsRef,
+		versionRef,
+	});
 
-	const openSession = useCallback(
-		async (workspace: string | undefined): Promise<void> => {
-			try {
-				let response = await requestSession(workspace);
-				// A stored workspace that no longer exists falls back to a
-				// scratch session rather than failing the boot.
-				if (!response.ok && workspace) {
-					saveActiveWorkspace(undefined);
-					response = await requestSession(undefined);
-				}
-				if (!response.ok)
-					throw new Error(`Session creation failed (${response.status})`);
-				const created = (await response.json()) as CreateSessionResponse;
-				sessionRef.current = created;
-				const entry = WEB_LANGUAGE_PACKS[created.language].entryFile;
-				entryRef.current = entry;
-				activeLanguageRef.current = created.language;
-				resetToEntry(entry);
-				const projectFiles = (
-					created as CreateSessionResponse & { files?: ProjectFile[] }
-				).files ?? [
-					{
-						path: entry,
-						uri: created.documentUri,
-						source: created.initialSource,
-					},
-				];
-				setProjectFiles(projectFiles);
-				setSession(created);
-				// The kernel decides whether the sandbox can be honoured;
-				// a stored preference never turns it on where it cannot run.
-				if (created.sandboxSupport === "unsupported")
-					setSettings((previous) => {
-						const next = { ...previous, sandbox: false };
-						settingsRef.current = next;
-						return next;
-					});
-			} catch (error) {
-				setStartupError(
-					error instanceof Error ? error.message : String(error),
-				);
-			} finally {
-				setSwitching(false);
-			}
-		},
-		[requestSession, resetToEntry, setProjectFiles],
-	);
-
-	const bootedRef = useRef(false);
-	useEffect(() => {
-		if (bootedRef.current) return;
-		bootedRef.current = true;
-		void openSession(loadActiveWorkspace());
-	}, [openSession, setProjectFiles]);
+	useEffect(boot, [boot]);
 
 	const sendSettings = useCallback(
 		(next: Settings): void => {
@@ -972,29 +921,6 @@ export function App(): React.JSX.Element {
 	// rebuilt — but in place: the page never reloads. Tear down what is
 	// bound to the old session, then open the new one; the socket, LSP and
 	// model effects rebuild themselves around it.
-	const switchToWorkspace = useCallback(
-		(id: string | undefined): void => {
-			setWorkspacePickerOpen(false);
-			// Re-opening the workspace you are already in would throw away a
-			// live session (and flash the tree) to arrive exactly where you
-			// started.
-			if (id === sessionRef.current?.workspace?.id) return;
-			saveActiveWorkspace(id);
-			setSwitching(true);
-			for (const client of Object.values(lspClientsRef.current))
-				client?.dispose();
-			lspClientsRef.current = {};
-			closeRuntime();
-			resetRuntime();
-			setCapabilities({});
-			setPeek(null);
-			setStatus("Opening workspace…");
-			versionRef.current = 1;
-			void openSession(id);
-		},
-		[closeRuntime, openSession, resetRuntime, setPeek],
-	);
-
 	// The picker's own state lives with the picker; switching does not,
 	// because it tears down the socket, the language clients and the models,
 	// and only the shell holds all three. The ref is what lets the hook call
