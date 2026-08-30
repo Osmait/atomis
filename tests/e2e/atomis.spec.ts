@@ -157,6 +157,23 @@ pub fn main() void {
 	).toBeVisible();
 });
 
+test("a run with nothing to inspect still looks current", async ({ page }) => {
+	await openClean(page);
+	await expect(page.locator(".state-succeeded")).toBeVisible();
+
+	// No declarations to inspect, so no probe value ever arrives. Staleness
+	// used to lift only when one did, which left a program whose only
+	// feedback is a log struck through for good — indistinguishable from
+	// code that is still broken.
+	await replaceEditor(
+		page,
+		'const std = @import("std");\n\npub fn main() void {\n    std.debug.print("hello\\n", .{});\n}\n',
+	);
+	await expect(page.locator(".state-succeeded")).toBeVisible();
+	await expect(page.locator(".inline-log")).toHaveCount(1);
+	await expect(page.locator(".inline-log.stale")).toHaveCount(0);
+});
+
 test("project tree supports imports, embedFile, and runtime input files", async ({
 	page,
 }) => {

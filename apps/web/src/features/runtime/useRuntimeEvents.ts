@@ -132,6 +132,12 @@ export function useRuntimeEvents(options: RuntimeEventsOptions) {
 				return;
 			if (event.type === "run.state") {
 				setRunState(event.state);
+				// A run that reached the end is showing you the current code,
+				// whether or not it had any values to report. Clearing this
+				// only when a probe value arrived left a program whose only
+				// feedback is a log struck through for good, which reads as
+				// "still broken" long after it was fixed.
+				if (event.state === "succeeded") setStale(false);
 				if (event.state === "instrumenting") {
 					setOutput([]);
 					pinnedLogLocationRef.current = undefined;
