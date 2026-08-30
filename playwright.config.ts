@@ -25,6 +25,10 @@ export default defineConfig({
 			// real session (Auto Run off, the demo scaffold) would hydrate
 			// into every test. Point the run at a file of its own.
 			ATOMIS_PREFERENCES: join(tmpdir(), "atomis-e2e-preferences.json"),
+			// The suite creates persistent workspaces and does not delete
+			// them, so without this every run leaves `spec-<timestamp>`
+			// entries in the developer's own switcher.
+			ATOMIS_WORKSPACES: join(tmpdir(), "atomis-e2e-workspaces"),
 		},
 	},
 });
