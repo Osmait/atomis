@@ -1,5 +1,5 @@
 import type { Language, WorkspaceMeta } from "@atomis/protocol";
-import { apiFetch } from "./api.js";
+import { apiFetch } from "../api/client.js";
 import { readStoredItem, writeStoredItem } from "./storage.js";
 
 /**

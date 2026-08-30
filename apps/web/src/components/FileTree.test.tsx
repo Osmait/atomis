@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { TreeRow } from "../state/fileTree.js";
+import type { TreeRow } from "../shared/lib/fileTree.js";
 import { FileTree } from "./FileTree.js";
 
 afterEach(cleanup);

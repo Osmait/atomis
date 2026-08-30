@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type * as MonacoApi from "monaco-editor";
-import type { InlineValue } from "../state/runtimeState.js";
+import type { InlineValue } from "../shared/lib/runtimeState.js";
 
 interface PeekPanelOptions {
 	editorRef: React.RefObject<

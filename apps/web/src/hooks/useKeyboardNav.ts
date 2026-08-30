@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type * as MonacoApi from "monaco-editor";
-import type { Appearance } from "../state/appearance.js";
+import type { Appearance } from "../shared/stores/appearance.js";
 import {
 	moveTreeSelection,
 	resolveNavAction,
 	type FocusZone,
-} from "../state/keyboardNav.js";
-import type { LayoutState } from "../state/settings.js";
-import { cycleTab } from "../state/tabs.js";
+} from "../shared/lib/keyboardNav.js";
+import type { LayoutState } from "../shared/stores/settings.js";
+import { cycleTab } from "../shared/lib/tabs.js";
 
 export interface TreeNavRow {
 	kind: "folder" | "file";

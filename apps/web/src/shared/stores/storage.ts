@@ -13,7 +13,7 @@
  * when the fetch fails.
  */
 
-import { apiFetch } from "./api.js";
+import { apiFetch } from "../api/client.js";
 
 /** Settings that belong to you rather than to the machine you are on. */
 const SYNCED_KEYS: ReadonlySet<string> = new Set([

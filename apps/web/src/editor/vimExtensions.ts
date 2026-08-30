@@ -8,7 +8,7 @@ import {
 	wrapEdits,
 	type Position,
 	type SurroundEdit,
-} from "../state/surround.js";
+} from "../shared/lib/surround.js";
 
 /**
  * App-level vim commands on top of monaco-vim: LSP/editor actions behind

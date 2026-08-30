@@ -19,8 +19,8 @@ import "monaco-editor/editor/contrib/semanticTokens/browser/viewportSemanticToke
 import "monaco-editor/editor/contrib/suggest/browser/suggestController";
 import ReactDOM from "react-dom/client";
 import { App } from "./App.js";
-import { captureAccessToken } from "./state/api.js";
-import { hydratePreferences } from "./state/storage.js";
+import { captureAccessToken } from "./shared/api/client.js";
+import { hydratePreferences } from "./shared/stores/storage.js";
 import "@fontsource/jetbrains-mono/400.css";
 import "@fontsource/jetbrains-mono/500.css";
 import "@fontsource/jetbrains-mono/700.css";

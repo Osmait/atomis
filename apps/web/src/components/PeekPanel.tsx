@@ -11,7 +11,7 @@ import {
 	parseIntegerPreview,
 	type ValueFmt,
 } from "../lowlevel.js";
-import type { InlineValue } from "../state/runtimeState.js";
+import type { InlineValue } from "../shared/lib/runtimeState.js";
 
 interface PeekPanelProps {
 	value: InlineValue;

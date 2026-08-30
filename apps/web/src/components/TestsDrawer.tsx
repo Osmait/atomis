@@ -3,7 +3,7 @@ import type { TestCase, TestResultEvent } from "@atomis/protocol";
 import {
 	FAILING_STATUSES,
 	type RunHistoryEntry,
-} from "../state/runSummary.js";
+} from "../shared/lib/runSummary.js";
 import { Lucide } from "./Lucide.js";
 
 interface TestsDrawerProps {

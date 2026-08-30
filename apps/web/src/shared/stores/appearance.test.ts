@@ -8,7 +8,7 @@ import {
 	loadAppearance,
 	normalizeLeader,
 } from "./appearance.js";
-import { DEFAULT_FONT, DEFAULT_SIZE } from "./fonts.js";
+import { DEFAULT_FONT, DEFAULT_SIZE } from "../lib/fonts.js";
 
 /** Runs the real loader over one stored blob, legacy fields included. */
 function loadStored(stored: object): Appearance {

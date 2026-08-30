@@ -13,11 +13,11 @@ import {
 	problemsByLine,
 	severityColor,
 	type OwnedDiagnostic,
-} from "../state/diagnostics.js";
-import { groupLogsByLine } from "../state/inlineLogs.js";
+} from "../shared/lib/diagnostics.js";
+import { groupLogsByLine } from "../shared/lib/inlineLogs.js";
 import type { TerminalEntry } from "../types.js";
-import { FAILING_STATUSES } from "../state/runSummary.js";
-import type { InlineValue } from "../state/runtimeState.js";
+import { FAILING_STATUSES } from "../shared/lib/runSummary.js";
+import type { InlineValue } from "../shared/lib/runtimeState.js";
 
 interface EditorDecorationOptions {
 	editorRef: React.RefObject<

@@ -7,9 +7,9 @@ import type { LspClient } from "../lsp/LspClient.js";
 import {
 	isValidProjectPath,
 	normalizeFolderName,
-} from "../state/paths.js";
-import { saveLanguage } from "../state/settings.js";
-import { closeTab as computeCloseTab } from "../state/tabs.js";
+} from "../shared/lib/paths.js";
+import { saveLanguage } from "../shared/stores/settings.js";
+import { closeTab as computeCloseTab } from "../shared/lib/tabs.js";
 import type { LogSourceLocation, ProjectFile, ProjectFilesReader } from "../types.js";
 
 export interface TreeDraft {

@@ -1,7 +1,7 @@
 import type React from "react";
 import type { RunState } from "@atomis/protocol";
-import type { FocusZone } from "../state/keyboardNav.js";
-import { RUN_STATE_LABELS } from "../state/runSummary.js";
+import type { FocusZone } from "../shared/lib/keyboardNav.js";
+import { RUN_STATE_LABELS } from "../shared/lib/runSummary.js";
 import { Lucide } from "./Lucide.js";
 
 interface StatusBarProps {

@@ -1,5 +1,5 @@
 import type * as Monaco from "monaco-editor";
-import type { Palette } from "../state/themes.js";
+import type { Palette } from "../shared/lib/themes.js";
 
 /**
  * The editor's theme, generated from the same palette that paints the rest

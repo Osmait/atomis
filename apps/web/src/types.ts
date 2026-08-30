@@ -2,7 +2,7 @@
 export type {
 	TerminalEntry,
 	TerminalSourceLocation as LogSourceLocation,
-} from "./state/terminalFolds.js";
+} from "./shared/lib/terminalFolds.js";
 
 export interface ProjectFile {
 	path: string;

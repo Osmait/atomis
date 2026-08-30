@@ -16,18 +16,18 @@ import type * as MonacoApi from "monaco-editor";
 import {
 	diagnosticDocPath,
 	type ProjectDiagnostic,
-} from "../state/diagnostics.js";
+} from "../shared/lib/diagnostics.js";
 import {
 	finishedRunEntry,
 	shouldAutoOpenDrawer,
 	type RunHistoryEntry,
-} from "../state/runSummary.js";
+} from "../shared/lib/runSummary.js";
 import {
 	acceptsVersion,
 	updateInlineValue,
 	type InlineValue,
-} from "../state/runtimeState.js";
-import { applyRemotePreferences } from "../state/storage.js";
+} from "../shared/lib/runtimeState.js";
+import { applyRemotePreferences } from "../shared/stores/storage.js";
 import type { LogSourceLocation, ProjectFile, ProjectFilesReader, TerminalEntry } from "../types.js";
 
 function markerSeverity(

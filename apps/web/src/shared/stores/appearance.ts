@@ -4,14 +4,14 @@ import {
 	DEFAULT_SIZE,
 	isAppSize,
 	MONO_FONTS,
-} from "./fonts.js";
+} from "../lib/fonts.js";
 import {
 	DEFAULT_THEME,
 	isAppTheme,
 	THEME_IDS,
 	THEMES,
 	type AppTheme,
-} from "./themes.js";
+} from "../lib/themes.js";
 
 /**
  * Appearance preferences: theme, typography and the leader key. The option

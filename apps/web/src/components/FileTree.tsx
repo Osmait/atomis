@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useDismissable } from "../hooks/useDismissable.js";
 import type { TreeContextMenuState, TreeDraft } from "../hooks/useProjectFiles.js";
-import type { TreeRow } from "../state/fileTree.js";
+import type { TreeRow } from "../shared/lib/fileTree.js";
 import { FileIcon, FolderIcon } from "./FileIcon.js";
 import { Lucide } from "./Lucide.js";
 

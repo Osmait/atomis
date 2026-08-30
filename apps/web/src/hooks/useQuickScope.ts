@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type * as MonacoApi from "monaco-editor";
-import { charMatchPositions } from "../state/quickScope.js";
+import { charMatchPositions } from "../shared/lib/quickScope.js";
 
 interface QuickScopeOptions {
 	editorRef: React.RefObject<

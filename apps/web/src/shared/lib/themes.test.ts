@@ -119,7 +119,7 @@ describe("generated custom properties", () => {
 	 */
 	it("defines every custom property the stylesheet reads", () => {
 		const css = readFileSync(
-			new URL("../styles.css", import.meta.url),
+			new URL("../../styles.css", import.meta.url),
 			"utf8",
 		);
 		const generated = new Set(Object.keys(cssVariables(paletteOf("mocha"))));

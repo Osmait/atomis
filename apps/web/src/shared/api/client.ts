@@ -56,3 +56,23 @@ export function apiFetch(
 		},
 	});
 }
+
+/** ws(s) URL for a session endpoint, deriving the scheme from the page. */
+export function websocketUrl(
+	path: string,
+	session: { sessionId: string; authToken: string },
+	params: Record<string, string> = {},
+	base: string = window.location.href,
+): string {
+	const url = new URL(path, base);
+	url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+	url.searchParams.set("sessionId", session.sessionId);
+	url.searchParams.set("token", session.authToken);
+	// A WebSocket handshake carries no custom headers, so the server-wide
+	// token rides in the query when there is one.
+	const access = accessToken();
+	if (access) url.searchParams.set("t", access);
+	for (const [key, value] of Object.entries(params))
+		url.searchParams.set(key, value);
+	return url.href;
+}

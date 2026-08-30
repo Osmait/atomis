@@ -65,10 +65,10 @@ import {
 	loadAppearance,
 	saveAppearance,
 	type Appearance,
-} from "./state/appearance.js";
-import { flattenProblems, type OwnedDiagnostic } from "./state/diagnostics.js";
-import { buildTreeRows } from "./state/fileTree.js";
-import { websocketUrl } from "./state/paths.js";
+} from "./shared/stores/appearance.js";
+import { flattenProblems, type OwnedDiagnostic } from "./shared/lib/diagnostics.js";
+import { buildTreeRows } from "./shared/lib/fileTree.js";
+import { apiFetch, websocketUrl } from "./shared/api/client.js";
 import {
 	caseTone,
 	computeFailsByFile,
@@ -84,19 +84,18 @@ import {
 	totalFails,
 	zenStatusLabel,
 	zenTone,
-} from "./state/runSummary.js";
-import { toggleProbe, type InlineValue } from "./state/runtimeState.js";
+} from "./shared/lib/runSummary.js";
+import { toggleProbe, type InlineValue } from "./shared/lib/runtimeState.js";
 import {
 	CHROME_KEY,
 	loadChrome,
 	saveChrome,
 	tabsVisible,
 	type ChromeSettings,
-} from "./state/chrome.js";
-import { subscribeToPreferences } from "./state/storage.js";
-import { cssVariables, paletteOf, type AppTheme } from "./state/themes.js";
-import { fontStack } from "./state/fonts.js";
-import { apiFetch } from "./state/api.js";
+} from "./shared/stores/chrome.js";
+import { subscribeToPreferences } from "./shared/stores/storage.js";
+import { cssVariables, paletteOf, type AppTheme } from "./shared/lib/themes.js";
+import { fontStack } from "./shared/lib/fonts.js";
 
 /** Longest gap between reconnection attempts. */
 const MAX_RETRY_MS = 10_000;
@@ -123,8 +122,8 @@ import {
 	saveVimMode,
 	type LayoutState,
 	type Settings,
-} from "./state/settings.js";
-import { groupOutput } from "./state/terminalFolds.js";
+} from "./shared/stores/settings.js";
+import { groupOutput } from "./shared/lib/terminalFolds.js";
 import {
 	createWorkspace,
 	deleteWorkspace,
@@ -132,7 +131,7 @@ import {
 	loadActiveWorkspace,
 	renameWorkspace,
 	saveActiveWorkspace,
-} from "./state/workspaces.js";
+} from "./shared/stores/workspaces.js";
 import type { WorkspaceMeta } from "@atomis/protocol";
 import type { LogSourceLocation, ProjectFile } from "./types.js";
 

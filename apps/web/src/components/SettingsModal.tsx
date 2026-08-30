@@ -9,14 +9,14 @@ import {
 	leaderLabel,
 	LEADER_OPTIONS,
 	type LeaderKey,
-} from "../state/appearance.js";
+} from "../shared/stores/appearance.js";
 import {
 	APP_SIZES,
 	detectAvailableFonts,
 	fontStack,
 	MONO_FONTS,
-} from "../state/fonts.js";
-import { paletteOf, type AppTheme, type Palette } from "../state/themes.js";
+} from "../shared/lib/fonts.js";
+import { paletteOf, type AppTheme, type Palette } from "../shared/lib/themes.js";
 
 /** Which tab a behaviour toggle belongs to. */
 export type ToggleGroup = "run" | "editor" | "appearance";
