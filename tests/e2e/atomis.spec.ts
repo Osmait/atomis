@@ -1,29 +1,8 @@
 import { expect, test } from "@playwright/test";
+import { resetPreferences } from "./reset.js";
 
-/**
- * Settings live on the server now, so `localStorage.clear()` is no longer a
- * clean slate: the shared store would hydrate the previous test's choices —
- * or a real session's, when the suite runs on a developer's machine — back
- * into the next one. Emptying it here keeps every test independent.
- */
 test.beforeEach(async ({ request, baseURL }) => {
-	// The dev server answers on 5173 before the API behind it is listening,
-	// so the first test can arrive to a proxy error. Nothing is stored yet
-	// in that case, which is exactly the state this is trying to reach.
-	const response = await request.get("/api/preferences").catch(() => undefined);
-	if (!response?.ok()) return;
-	const stored = (await response.json().catch(() => ({}))) as {
-		preferences?: Record<string, string>;
-	};
-	const keys = Object.keys(stored.preferences ?? {});
-	if (keys.length === 0) return;
-	await request.put("/api/preferences", {
-		// The guard only ever accepts the UI's own origin.
-		headers: { origin: baseURL ?? "http://127.0.0.1:5173" },
-		data: {
-			preferences: Object.fromEntries(keys.map((key) => [key, null])),
-		},
-	});
+	await resetPreferences(request, baseURL);
 });
 
 /** The tabs the settings dialog groups its behaviour toggles into. */

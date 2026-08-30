@@ -3036,3 +3036,17 @@ input:focus-visible,
 		min-height: 44px;
 	}
 }
+
+/*
+ * The status bar packs eight things into one row — mode, workspace, run
+ * state, path, timings, cursor — and on a phone that is wider than the
+ * phone. It hides its overflow, so the right-hand items were simply gone.
+ * The two that repeat what is already on screen give way first: the path
+ * is on the tab above it, and the timings are in the terminal.
+ */
+@media (max-width: 640px) {
+	.status-path,
+	.status-timing {
+		display: none;
+	}
+}

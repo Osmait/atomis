@@ -12,8 +12,37 @@ export default defineConfig({
 	use: {
 		baseURL: process.env.ATOMIS_BASE_URL ?? "http://127.0.0.1:5173",
 		trace: "retain-on-failure",
-		...devices["Desktop Chrome"],
 	},
+	/*
+	 * The main suite is a desktop with a mouse. touch.spec runs the same app
+	 * at the sizes it is actually opened on — a menu that only misbehaves
+	 * when the terminal is docked below, which narrow screens force, reached
+	 * an iPad because nothing here had ever been narrow.
+	 */
+	projects: [
+		{
+			name: "desktop",
+			use: { ...devices["Desktop Chrome"] },
+			testIgnore: "**/touch.spec.ts",
+		},
+		/*
+		 * Chromium, not the WebKit these device profiles default to: the
+		 * repo installs one browser on purpose. What is under test here is
+		 * size and touch — clipping, hit areas, what a tap lands on — and
+		 * those do not turn on the engine. Real iOS rendering is still only
+		 * checked by opening it on the iPad.
+		 */
+		{
+			name: "phone",
+			use: { ...devices["iPhone 13"], browserName: "chromium" },
+			testMatch: "**/touch.spec.ts",
+		},
+		{
+			name: "tablet",
+			use: { ...devices["iPad (gen 7)"], browserName: "chromium" },
+			testMatch: "**/touch.spec.ts",
+		},
+	],
 	webServer: {
 		command: "pnpm dev",
 		url: process.env.ATOMIS_BASE_URL ?? "http://127.0.0.1:5173",
