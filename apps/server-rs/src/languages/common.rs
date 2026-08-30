@@ -334,6 +334,35 @@ pub fn truncate_chars(text: &str, max: usize) -> String {
     text.chars().take(max).collect()
 }
 
+/// The last `max` characters, for text whose end is the interesting part.
+pub fn tail_chars(text: &str, max: usize) -> String {
+    let total = text.chars().count();
+    text.chars().skip(total.saturating_sub(max)).collect()
+}
+
+/// What to show for a test the process died in the middle of.
+///
+/// Per-test stderr is whatever arrived between the runner's start and result
+/// records — but those records travel down a different pipe than stderr, and
+/// the two are read in whatever order the kernel makes ready. When a test
+/// aborts, the assertion glibc prints can be read *before* the start record
+/// that clears the buffer, and the one line explaining the failure is thrown
+/// away: the drawer then shows a failing test with nothing under it.
+///
+/// The process's whole stderr survives that race, so it stands in. Noisier
+/// than the per-test slice, and infinitely better than silence.
+pub fn aborted_message(per_test: &str, whole_run: &str) -> Option<String> {
+    let per_test = per_test.trim();
+    if !per_test.is_empty() {
+        return Some(truncate_chars(per_test, 1200));
+    }
+    let whole_run = whole_run.trim();
+    if whole_run.is_empty() {
+        return None;
+    }
+    Some(tail_chars(whole_run, 1200))
+}
+
 pub fn dedupe_diagnostics(diagnostics: Vec<AppDiagnostic>) -> Vec<AppDiagnostic> {
     let mut seen = std::collections::HashSet::new();
     diagnostics
@@ -349,4 +378,39 @@ pub fn dedupe_diagnostics(diagnostics: Vec<AppDiagnostic>) -> Vec<AppDiagnostic>
             seen.insert(key)
         })
         .collect()
+}
+
+#[cfg(test)]
+mod aborted_message_tests {
+    use super::*;
+
+    #[test]
+    fn the_per_test_slice_wins_when_it_survived() {
+        let message = aborted_message("  assertion failed: 1 == 2  ", "everything the run printed");
+        assert_eq!(message.as_deref(), Some("assertion failed: 1 == 2"));
+    }
+
+    #[test]
+    fn the_whole_run_stands_in_when_the_slice_was_lost() {
+        // What the race looks like: the start record cleared the buffer after
+        // the assertion had already been read off the other pipe.
+        let whole = "hola\nbin: main_test.cpp:6: Assertion `x == y' failed.\n";
+        let message = aborted_message("", whole).expect("a message");
+        assert!(message.contains("Assertion"), "{message}");
+    }
+
+    #[test]
+    fn a_run_that_printed_nothing_still_reports_nothing() {
+        assert_eq!(aborted_message("", "   \n "), None);
+    }
+
+    #[test]
+    fn the_fallback_keeps_the_end_where_the_failure_is() {
+        // Noise first, verdict last: truncating from the front would drop the
+        // only line worth reading.
+        let whole = format!("{}\nAssertion failed at the end.", "noise ".repeat(600));
+        let message = aborted_message("", &whole).expect("a message");
+        assert!(message.ends_with("Assertion failed at the end."), "{message}");
+        assert_eq!(message.chars().count(), 1200);
+    }
 }

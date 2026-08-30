@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 
 use tokio_util::sync::CancellationToken;
 
+use crate::languages::common::{aborted_message, truncate_chars};
 use crate::languages::markers::MarkerParser;
 use crate::languages::ndjson::{ProbeReader, RawTestEvent, RawTestStatus, TestReader};
 use crate::languages::packs;
@@ -526,7 +527,7 @@ async fn run_tests(
     for name in started {
         state.counts.1 += 1;
         let matched = match_runner_name(catalog, &name);
-        let tail = truncate_chars(state.stderr_buffer.trim(), 1200);
+        let message = aborted_message(&state.stderr_buffer, &execution.stderr);
         let _ = events.send(RunnerEvent::TestResult {
             test_id: matched.map(|m| m.test_id.clone()),
             name: matched.map(|m| m.name.clone()).unwrap_or(name),
@@ -536,7 +537,7 @@ async fn run_tests(
                 TestStatus::Failed
             },
             duration_ms: 0.0,
-            message: if tail.is_empty() { None } else { Some(tail) },
+            message,
         });
         state.stderr_buffer.clear();
     }
@@ -556,8 +557,4 @@ async fn run_tests(
         leaked,
         duration_ms: execution.duration_ms,
     });
-}
-
-fn truncate_chars(text: &str, max: usize) -> String {
-    text.chars().take(max).collect()
 }

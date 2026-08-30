@@ -16,8 +16,9 @@ use crate::protocol::{
 use crate::domain::session::{Session, SessionSettings, Snapshot};
 use crate::exec::supervisor::{self, ProcessLimits, RunOptions, StreamCallbacks};
 
+use crate::languages::common::aborted_message;
 use crate::languages::common::{
-    classify_execution, dedupe_diagnostics, execute_program, instrument_files, truncate_chars,
+    classify_execution, dedupe_diagnostics, execute_program, instrument_files,
     ExecuteConfig, InstrumentConfig,
 };
 use crate::languages::runtime::{cancelled_outcome, reset_generated, Events, RunnerEvent, RunnerOutcome, TerminalState};
@@ -681,7 +682,7 @@ async fn run_tests(
     for name in started {
         state.counts.1 += 1;
         let matched = catalog.iter().find(|c| c.name == name);
-        let tail = truncate_chars(state.stderr_buffer.trim(), 1200);
+        let message = aborted_message(&state.stderr_buffer, &execution.stderr);
         let _ = events.send(RunnerEvent::TestResult {
             test_id: matched.map(|m| m.test_id.clone()),
             name: matched.map(|m| m.name.clone()).unwrap_or(name),
@@ -691,7 +692,7 @@ async fn run_tests(
                 TestStatus::Failed
             },
             duration_ms: 0.0,
-            message: if tail.is_empty() { None } else { Some(tail) },
+            message,
         });
         state.stderr_buffer.clear();
     }
