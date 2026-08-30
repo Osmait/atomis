@@ -425,7 +425,7 @@ async fn handle_message(
             ..
         } => {
             let snapshot = session.update(version, &path, &source).await?;
-            after_store_change(session, scheduler, outbox, &snapshot, &path).await;
+            after_store_change(session, scheduler, outbox, &snapshot, &path, false).await;
             Ok(())
         }
         RuntimeClientMessage::FileCreate {
@@ -435,7 +435,7 @@ async fn handle_message(
             ..
         } => {
             let snapshot = session.create_file(version, &path, &source).await?;
-            after_store_change(session, scheduler, outbox, &snapshot, &path).await;
+            after_store_change(session, scheduler, outbox, &snapshot, &path, true).await;
             Ok(())
         }
         RuntimeClientMessage::FileRename {
@@ -445,12 +445,12 @@ async fn handle_message(
             ..
         } => {
             let snapshot = session.rename_file(version, &path, &new_path).await?;
-            after_store_change(session, scheduler, outbox, &snapshot, &path).await;
+            after_store_change(session, scheduler, outbox, &snapshot, &path, true).await;
             Ok(())
         }
         RuntimeClientMessage::FileDelete { version, path, .. } => {
             let snapshot = session.delete_file(version, &path).await?;
-            after_store_change(session, scheduler, outbox, &snapshot, &path).await;
+            after_store_change(session, scheduler, outbox, &snapshot, &path, true).await;
             Ok(())
         }
         RuntimeClientMessage::RunRequest {
@@ -509,13 +509,19 @@ async fn after_store_change(
     outbox: &tokio::sync::mpsc::UnboundedSender<ServerEvent>,
     snapshot: &Snapshot,
     path: &str,
+    catalog_changed: bool,
 ) {
-    // project.files is not part of the typed ServerEvent enum (it carries the
-    // full file list); send it raw through the same ordered channel.
-    let _ = outbox.send(ServerEvent::ProjectFiles {
-        document_version: snapshot.version,
-        files: snapshot.files.clone(),
-    });
+    // The catalog carries every file's full source, so echoing it after a
+    // keystroke sent the whole project back for a one-character edit — on a
+    // tablet over a tailnet, on every keystroke. The client already has the
+    // text it just typed; only a change to the set of files tells it
+    // something it does not know.
+    if catalog_changed {
+        let _ = outbox.send(ServerEvent::ProjectFiles {
+            document_version: snapshot.version,
+            files: snapshot.files.clone(),
+        });
+    }
     let language = packs::pack_for_path(path)
         .map(|p| p.id)
         .unwrap_or(session.language);

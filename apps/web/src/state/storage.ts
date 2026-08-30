@@ -13,6 +13,8 @@
  * when the fetch fails.
  */
 
+import { apiFetch } from "./api.js";
+
 /** Settings that belong to you rather than to the machine you are on. */
 const SYNCED_KEYS: ReadonlySet<string> = new Set([
 	"atomis.settings.v1",
@@ -28,6 +30,8 @@ const SYNCED_KEYS: ReadonlySet<string> = new Set([
 const ENDPOINT = "/api/preferences";
 /** A settings toggle can fire several writes in a row; batch them. */
 const FLUSH_DELAY_MS = 400;
+/** Ceiling on the backoff between retries of a save that keeps failing. */
+const MAX_RETRY_MS = 30_000;
 /** Long enough for a slow tablet, short enough not to hang on a dead server. */
 const HYDRATE_TIMEOUT_MS = 5000;
 
@@ -40,6 +44,12 @@ const HYDRATE_TIMEOUT_MS = 5000;
 let remote: Map<string, string> | null = null;
 let pending = new Map<string, string>();
 let flushTimer: ReturnType<typeof setTimeout> | undefined;
+let consecutiveFailures = 0;
+
+function scheduleFlush(delay: number): void {
+	if (flushTimer !== undefined) clearTimeout(flushTimer);
+	flushTimer = setTimeout(() => void flush(), delay);
+}
 
 function readLocal(key: string): string | null {
 	try {
@@ -75,8 +85,7 @@ export function writeStoredItem(key: string, value: string): void {
 	if (remote === null || !SYNCED_KEYS.has(key)) return;
 	remote.set(key, value);
 	pending.set(key, value);
-	if (flushTimer !== undefined) clearTimeout(flushTimer);
-	flushTimer = setTimeout(() => void flush(), FLUSH_DELAY_MS);
+	scheduleFlush(FLUSH_DELAY_MS);
 }
 
 async function flush(): Promise<void> {
@@ -85,17 +94,51 @@ async function flush(): Promise<void> {
 	const sending = pending;
 	pending = new Map();
 	try {
-		const response = await fetch(ENDPOINT, {
+		const response = await apiFetch(ENDPOINT, {
 			method: "PUT",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ preferences: Object.fromEntries(sending) }),
 		});
 		if (!response.ok) throw new Error(String(response.status));
+		consecutiveFailures = 0;
 	} catch {
-		// Put back only what nothing newer has replaced, so the next write
-		// carries this one along instead of losing it.
+		// Put back only what nothing newer has replaced.
 		for (const [key, value] of sending)
 			if (!pending.has(key)) pending.set(key, value);
+		// And retry on our own: waiting for the next write would strand a
+		// change made while the server was briefly unreachable, for as long
+		// as nothing else happens to be changed.
+		consecutiveFailures += 1;
+		scheduleFlush(
+			Math.min(FLUSH_DELAY_MS * 2 ** consecutiveFailures, MAX_RETRY_MS),
+		);
+	}
+}
+
+/**
+ * Sends whatever is queued right now, in a request that outlives the page.
+ *
+ * The debounce is what makes a burst of toggles one save, but it also means
+ * a setting changed immediately before a reload — "Load demo workspace" does
+ * exactly that — was still waiting when the page went away, and the server's
+ * older value came back on the next load.
+ */
+export function flushPreferencesNow(): void {
+	if (remote === null || pending.size === 0) return;
+	const body = JSON.stringify({ preferences: Object.fromEntries(pending) });
+	pending = new Map();
+	if (flushTimer !== undefined) clearTimeout(flushTimer);
+	flushTimer = undefined;
+	try {
+		void apiFetch(ENDPOINT, {
+			method: "PUT",
+			headers: { "content-type": "application/json" },
+			body,
+			// The page is going; without this the request is cancelled with it.
+			keepalive: true,
+		});
+	} catch {
+		// Leaving anyway; the value stays in localStorage for this device.
 	}
 }
 
@@ -108,7 +151,7 @@ export async function hydratePreferences(): Promise<void> {
 	const controller = new AbortController();
 	const timeout = setTimeout(() => controller.abort(), HYDRATE_TIMEOUT_MS);
 	try {
-		const response = await fetch(ENDPOINT, { signal: controller.signal });
+		const response = await apiFetch(ENDPOINT, { signal: controller.signal });
 		if (!response.ok) return;
 		const body = (await response.json()) as {
 			preferences?: Record<string, string>;
@@ -127,6 +170,21 @@ export async function hydratePreferences(): Promise<void> {
 	} finally {
 		clearTimeout(timeout);
 	}
+	listenForUnload();
+}
+
+/**
+ * pagehide covers reload, navigation and the tab closing; visibilitychange
+ * is what actually fires on iOS when Safari is backgrounded, which is the
+ * same story on a tablet. Guarded because the loaders are unit-tested
+ * without a DOM.
+ */
+function listenForUnload(): void {
+	if (typeof window === "undefined") return;
+	window.addEventListener("pagehide", flushPreferencesNow);
+	document.addEventListener("visibilitychange", () => {
+		if (document.visibilityState === "hidden") flushPreferencesNow();
+	});
 }
 
 /** Notified with the keys that a change from another device actually moved. */
@@ -177,5 +235,6 @@ export function resetPreferencesForTest(): void {
 	pending = new Map();
 	if (flushTimer !== undefined) clearTimeout(flushTimer);
 	flushTimer = undefined;
+	consecutiveFailures = 0;
 	listeners.clear();
 }

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	applyRemotePreferences,
+	flushPreferencesNow,
 	hydratePreferences,
 	readStoredItem,
 	resetPreferencesForTest,
@@ -111,7 +112,7 @@ describe("preferences shared across devices", () => {
 		expect(readStoredItem(THEME)).toBe('{"theme":"mocha"}');
 	});
 
-	it("keeps a rejected write queued so the next one carries it", async () => {
+	it("re-sends a rejected write alongside whatever came after it", async () => {
 		let failNext = true;
 		const bodies: string[] = [];
 		stubFetch((_url, init) => {
@@ -126,12 +127,14 @@ describe("preferences shared across devices", () => {
 		await hydratePreferences();
 
 		writeStoredItem(THEME, '{"theme":"a"}');
-		await vi.runAllTimersAsync();
+		// The retry after the failure and this write coalesce into one save.
 		writeStoredItem("atomis.vim-mode.v1", "false");
 		await vi.runAllTimersAsync();
 
-		expect(bodies).toHaveLength(2);
-		expect(JSON.parse(String(bodies[1])).preferences).toEqual({
+		expect(bodies.length).toBeGreaterThanOrEqual(2);
+		// Whatever the split, the rejected key is not lost: the last save
+		// carries both.
+		expect(JSON.parse(String(bodies.at(-1))).preferences).toEqual({
 			[THEME]: '{"theme":"a"}',
 			"atomis.vim-mode.v1": "false",
 		});
@@ -221,5 +224,47 @@ describe("changes arriving live from another device", () => {
 		stop();
 		applyRemotePreferences({ [THEME]: '{"theme":"crust"}' });
 		expect(notified).toBe(0);
+	});
+});
+
+describe("a save the server refused", () => {
+	it("retries on its own instead of waiting for another change", async () => {
+		let attempts = 0;
+		stubFetch((_url, init) => {
+			if (init?.method !== "PUT") return json({ preferences: {} });
+			attempts += 1;
+			// Fail the first two saves, then accept.
+			return attempts <= 2
+				? json({ error: "down" }, 503)
+				: json({ preferences: {} });
+		});
+		await hydratePreferences();
+
+		writeStoredItem(THEME, '{"theme":"crust"}');
+		// Nothing else is written; only the retries can move this along.
+		await vi.runAllTimersAsync();
+
+		expect(attempts).toBe(3);
+	});
+});
+
+describe("a setting changed just before the page goes away", () => {
+	it("is sent immediately instead of waiting out the debounce", async () => {
+		const saved: string[] = [];
+		stubFetch((_url, init) => {
+			if (init?.method === "PUT") saved.push(String(init.body));
+			return json({ preferences: {} });
+		});
+		await hydratePreferences();
+
+		// What "Load demo workspace" does: save, then reload at once.
+		writeStoredItem("atomis.scaffold.v1", "demo");
+		flushPreferencesNow();
+
+		expect(saved).toHaveLength(1);
+		const sent = JSON.parse(String(saved[0])) as {
+			preferences: Record<string, string>;
+		};
+		expect(sent.preferences["atomis.scaffold.v1"]).toBe("demo");
 	});
 });
