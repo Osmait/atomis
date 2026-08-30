@@ -15,12 +15,24 @@ use crate::util;
 
 use super::guards::{allowed, allowed_read, origin_ok, token_ok};
 
+/// Deliberately unguarded and deliberately empty of detail: a container
+/// healthcheck must reach it before anyone holds a token, so it may say only
+/// that the process is up.
 pub(crate) async fn health() -> Json<serde_json::Value> {
-    Json(json!({ "ok": true, "host": "127.0.0.1" }))
+    Json(json!({ "ok": true }))
 }
 
-pub(crate) async fn doctor_route() -> Json<serde_json::Value> {
-    Json(json!({ "checks": crate::languages::doctor::run_doctor().await }))
+/// The doctor names the toolchains, their versions and whether the sandbox is
+/// enforcing — an inventory of what an intruder would be running against, so
+/// it is behind the same guard as the rest.
+pub(crate) async fn doctor_route(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Response {
+    if !allowed_read(&state, &headers) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    Json(json!({ "checks": crate::languages::doctor::run_doctor().await })).into_response()
 }
 
 pub(crate) async fn create_session(

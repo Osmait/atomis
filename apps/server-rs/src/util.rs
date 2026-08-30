@@ -73,6 +73,62 @@ pub fn token_ok(
         .is_some_and(|presented| timing_safe_eq(presented, expected))
 }
 
+/// The interface to listen on, loopback unless ATOMIS_HOST says otherwise.
+///
+/// An unparseable value is refused rather than quietly falling back: the
+/// fallback would be a different exposure than the operator asked for.
+pub fn configured_host() -> Result<std::net::IpAddr, String> {
+    let Some(raw) = std::env::var_os("ATOMIS_HOST") else {
+        return Ok(std::net::IpAddr::from([127, 0, 0, 1]));
+    };
+    let raw = raw.to_string_lossy().trim().to_string();
+    raw.parse()
+        .map_err(|_| format!("ATOMIS_HOST is not an IP address: {raw}"))
+}
+
+/// Whether this server may start on `host`.
+///
+/// On loopback only this machine can reach it, which is the single-user
+/// desktop case Atomis is built for. Anything wider is reachable by other
+/// machines, and reaching this server means running code on it — so beyond
+/// loopback a token stops being optional. Refusing to start is the point:
+/// a warning in a log is read after the fact, if at all.
+pub fn check_exposure(host: std::net::IpAddr, token: Option<&str>) -> Result<(), String> {
+    if host.is_loopback() || token.is_some() {
+        return Ok(());
+    }
+    Err(format!(
+        "Refusing to listen on {host} without ATOMIS_TOKEN.\n\
+         Anything that reaches this port can run code on this machine, so a\n\
+         non-loopback address needs a secret. Either set one:\n\
+         \n    ATOMIS_TOKEN=$(openssl rand -hex 24) ATOMIS_HOST={host} …\n\
+         \nor leave the default 127.0.0.1 and put a proxy that authenticates\n\
+         in front of it (Tailscale, a reverse proxy with auth)."
+    ))
+}
+
+/// The gap between "it is listening" and "it works in a browser".
+///
+/// In production the Origin guard accepts only this process's own loopback
+/// URL plus whatever `ATOMIS_ALLOWED_ORIGINS` lists, so a server reached at
+/// any other name serves the page and then refuses every write on it. That
+/// is a confusing way to discover an env var, so say it at startup.
+pub fn origin_advice(host: std::net::IpAddr, allowlist: &str, production: bool) -> Option<String> {
+    if host.is_loopback() || !production {
+        return None;
+    }
+    if allowlist.split(',').any(|entry| !entry.trim().is_empty()) {
+        return None;
+    }
+    Some(format!(
+        "Warning: listening on {host} with no ATOMIS_ALLOWED_ORIGINS.\n\
+         The page will load and every write on it will be refused, because the\n\
+         only origin trusted so far is this process's own. List the address\n\
+         people actually type, scheme and port included:\n\
+         \n    ATOMIS_ALLOWED_ORIGINS=https://atomis.example.com\n"
+    ))
+}
+
 /// Comma-separated allowlist membership. Blank entries never match, so an
 /// empty variable or a stray comma cannot admit an empty `Origin` header.
 fn listed(allowlist: &str, origin: &str) -> bool {
@@ -307,9 +363,51 @@ mod tests {
     }
 
     #[test]
+    fn loopback_needs_no_token_and_anything_wider_does() {
+        let loopback = std::net::IpAddr::from([127, 0, 0, 1]);
+        let all = std::net::IpAddr::from([0, 0, 0, 0]);
+        let lan = std::net::IpAddr::from([192, 168, 1, 10]);
+        assert!(check_exposure(loopback, None).is_ok());
+        assert!(check_exposure(loopback, Some("s")).is_ok());
+        // Reaching this server means running code on it.
+        assert!(check_exposure(all, None).is_err());
+        assert!(check_exposure(lan, None).is_err());
+        assert!(check_exposure(all, Some("s")).is_ok());
+        assert!(check_exposure(lan, Some("s")).is_ok());
+    }
+
+    #[test]
+    fn the_refusal_says_what_to_do_about_it() {
+        let message = check_exposure(std::net::IpAddr::from([0, 0, 0, 0]), None)
+            .expect_err("must refuse");
+        assert!(message.contains("ATOMIS_TOKEN"), "names the variable");
+        assert!(message.contains("127.0.0.1"), "offers the safe default");
+    }
+
+    #[test]
+    fn ipv6_loopback_counts_as_loopback() {
+        let localhost6: std::net::IpAddr = "::1".parse().expect("valid");
+        assert!(check_exposure(localhost6, None).is_ok());
+    }
+
+    #[test]
     fn timing_safe_eq_compares_full_strings() {
         assert!(timing_safe_eq("abc", "abc"));
         assert!(!timing_safe_eq("abc", "abd"));
         assert!(!timing_safe_eq("abc", "abcd"));
+    }
+
+    #[test]
+    fn origin_advice_warns_only_when_it_would_bite() {
+        let public = std::net::IpAddr::from([0, 0, 0, 0]);
+        let local = std::net::IpAddr::from([127, 0, 0, 1]);
+        assert!(origin_advice(public, "", true).is_some());
+        // Loopback is reached at the origin the guard already trusts.
+        assert!(origin_advice(local, "", true).is_none());
+        // Development trusts the Vite origin, so the page works regardless.
+        assert!(origin_advice(public, "", false).is_none());
+        assert!(origin_advice(public, "https://atomis.example.com", true).is_none());
+        // A variable holding nothing but separators is still empty.
+        assert!(origin_advice(public, " , ", true).is_some());
     }
 }

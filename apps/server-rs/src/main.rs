@@ -90,6 +90,28 @@ async fn main() {
         tracing::warn!(%error, "session root initialization failed");
     }
 
+    // The startup sweep only helps a server that restarts. One that stays up
+    // for weeks needs the same broom on a timer, or leaked session directories
+    // — one build cache each — are what eventually fills its disk.
+    {
+        let sessions = Arc::clone(&state);
+        tokio::spawn(async move {
+            let mut hourly = tokio::time::interval(std::time::Duration::from_secs(3600));
+            hourly.tick().await; // the immediate first tick; initialize just swept
+            loop {
+                hourly.tick().await;
+                let removed = domain::session::sweep_stale(
+                    sessions.sessions.root(),
+                    domain::session::STALE_AFTER_MS,
+                )
+                .await;
+                if removed > 0 {
+                    tracing::info!(removed, "swept stale session directories");
+                }
+            }
+        });
+    }
+
     let mut app = Router::new()
         .route("/api/health", get(health))
         .route("/api/doctor", get(doctor_route))
@@ -120,10 +142,29 @@ async fn main() {
     }
 
     let app = app.with_state(Arc::clone(&state));
-    let address = SocketAddr::from(([127, 0, 0, 1], port));
+    let host = match util::configured_host() {
+        Ok(host) => host,
+        Err(message) => {
+            eprintln!("{message}");
+            std::process::exit(2);
+        }
+    };
+    // Checked before binding, so an exposed port never exists at all.
+    if let Err(message) = util::check_exposure(host, state.access_token.as_deref()) {
+        eprintln!("{message}");
+        std::process::exit(2);
+    }
+    if let Some(advice) = util::origin_advice(
+        host,
+        &std::env::var("ATOMIS_ALLOWED_ORIGINS").unwrap_or_default(),
+        production,
+    ) {
+        eprintln!("{advice}");
+    }
+    let address = SocketAddr::from((host, port));
     let listener = tokio::net::TcpListener::bind(address)
         .await
-        .expect("bind 127.0.0.1");
+        .unwrap_or_else(|error| panic!("bind {address}: {error}"));
     let bound = listener.local_addr().expect("local addr");
     state.port.store(bound.port(), Ordering::SeqCst);
     // Same announce line the Tauri shell parses from the Node sidecar.

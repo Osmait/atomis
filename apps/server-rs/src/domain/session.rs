@@ -304,6 +304,39 @@ async fn command_version(command: &str, args: &[&str]) -> String {
     }
 }
 
+/// A session directory outlives its session when the process dies without
+/// running `destroy` — a kill, a crash, a machine losing power. Each one
+/// carries a build cache, so on a server that stays up they are the thing
+/// that fills the disk.
+pub const STALE_AFTER_MS: u64 = 24 * 60 * 60 * 1000;
+
+/// Removes session directories untouched for `max_age_ms`. Returns how many
+/// went, and never fails: a directory that resists deletion is not worth
+/// refusing to start over.
+pub async fn sweep_stale(root: &Path, max_age_ms: u64) -> usize {
+    let cutoff = now_ms().saturating_sub(max_age_ms);
+    let Ok(mut entries) = tokio::fs::read_dir(root).await else {
+        return 0;
+    };
+    let mut removed = 0;
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let Ok(meta) = entry.metadata().await else {
+            continue;
+        };
+        let modified = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(u64::MAX);
+        if meta.is_dir() && modified < cutoff && tokio::fs::remove_dir_all(entry.path()).await.is_ok()
+        {
+            removed += 1;
+        }
+    }
+    removed
+}
+
 impl SessionManager {
     pub fn new() -> Self {
         SessionManager {
@@ -315,23 +348,13 @@ impl SessionManager {
 
     pub async fn initialize(&self) -> std::io::Result<()> {
         tokio::fs::create_dir_all(&self.root).await?;
-        let cutoff = now_ms().saturating_sub(24 * 60 * 60 * 1000);
-        let mut entries = tokio::fs::read_dir(&self.root).await?;
-        while let Ok(Some(entry)) = entries.next_entry().await {
-            let Ok(meta) = entry.metadata().await else {
-                continue;
-            };
-            let modified = meta
-                .modified()
-                .ok()
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|d| d.as_millis() as u64)
-                .unwrap_or(u64::MAX);
-            if meta.is_dir() && modified < cutoff {
-                let _ = tokio::fs::remove_dir_all(entry.path()).await;
-            }
-        }
+        sweep_stale(&self.root, STALE_AFTER_MS).await;
         Ok(())
+    }
+
+    /// The session root, so a caller can keep sweeping it.
+    pub fn root(&self) -> &Path {
+        &self.root
     }
 
     async fn detect_toolchain(&self) -> &HashMap<String, String> {
@@ -658,5 +681,32 @@ mod futures {
             }
         }
         out
+    }
+}
+
+#[cfg(test)]
+mod sweep_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn sweep_removes_only_what_has_gone_cold() {
+        let root = std::env::temp_dir().join(format!("atomis-sweep-{}", random_hex(8)));
+        tokio::fs::create_dir_all(root.join("cold")).await.unwrap();
+        tokio::fs::write(root.join("loose-file"), b"x").await.unwrap();
+
+        // Age is measured from the last write, so waiting is what makes "cold"
+        // cold; the window here is milliseconds instead of a day.
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        tokio::fs::create_dir_all(root.join("warm")).await.unwrap();
+
+        assert_eq!(sweep_stale(&root, 100).await, 1);
+        assert!(!root.join("cold").exists());
+        assert!(root.join("warm").exists());
+        // Only directories are sessions; a stray file is left where it is.
+        assert!(root.join("loose-file").exists());
+
+        // A root that does not exist yet is not an error worth reporting.
+        assert_eq!(sweep_stale(&root.join("missing"), 100).await, 0);
+        tokio::fs::remove_dir_all(&root).await.unwrap();
     }
 }

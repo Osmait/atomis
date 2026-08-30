@@ -13,7 +13,7 @@ A local-first **Zig, Rust, Go, TypeScript/JavaScript, Python, C and C++** playgr
 - Node.js 22 (23/24 accepted for development)
 - Zig 0.16.x on `PATH`
 - ZLS 0.16.x on `PATH`
-- Optional, enables Rust sessions: Rust 1.75+ (`rustc`/`cargo`) and `rust-analyzer` on `PATH`
+- Rust 1.85+ (`rustc`/`cargo`) to build the server; the same toolchain enables Rust sessions, with `rust-analyzer` on `PATH` for editor features
 - Optional, enables Go sessions: Go 1.22+ and `gopls` on `PATH`
 - TS/JS sessions use the required Node itself (22.18+ for type stripping); `typescript-language-server` on `PATH` is optional for editor features
 - Optional, enables Python sessions: Python 3.9+ on `PATH`; `pyright-langserver` is optional for editor features
@@ -142,6 +142,60 @@ systemctl --user status atomis
 journalctl --user -u atomis -f
 ```
 
+## Running it somewhere else
+
+### Docker
+
+The image carries the toolchains, which is the tedious half of running this
+yourself.
+
+```bash
+docker build -t atomis .
+docker run --rm -p 4317:4317 \
+  -e ATOMIS_TOKEN="$(openssl rand -hex 24)" \
+  -e ATOMIS_ALLOWED_ORIGINS="http://localhost:4317" \
+  -v atomis-data:/data \
+  atomis
+```
+
+`ATOMIS_ALLOWED_ORIGINS` is not optional decoration: it must list the address
+people actually type — scheme and port included, comma-separated for several.
+Anything you leave out gets the page and then a 403 on every write, which
+looks like a broken app rather than a missing setting. The server warns about
+this at startup.
+
+`/data` holds the workspaces, the shared settings and the compiler cache —
+mount it or they go with the container. The image listens on `0.0.0.0` inside
+the container, which is why the token is not optional; see below.
+
+The Landlock sandbox needs Linux 6.7+ on the *host* and a seccomp profile that
+allows the `landlock_*` syscalls. Without it your sessions still run,
+unconfined within the container. `pnpm run doctor` — or the doctor panel —
+says which you actually have.
+
+### Directly
+
+```bash
+pnpm build
+ATOMIS_TOKEN=$(openssl rand -hex 24) ATOMIS_HOST=0.0.0.0 \
+  ATOMIS_ALLOWED_ORIGINS=https://atomis.example.com pnpm start
+```
+
+### Before you expose it
+
+**Anything that can reach the port can run code as the user running the
+server.** That is what Atomis is for, and it is why the defaults are what they
+are:
+
+- it listens on `127.0.0.1` unless you say otherwise;
+- `ATOMIS_HOST` beyond loopback **requires** `ATOMIS_TOKEN`, and the server
+  refuses to start without it rather than warning about it;
+- the token is required on every API call and both WebSockets. Open
+  `https://your-host/?t=<token>` once per device and it is remembered there.
+
+The sandbox confines the code you run, not the server. A token decides who may
+run code, not what that code may do. [SECURITY.md](SECURITY.md) has the rest.
+
 ## CI/CD
 
 GitHub Actions (patterns borrowed from GitButler and Clash Verge Rev):
@@ -207,3 +261,7 @@ File, folder and language icons come from [material-icon-theme](https://github.c
 - [Limitations/security](docs/limitations.md)
 - [Roadmap](docs/roadmap.md)
 - [Implementation decisions](docs/implementation-plan.md)
+
+## License
+
+MIT — see [LICENSE](LICENSE). Contributions are welcome; [CONTRIBUTING.md](CONTRIBUTING.md) covers the toolchains and what CI checks.
