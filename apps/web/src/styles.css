@@ -2113,11 +2113,17 @@ input:focus-visible,
 	background: var(--surface0);
 }
 
+/*
+ * Positioned against the viewport, not the panel: the panel clips its
+ * overflow and the button sits on its top edge, so anchoring the menu
+ * inside it put the menu outside the panel and out of sight. The
+ * coordinates come from the button, in Terminal.tsx.
+ */
 .term-menu {
-	position: absolute;
-	right: 0;
-	top: 26px;
+	position: fixed;
 	z-index: 30;
+	max-height: calc(100vh - 16px);
+	overflow-y: auto;
 	width: 210px;
 	display: flex;
 	flex-direction: column;
@@ -2126,11 +2132,6 @@ input:focus-visible,
 	border: 1px solid var(--surface1);
 	box-shadow: 0 18px 40px rgba(0, 0, 0, 0.6);
 	font-size: 12px;
-}
-
-.dock-bottom .term-menu {
-	top: auto;
-	bottom: 26px;
 }
 
 .term-menu button {

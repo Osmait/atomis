@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import type { RunResult, TestCase } from "@atomis/protocol";
 import { useDismissable } from "../../shared/ui/useDismissable.js";
 import type { OwnedDiagnostic } from "../../shared/lib/diagnostics.js";
@@ -119,9 +119,51 @@ interface TerminalProps {
 /** The dockable terminal: Salida/Problems/Runtime views behind the ⋮ menu,
  * log provenance hover/click, collapsible folds, and the slim tests bar that
  * expands into the drawer (passed as children). */
+/** Kept in step with `.term-menu` in the stylesheet. */
+const MENU_WIDTH = 210;
+const MENU_MARGIN = 8;
+/** Below the button only if the whole menu fits there. */
+const MENU_MIN_HEIGHT = 280;
+
 export function Terminal(props: TerminalProps): React.JSX.Element {
 	const [menuOpen, setMenuOpen] = useState(false);
 	useDismissable(menuOpen, ".term-menu-wrap", () => setMenuOpen(false));
+	const menuButtonRef = useRef<HTMLButtonElement>(null);
+	const [menuAt, setMenuAt] = useState<{
+		left: number;
+		top?: number;
+		bottom?: number;
+	}>();
+
+	/**
+	 * The panel clips its overflow, and the button sits on its top edge, so a
+	 * menu positioned inside it is cut off — upwards it lands outside the
+	 * panel entirely, and downwards it is taller than the panel is when the
+	 * terminal is docked at the bottom. So it is placed against the viewport
+	 * instead, below the button when there is room and above it otherwise.
+	 */
+	const toggleMenu = (): void => {
+		if (menuOpen) {
+			setMenuOpen(false);
+			return;
+		}
+		const rect = menuButtonRef.current?.getBoundingClientRect();
+		if (rect) {
+			const left = Math.max(
+				MENU_MARGIN,
+				Math.min(
+					rect.right - MENU_WIDTH,
+					window.innerWidth - MENU_WIDTH - MENU_MARGIN,
+				),
+			);
+			setMenuAt(
+				window.innerHeight - rect.bottom >= MENU_MIN_HEIGHT
+					? { left, top: rect.bottom + 4 }
+					: { left, bottom: window.innerHeight - rect.top + 4 },
+			);
+		}
+		setMenuOpen(true);
+	};
 	const { tab, allProblems } = props;
 	const entryProps = {
 		baseTime: props.output[0]?.receivedAt,
@@ -147,12 +189,13 @@ export function Terminal(props: TerminalProps): React.JSX.Element {
 					<button
 						aria-label="Terminal options"
 						className={`term-menu-btn${menuOpen ? " open" : ""}`}
-						onClick={() => setMenuOpen((previous) => !previous)}
+						onClick={toggleMenu}
+						ref={menuButtonRef}
 					>
 						<Lucide icon="ellipsis-vertical" size={15} />
 					</button>
 					{menuOpen && (
-						<div className="term-menu" role="menu">
+						<div className="term-menu" role="menu" style={menuAt}>
 							{!props.narrow && (
 								<>
 									<button
