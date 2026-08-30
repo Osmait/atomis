@@ -1622,7 +1622,12 @@ test("persistent workspaces keep their files across reloads", async ({
 	await expect(page.locator(".branch-status")).toContainText(name);
 	await expect(page.getByLabel("persisted.zig")).toBeVisible();
 	await page.getByLabel("persisted.zig").click();
-	await expect(page.locator(".view-lines")).toContainText("const kept = 41;");
+	// ZLS paints an inlay hint into this line once it has analysed the file
+	// ("const kept: comptime_int = 41;"), and whether it has by now depends on
+	// how warm the server is. The file is what is under test, not the hint.
+	await expect(page.locator(".view-lines")).toContainText(
+		/const kept\b.*= 41;/,
+	);
 
 	// Switching is an in-place swap, not a page reload: a marker planted on
 	// window must survive it, and the runtime must still be live afterwards.

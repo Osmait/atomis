@@ -92,6 +92,7 @@ import { useRuntimeSocket } from "../features/runtime/useRuntimeSocket.js";
 import { defineEditorThemes } from "../features/editor/theme.js";
 import { useAppearance } from "../features/settings/useAppearance.js";
 import { useVim } from "../features/editor/useVim.js";
+import { useWorkspaces } from "../features/workspaces/useWorkspaces.js";
 import {
 	INLINE_LOGS_KEY,
 	SETTINGS_KEY,
@@ -116,14 +117,9 @@ import {
 } from "../shared/stores/settings.js";
 import { groupOutput } from "../shared/lib/terminalFolds.js";
 import {
-	createWorkspace,
-	deleteWorkspace,
-	listWorkspaces,
 	loadActiveWorkspace,
-	renameWorkspace,
 	saveActiveWorkspace,
 } from "../shared/stores/workspaces.js";
-import type { WorkspaceMeta } from "@atomis/protocol";
 import type { LogSourceLocation, ProjectFile } from "../shared/types.js";
 
 export function App(): React.JSX.Element {
@@ -150,10 +146,7 @@ export function App(): React.JSX.Element {
 	const [chrome, setChrome] = useState<ChromeSettings>(loadChrome);
 	const [paletteOpen, setPaletteOpen] = useState(false);
 	const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
-	const [workspaces, setWorkspaces] = useState<WorkspaceMeta[]>([]);
-	const [workspaceBusy, setWorkspaceBusy] = useState(false);
 	const [switching, setSwitching] = useState(false);
-	const [workspaceError, setWorkspaceError] = useState<string>();
 
 
 	const editorRef = useRef<MonacoApi.editor.IStandaloneCodeEditor | undefined>(
@@ -995,22 +988,6 @@ export function App(): React.JSX.Element {
 		window.location.reload();
 	}, [activePathRef]);
 
-	const refreshWorkspaces = useCallback(async (): Promise<void> => {
-		try {
-			setWorkspaces(await listWorkspaces());
-		} catch (error) {
-			setWorkspaceError(
-				error instanceof Error ? error.message : String(error),
-			);
-		}
-	}, []);
-
-	const openWorkspacePicker = useCallback((): void => {
-		setWorkspaceError(undefined);
-		setWorkspacePickerOpen(true);
-		void refreshWorkspaces();
-	}, [refreshWorkspaces]);
-
 	// Switching workspace swaps every file on disk, so the session is
 	// rebuilt — but in place: the page never reloads. Tear down what is
 	// bound to the old session, then open the new one; the socket, LSP and
@@ -1038,22 +1015,33 @@ export function App(): React.JSX.Element {
 		[closeRuntime, openSession, resetRuntime, setPeek],
 	);
 
-	const runWorkspaceAction = useCallback(
-		async (action: () => Promise<void>): Promise<void> => {
-			setWorkspaceBusy(true);
-			setWorkspaceError(undefined);
-			try {
-				await action();
-			} catch (error) {
-				setWorkspaceError(
-					error instanceof Error ? error.message : String(error),
-				);
-			} finally {
-				setWorkspaceBusy(false);
-			}
-		},
-		[],
-	);
+	// The picker's own state lives with the picker; switching does not,
+	// because it tears down the socket, the language clients and the models,
+	// and only the shell holds all three. The ref is what lets the hook call
+	// back into something declared after it.
+	const switchToWorkspaceRef = useRef(switchToWorkspace);
+	switchToWorkspaceRef.current = switchToWorkspace;
+
+	const {
+		workspaces,
+		workspacesBusy,
+		workspaceError,
+		refreshWorkspaces,
+		createNamedWorkspace,
+		deleteNamedWorkspace,
+		renameNamedWorkspace,
+	} = useWorkspaces({
+		switchToWorkspace: useCallback(
+			(id: string | undefined) => switchToWorkspaceRef.current(id),
+			[],
+		),
+	});
+
+	const openWorkspacePicker = useCallback((): void => {
+		setWorkspacePickerOpen(true);
+		void refreshWorkspaces();
+	}, [refreshWorkspaces]);
+
 
 	// The manifest belongs to the session's language, so the catalog is
 	// refreshed whenever either changes.
@@ -1672,39 +1660,15 @@ export function App(): React.JSX.Element {
 			{workspacePickerOpen && (
 				<WorkspacePicker
 					activeId={session.workspace?.id}
-					busy={workspaceBusy}
+					busy={workspacesBusy}
 					language={activeLanguage}
 					onClose={() => setWorkspacePickerOpen(false)}
-					onCreate={(name) =>
-						void runWorkspaceAction(async () => {
-							const created = await createWorkspace({
-								name,
-								language: activeLanguage,
-								scaffold: loadScaffold(),
-							});
-							switchToWorkspace(created.id);
-						})
-					}
+					onCreate={(name) => createNamedWorkspace(name, activeLanguage)}
 					onDelete={(id) =>
-						void runWorkspaceAction(async () => {
-							if (
-								!window.confirm(
-									"Delete this workspace and every file in it?",
-								)
-							)
-								return;
-							await deleteWorkspace(id);
-							if (id === session.workspace?.id) switchToWorkspace(undefined);
-							else await refreshWorkspaces();
-						})
+						deleteNamedWorkspace(id, id === session.workspace?.id)
 					}
 					onOpen={switchToWorkspace}
-					onRename={(id, name) =>
-						void runWorkspaceAction(async () => {
-							await renameWorkspace(id, name);
-							await refreshWorkspaces();
-						})
-					}
+					onRename={renameNamedWorkspace}
 					onScratch={() => switchToWorkspace(undefined)}
 					workspaces={workspaces}
 					{...(workspaceError ? { error: workspaceError } : {})}
