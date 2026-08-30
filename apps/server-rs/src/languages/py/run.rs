@@ -15,7 +15,7 @@ use crate::protocol::{
 use crate::domain::session::{Session, SessionSettings, Snapshot};
 use crate::exec::supervisor::{self, ProcessLimits, RunOptions, StreamCallbacks};
 
-use crate::languages::common::aborted_message;
+use crate::languages::common::report_aborted_tests;
 use crate::languages::common::{
     classify_execution, execute_program, instrument_files, truncate_chars, ExecuteConfig,
     InstrumentConfig,
@@ -376,23 +376,15 @@ async fn run_tests(
     }
     let mut state = state.lock().expect("py test state");
     let started: Vec<String> = state.started.values().cloned().collect();
-    for name in started {
-        state.counts.1 += 1;
-        let matched = match_py_test_name(catalog, &name);
-        let message = aborted_message(&state.stderr_buffer, &execution.stderr);
-        let _ = events.send(RunnerEvent::TestResult {
-            test_id: matched.map(|m| m.test_id.clone()),
-            name: matched.map(|m| m.name.clone()).unwrap_or(name),
-            status: if execution.timed_out {
-                TestStatus::TimedOut
-            } else {
-                TestStatus::Failed
-            },
-            duration_ms: 0.0,
-            message,
-        });
-        state.stderr_buffer.clear();
-    }
+    let state = &mut *state;
+    state.counts.1 += report_aborted_tests(
+        started,
+        &mut state.stderr_buffer,
+        &execution.stderr,
+        execution.timed_out,
+        events,
+        &|name| match_py_test_name(catalog, name).map(|c| (c.test_id.clone(), c.name.clone())),
+    );
     if state.summary.is_none()
         && execution.exit_code != Some(0)
         && !state.stderr_buffer.trim().is_empty()

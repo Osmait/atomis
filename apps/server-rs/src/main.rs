@@ -136,8 +136,20 @@ async fn main() {
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|_| languages::packs::project_root().join("apps/web/dist"));
     if production && web_dist.exists() {
+        // The UI is 3.8MB of JavaScript, and uncompressed that is what
+        // crosses the network on every first visit — on a tablet over a
+        // tailnet, the whole wait. `pnpm build` writes a .br and .gz beside
+        // each asset; serving those costs nothing at request time, where
+        // compressing live cost a brotli encoder per response in flight
+        // (86MB resident for twelve concurrent downloads, against 7MB idle).
         let serve = tower_http::services::ServeDir::new(&web_dist)
-            .fallback(tower_http::services::ServeFile::new(web_dist.join("index.html")));
+            .precompressed_br()
+            .precompressed_gzip()
+            .fallback(
+                tower_http::services::ServeFile::new(web_dist.join("index.html"))
+                    .precompressed_br()
+                    .precompressed_gzip(),
+            );
         app = app.fallback_service(serve);
     }
 

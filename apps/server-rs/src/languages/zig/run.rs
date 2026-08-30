@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 
 use tokio_util::sync::CancellationToken;
 
-use crate::languages::common::{aborted_message, truncate_chars};
+use crate::languages::common::{report_aborted_tests, truncate_chars};
 use crate::languages::markers::MarkerParser;
 use crate::languages::ndjson::{ProbeReader, RawTestEvent, RawTestStatus, TestReader};
 use crate::languages::packs;
@@ -524,23 +524,15 @@ async fn run_tests(
     }
     let mut state = state.lock().expect("test state");
     let started: Vec<String> = state.started.values().cloned().collect();
-    for name in started {
-        state.counts.1 += 1;
-        let matched = match_runner_name(catalog, &name);
-        let message = aborted_message(&state.stderr_buffer, &execution.stderr);
-        let _ = events.send(RunnerEvent::TestResult {
-            test_id: matched.map(|m| m.test_id.clone()),
-            name: matched.map(|m| m.name.clone()).unwrap_or(name),
-            status: if execution.timed_out {
-                TestStatus::TimedOut
-            } else {
-                TestStatus::Failed
-            },
-            duration_ms: 0.0,
-            message,
-        });
-        state.stderr_buffer.clear();
-    }
+    let state = &mut *state;
+    state.counts.1 += report_aborted_tests(
+        started,
+        &mut state.stderr_buffer,
+        &execution.stderr,
+        execution.timed_out,
+        events,
+        &|name| match_runner_name(catalog, name).map(|c| (c.test_id.clone(), c.name.clone())),
+    );
     if let Some(message) = read_error.lock().expect("read error").clone() {
         let _ = events.send(RunnerEvent::Output {
             stream: Stream::Stderr,

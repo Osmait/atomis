@@ -45,7 +45,12 @@ export default defineConfig({
 	],
 	webServer: {
 		command: "pnpm dev",
-		url: process.env.ATOMIS_BASE_URL ?? "http://127.0.0.1:5173",
+		// Through the proxy to the API, not just the web port: `pnpm dev`
+		// starts Vite and the Rust server side by side, and Vite answers
+		// first. Waiting only on it let the first test of a run open a page
+		// whose session could not be created — a failure that looked like a
+		// missing file tree and passed on its own every time.
+		url: `${process.env.ATOMIS_BASE_URL ?? "http://127.0.0.1:5173"}/api/health`,
 		timeout: 120_000,
 		reuseExistingServer: true,
 		env: {

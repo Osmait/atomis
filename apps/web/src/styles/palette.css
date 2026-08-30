@@ -1,0 +1,125 @@
+/* ── Command palette ───────────────────────────────────── */
+
+.palette-overlay {
+	position: fixed;
+	inset: 0;
+	background: color-mix(in srgb, var(--base) 72%, transparent);
+	display: flex;
+	align-items: flex-start;
+	justify-content: center;
+	padding-top: 14vh;
+	z-index: 50;
+}
+
+.palette {
+	width: min(520px, calc(100vw - 40px));
+	background: var(--surface);
+	border: 1px solid var(--surface1);
+	border-radius: 4px;
+	box-shadow: 0 30px 70px rgba(0, 0, 0, 0.7);
+	overflow: hidden;
+}
+
+.palette-input-row {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 13px 15px;
+	border-bottom: 1px solid var(--surface0);
+}
+
+.palette-glyph {
+	color: var(--mauve);
+}
+
+.palette-input-row input {
+	flex: 1;
+	background: transparent;
+	border: none;
+	outline: none;
+	color: var(--text);
+	font-size: 13px;
+	min-width: 0;
+}
+
+.palette-kbd {
+	border: 1px solid var(--surface1);
+	border-radius: 5px;
+	padding: 1px 6px;
+	font-size: 11px;
+	color: var(--overlay);
+}
+
+.palette-results {
+	padding: 8px;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	max-height: 42vh;
+	overflow: auto;
+}
+
+.palette-row {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	padding: 7px 11px;
+	border-radius: 8px;
+	color: var(--subtext);
+	width: 100%;
+}
+
+.palette-row.selected {
+	background: var(--surface0);
+	color: var(--text);
+}
+
+.palette-row.current {
+	color: var(--text);
+}
+
+.palette-row b {
+	margin-left: auto;
+	font-size: 11px;
+	color: var(--dim);
+	font-weight: 400;
+}
+
+.palette-empty {
+	color: var(--dim);
+	padding: 7px 11px;
+	margin: 0;
+}
+
+.palette footer {
+	padding: 10px 15px;
+	border-top: 1px solid var(--surface0);
+	font-size: 11px;
+	color: var(--dim);
+}
+
+/* ── Context menu ──────────────────────────────────────── */
+
+.editor-context-menu {
+	position: fixed;
+	z-index: 60;
+	min-width: 150px;
+	background: var(--surface);
+	border: 1px solid var(--surface1);
+	border-radius: 9px;
+	box-shadow: 0 18px 40px rgba(0, 0, 0, 0.6);
+	padding: 5px;
+	display: flex;
+	flex-direction: column;
+}
+
+.editor-context-menu button {
+	padding: 6px 11px;
+	border-radius: 6px;
+	color: var(--subtext);
+}
+
+.editor-context-menu button:hover {
+	background: var(--surface0);
+	color: var(--text);
+}

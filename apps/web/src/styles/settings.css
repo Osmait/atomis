@@ -1,0 +1,395 @@
+/* ── Settings modal ────────────────────────────────────── */
+
+.settings-backdrop {
+	position: fixed;
+	inset: 0;
+	background: color-mix(in srgb, var(--base) 72%, transparent);
+	display: flex;
+	align-items: flex-start;
+	justify-content: center;
+	padding-top: 11vh;
+	z-index: 60;
+}
+
+.settings-modal {
+	width: 480px;
+	max-height: 74vh;
+	overflow: auto;
+	background: var(--surface);
+	border: 1px solid var(--surface1);
+	box-shadow: 0 30px 70px rgba(0, 0, 0, 0.7);
+}
+
+.settings-header {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 14px 16px;
+	border-bottom: 1px solid var(--surface0);
+	color: var(--text);
+}
+
+.settings-header .lucide {
+	color: var(--overlay);
+}
+
+.settings-close {
+	margin-left: auto;
+	display: flex;
+	color: var(--overlay);
+}
+
+.settings-close:hover {
+	color: var(--text);
+}
+
+.settings-section {
+	padding: 14px 16px;
+	display: flex;
+	flex-direction: column;
+	gap: 11px;
+	border-bottom: 1px solid var(--surface0);
+}
+
+.settings-section:last-child {
+	border-bottom: none;
+}
+
+.settings-title {
+	font-size: 11px;
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+	color: var(--overlay);
+}
+
+.settings-toggle {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	text-align: left;
+}
+
+.settings-toggle:disabled {
+	opacity: 0.5;
+}
+
+.settings-toggle-label {
+	color: var(--text);
+	font-size: 12.5px;
+}
+
+.settings-toggle-hint {
+	color: var(--dim);
+	font-size: 11px;
+}
+
+.switch {
+	margin-left: auto;
+	flex-shrink: 0;
+	position: relative;
+	display: inline-block;
+	width: 32px;
+	height: 18px;
+	border-radius: 10px;
+	background: var(--surface1);
+	transition: background 0.15s ease;
+}
+
+.switch.on {
+	background: var(--mauve);
+}
+
+.switch .knob {
+	position: absolute;
+	top: 2px;
+	left: 2px;
+	width: 14px;
+	height: 14px;
+	border-radius: 50%;
+	background: var(--text);
+	transition: left 0.15s ease;
+}
+
+.switch.on .knob {
+	left: 16px;
+	background: var(--base);
+}
+
+.settings-pills {
+	display: flex;
+	gap: 5px;
+	flex-wrap: wrap;
+}
+
+.settings-pills button {
+	padding: 5px 11px;
+	border-radius: 4px;
+	font-size: 12px;
+	color: var(--overlay);
+	box-shadow: inset 0 0 0 1px var(--surface0);
+}
+
+.settings-pills button:hover {
+	color: var(--subtext);
+}
+
+.settings-pills button.active {
+	color: var(--text);
+	background: var(--mauve-dim);
+	box-shadow: inset 0 0 0 1px var(--mauve-border);
+}
+
+/* The dialog scrolls inside its body so the tabs stay put. */
+.peer-count {
+	padding: 0 10px;
+	color: var(--sky);
+	font-size: 11px;
+}
+
+.conflict-note {
+	padding: 0 10px;
+	color: var(--peach);
+	font-size: 11px;
+}
+
+.settings-tabs {
+	display: flex;
+	gap: 2px;
+	padding: 0 10px;
+	border-bottom: 1px solid var(--surface0);
+}
+
+.settings-tab {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 9px 11px;
+	font-size: 12px;
+	color: var(--overlay);
+	border-bottom: 2px solid transparent;
+	margin-bottom: -1px;
+}
+
+.settings-tab:hover {
+	color: var(--subtext);
+}
+
+.settings-tab.active {
+	color: var(--text);
+	border-bottom-color: var(--mauve);
+}
+
+.settings-body {
+	max-height: 56vh;
+	overflow-y: auto;
+}
+
+.theme-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+	gap: 6px;
+}
+
+.theme-card {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 7px 9px;
+	border-radius: 5px;
+	font-size: 12px;
+	color: var(--overlay);
+	box-shadow: inset 0 0 0 1px var(--surface0);
+	text-align: left;
+}
+
+.theme-card:hover {
+	color: var(--text);
+	box-shadow: inset 0 0 0 1px var(--mauve-border);
+}
+
+.theme-card.active {
+	color: var(--text);
+	background: var(--mauve-dim);
+	box-shadow: inset 0 0 0 1px var(--mauve-border);
+}
+
+/* Four bands: the editor surface, then three accents. */
+.theme-swatches {
+	display: flex;
+	flex: none;
+	width: 30px;
+	height: 14px;
+	border-radius: 3px;
+	overflow: hidden;
+	box-shadow: inset 0 0 0 1px var(--surface1);
+}
+
+.theme-swatches span {
+	flex: 1;
+}
+
+.theme-preview {
+	display: flex;
+	height: 104px;
+	padding: 5px;
+	gap: 5px;
+	border: 1px solid;
+	border-radius: 6px;
+	overflow: hidden;
+}
+
+.theme-preview-side {
+	flex: none;
+	width: 42px;
+	border-radius: 3px;
+	padding: 7px 6px;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.theme-preview-side span {
+	height: 5px;
+	border-radius: 2px;
+}
+
+.theme-preview-side span:nth-child(2) {
+	width: 72%;
+}
+
+.theme-preview-side span:nth-child(3) {
+	width: 55%;
+}
+
+.theme-preview-code {
+	flex: 1;
+	border-radius: 3px;
+	padding: 8px 9px;
+	font-size: 10px;
+	line-height: 1.9;
+	overflow: hidden;
+	white-space: nowrap;
+}
+
+.theme-preview-code > div {
+	display: flex;
+	gap: 7px;
+}
+
+.theme-preview-code > div > span:first-child {
+	width: 9px;
+	flex: none;
+	text-align: right;
+}
+
+.font-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(126px, 1fr));
+	gap: 5px;
+	max-height: 190px;
+	overflow-y: auto;
+}
+
+.font-card {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 6px;
+	padding: 6px 10px;
+	border-radius: 5px;
+	font-size: 12px;
+	color: var(--overlay);
+	box-shadow: inset 0 0 0 1px var(--surface0);
+	text-align: left;
+	white-space: nowrap;
+	overflow: hidden;
+}
+
+.font-card:hover {
+	color: var(--text);
+	box-shadow: inset 0 0 0 1px var(--mauve-border);
+}
+
+.font-card.active {
+	color: var(--text);
+	background: var(--mauve-dim);
+	box-shadow: inset 0 0 0 1px var(--mauve-border);
+}
+
+/* Offered, but this device would fall back to another family. */
+.font-card.missing {
+	color: var(--dim);
+}
+
+.font-missing {
+	color: var(--overlay-dim);
+	flex: none;
+}
+
+.settings-sizes {
+	flex-wrap: wrap;
+}
+
+.leader-row {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	flex-wrap: wrap;
+}
+
+.leader-capture {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	padding: 7px 12px;
+	border-radius: 5px;
+	font-size: 12px;
+	color: var(--subtext);
+	box-shadow: inset 0 0 0 1px var(--surface0);
+}
+
+.leader-capture:hover {
+	color: var(--text);
+	box-shadow: inset 0 0 0 1px var(--mauve-border);
+}
+
+.leader-capture.capturing {
+	color: var(--text);
+	background: var(--mauve-dim);
+	box-shadow: inset 0 0 0 1px var(--mauve);
+}
+
+.leader-capture kbd {
+	font: inherit;
+	min-width: 20px;
+	padding: 1px 6px;
+	border-radius: 3px;
+	color: var(--text);
+	background: var(--surface0);
+	box-shadow: inset 0 -1px 0 var(--surface1);
+}
+
+.settings-sizes {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.settings-sizes span {
+	color: var(--overlay);
+	font-size: 12px;
+}
+
+.settings-sizes button {
+	padding: 3px 9px;
+	border-radius: 4px;
+	font-size: 12px;
+	color: var(--overlay);
+	box-shadow: inset 0 0 0 1px var(--surface0);
+}
+
+.settings-sizes button.active {
+	color: var(--text);
+	background: var(--mauve-dim);
+	box-shadow: inset 0 0 0 1px var(--mauve-border);
+}

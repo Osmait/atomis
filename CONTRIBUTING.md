@@ -35,6 +35,26 @@ CI runs all of it. `pnpm exec playwright install chromium` once per machine —
 the touch projects run Chromium at phone and tablet size rather than WebKit,
 because the repo installs one browser on purpose.
 
+## Measuring
+
+Two harnesses, so a claim about performance can be checked rather than
+argued:
+
+```bash
+node scripts/bench.mjs --out bench/mine.json   # runtime, in a real browser
+node scripts/metrics.mjs --out bench/code.json # size and shape of the code
+```
+
+`bench.mjs` starts its own server on a spare port with its own preferences —
+never point a benchmark at a running instance, because settings live on the
+server and sync to every device you own. It reports what a person waits for
+(editor ready, a run, a keystroke reaching its inline value), the server's own
+breakdown of that time, and what a first visit downloads. `--languages zig,ts`
+narrows it while iterating; `--runs N` sets the sample count.
+
+`bench/baseline.json` and `bench/after.json` are the before and after of the
+optimisation pass they document.
+
 ## Things worth knowing before you change something
 
 **The wire contract is generated.** `packages/protocol/src/generated/` comes

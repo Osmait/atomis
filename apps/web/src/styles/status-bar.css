@@ -1,0 +1,185 @@
+/* ── Status bar ────────────────────────────────────────── */
+
+.global-status {
+	display: flex;
+	align-items: center;
+	gap: 0;
+	font-size: 12px;
+	flex-shrink: 0;
+	background: var(--panel-side);
+	border-top: 1px solid var(--panel-border);
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+	overflow: hidden;
+	white-space: nowrap;
+}
+
+.mode-chip {
+	padding: 5px 13px;
+	font-weight: 700;
+	color: var(--base);
+	background: var(--mauve);
+	flex-shrink: 0;
+}
+
+.mode-chip.mode-insert {
+	background: var(--green);
+}
+
+.mode-chip.mode-visual {
+	background: var(--yellow);
+}
+
+.vim-mode-slot {
+	display: flex;
+	align-items: center;
+	min-width: 0;
+	flex-shrink: 0;
+}
+
+.vim-status {
+	padding: 5px 10px;
+	color: var(--subtext);
+	font-size: 11px;
+	max-width: 220px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.vim-status:empty {
+	display: none;
+}
+
+/* Keeps vim's status node in the document while the status bar is off. */
+.vim-status-host {
+	display: none;
+}
+
+.vim-status input {
+	background: transparent;
+	border: none;
+	outline: none;
+	color: var(--text);
+	font-family: inherit;
+	font-size: 11px;
+}
+
+.branch-status {
+	padding: 5px 12px;
+	color: var(--subtext);
+}
+
+.branch-status b {
+	color: var(--green);
+	font-weight: 500;
+}
+
+.run-state {
+	padding: 5px 12px;
+	color: var(--green);
+}
+
+.run-state.state-compile_error,
+.run-state.state-runtime_error,
+.run-state.state-timed_out {
+	color: var(--red);
+}
+
+.run-state.state-debouncing,
+.run-state.state-instrumenting,
+.run-state.state-compiling,
+.run-state.state-running,
+.run-state.state-testing {
+	color: var(--yellow);
+}
+
+.status-path {
+	padding: 5px 12px;
+	color: var(--overlay);
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.degraded {
+	padding: 5px 12px;
+	color: var(--red);
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.status-spacer {
+	flex: 1;
+}
+
+.status-timing {
+	padding: 5px 12px;
+	color: var(--overlay);
+}
+
+.cursor-status {
+	padding: 5px 12px;
+	color: var(--text);
+	background: var(--surface0);
+	font-weight: 500;
+}
+
+/* ── Zen pill ──────────────────────────────────────────── */
+
+.zen-pill {
+	position: fixed;
+	left: 50%;
+	transform: translateX(-50%);
+	bottom: 18px;
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	background: var(--surface);
+	border: 1px solid var(--surface1);
+	border-radius: 4px;
+	padding: 9px 12px;
+	box-shadow: 0 18px 40px rgba(0, 0, 0, 0.6);
+	font-size: 12px;
+	z-index: 40;
+}
+
+.zen-dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	display: inline-block;
+	background: var(--dim);
+}
+
+.zen-dot.busy {
+	background: var(--yellow);
+}
+
+.zen-dot.ok {
+	background: var(--green);
+}
+
+.zen-dot.err {
+	background: var(--red);
+}
+
+.zen-status {
+	color: var(--subtext);
+}
+
+.zen-run {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	background: var(--mauve);
+	color: var(--base);
+	border-radius: 4px;
+	padding: 5px 11px;
+	font-weight: 600;
+}
+
+.zen-exit {
+	border: 1px solid var(--surface1);
+	border-radius: 4px;
+	padding: 4px 10px;
+	color: var(--subtext);
+	user-select: none;
+}

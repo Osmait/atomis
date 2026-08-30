@@ -9,7 +9,7 @@ use tokio_util::sync::CancellationToken;
 use crate::languages::markers::MarkerParser;
 use crate::languages::ndjson::ProbeReader;
 use crate::protocol::{
-    AppDiagnostic, OutputCategory, ProbeDescriptor, RunResult, Severity, Stream,
+    AppDiagnostic, OutputCategory, ProbeDescriptor, RunResult, Severity, Stream, TestStatus,
 };
 use crate::domain::session::{Session, SessionSettings, Snapshot};
 use crate::exec::supervisor::{self, ProcessLimits, ProcessResult, RunOptions, StreamCallbacks};
@@ -116,7 +116,20 @@ pub async fn instrument_files(
                 limits: ProcessLimits::new(config.timeout_ms, 1024 * 1024, 512 * 1024),
                 cancel: cancel.clone(),
                 probe_fd: false,
-                env: Vec::new(),
+                // The node instrumenters spend more time loading their parser
+                // than parsing: ~170ms of the ~186ms a TS run charges for
+                // instrumentation, on every keystroke. V8's compile cache
+                // halves that. It lives inside the workspace because that is
+                // what the sandbox lets a session write, and because a cache
+                // shared between sessions is a cache one session can poison.
+                env: vec![(
+                    "NODE_COMPILE_CACHE".to_string(),
+                    session
+                        .root
+                        .join(".node-compile-cache")
+                        .to_string_lossy()
+                        .into_owned(),
+                )],
                 sandbox: session.sandbox(settings),
                 callbacks: StreamCallbacks::default(),
             },
@@ -378,6 +391,45 @@ pub fn dedupe_diagnostics(diagnostics: Vec<AppDiagnostic>) -> Vec<AppDiagnostic>
             seen.insert(key)
         })
         .collect()
+}
+
+
+/// Reports the tests the process died in the middle of.
+///
+/// A test that reported a start and never a result is one the process took
+/// down with it — a failed assert, a segfault, a timeout. Zig, Python and
+/// the C family each find a catalog entry by their own rules, so the lookup
+/// is the caller's; the accounting, the status and the message are not, and
+/// were three copies of the same seventeen lines until a bug had to be fixed
+/// in all of them.
+///
+/// Returns how many results it sent, which is how many tests failed this way.
+pub fn report_aborted_tests(
+    started: Vec<String>,
+    stderr_buffer: &mut String,
+    whole_stderr: &str,
+    timed_out: bool,
+    events: &Events,
+    lookup: &dyn Fn(&str) -> Option<(String, String)>,
+) -> u32 {
+    let mut reported = 0;
+    for name in started {
+        reported += 1;
+        let matched = lookup(&name);
+        let _ = events.send(RunnerEvent::TestResult {
+            test_id: matched.as_ref().map(|(id, _)| id.clone()),
+            name: matched.map(|(_, name)| name).unwrap_or(name),
+            status: if timed_out {
+                TestStatus::TimedOut
+            } else {
+                TestStatus::Failed
+            },
+            duration_ms: 0.0,
+            message: aborted_message(stderr_buffer, whole_stderr),
+        });
+        stderr_buffer.clear();
+    }
+    reported
 }
 
 #[cfg(test)]

@@ -1,0 +1,214 @@
+/* ── Tree menu + context menu ──────────────────────────── */
+
+.tree-menu-btn {
+	display: flex;
+	align-items: center;
+	padding: 2px 4px;
+	border-radius: 4px;
+	color: var(--overlay);
+}
+
+.tree-menu-btn:hover,
+.tree-menu-btn.open {
+	color: var(--text);
+	background: var(--surface0);
+}
+
+.tree-menu {
+	position: absolute;
+	top: 36px;
+	right: 8px;
+	left: auto;
+	z-index: 40;
+}
+
+.tree-context-menu {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: auto;
+	z-index: 70;
+	width: 220px;
+}
+
+.term-menu button:disabled {
+	opacity: 0.45;
+}
+
+/* ── Monaco suggest widget: nvim-cmp look ──────────────── */
+
+.monaco-editor .suggest-widget {
+	border-radius: 0 !important;
+	border: 1px solid var(--surface1) !important;
+	box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5) !important;
+}
+
+.monaco-editor .suggest-widget .monaco-list .monaco-list-row {
+	padding-right: 8px;
+}
+
+/* label left, dim signature flush right — like nvim-cmp */
+.monaco-editor .suggest-widget .monaco-list .monaco-list-row .contents .main {
+	display: flex;
+	justify-content: space-between;
+	gap: 14px;
+}
+
+.monaco-editor
+	.suggest-widget
+	.monaco-list
+	.monaco-list-row
+	.contents
+	.main
+	.right {
+	max-width: 55%;
+}
+
+.monaco-editor
+	.suggest-widget
+	.monaco-list
+	.monaco-list-row
+	.contents
+	.main
+	.right
+	.details-label {
+	color: var(--overlay-dim);
+	opacity: 1;
+	font-size: 0.92em;
+	margin-left: auto;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.monaco-editor
+	.suggest-widget
+	.monaco-list
+	.monaco-list-row.focused
+	.contents
+	.main
+	.right
+	.details-label {
+	color: var(--subtext);
+}
+
+.monaco-editor .suggest-widget .monaco-list .monaco-list-row.focused {
+	font-weight: 600;
+}
+
+/* hide the fade + read-more chrome; keep rows flat */
+.monaco-editor .suggest-widget .monaco-list .monaco-list-row .contents .main .right .readMore {
+	display: none !important;
+}
+
+.monaco-editor .suggest-widget .monaco-highlighted-label .highlight {
+	font-weight: 700;
+	background: transparent;
+}
+
+/* ── Inline tree draft (VS Code-style creation/rename) ─── */
+
+.tree-draft {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 3px 10px 3px 24px;
+}
+
+.tree-draft input {
+	flex: 1;
+	min-width: 0;
+	background: var(--panel-border);
+	border: 1px solid var(--mauve-border);
+	border-radius: 4px;
+	color: var(--text);
+	font-family: inherit;
+	font-size: 12.5px;
+	padding: 2px 6px;
+	outline: none;
+}
+
+.tree-draft.invalid input {
+	border-color: var(--red);
+}
+
+/* ── Keyboard zones (leader navigation) ────────────────── */
+
+.tree-card.kb-zone,
+.side-panel.kb-zone {
+	box-shadow: inset 0 0 0 1px var(--mauve-border);
+}
+
+.tree-file.kb-sel,
+.tree-folder-row.kb-sel {
+	background: var(--surface0-dim);
+	box-shadow: inset 2px 0 0 var(--mauve);
+}
+
+.mode-chip.mode-zone {
+	background: var(--mauve);
+	color: var(--base);
+}
+
+/*
+ * Touch. A finger is not a mouse pointer: Apple asks for 44x44pt, and every
+ * control here was around 26x23 — small enough that on the iPad the miss
+ * rate is what you notice, not the design.
+ *
+ * The buttons genuinely grow rather than getting an invisible overlay: in
+ * the toolbar they sit 10px apart, so an expanded hit area would have let
+ * each one steal its neighbour's taps. Growing them lets flex reflow around
+ * the new size instead, which cannot overlap.
+ *
+ * Full-width rows — tabs, tree entries, the status and test bars — are easy
+ * to hit along their length, so only their height is lifted, and less far:
+ * 44px rows would halve how much of a file tree you can see.
+ */
+@media (pointer: coarse) {
+	.chrome-icon,
+	.run-button,
+	.tab-add,
+	.term-menu-btn,
+	.tree-menu-btn {
+		min-width: 44px;
+		min-height: 44px;
+		justify-content: center;
+	}
+
+	.run-button {
+		height: 44px;
+	}
+
+	.auto-text {
+		min-width: 44px;
+		min-height: 44px;
+	}
+
+	.tab-pill,
+	.tree-root-toggle,
+	.tree-folder-row,
+	.tree-file {
+		min-height: 40px;
+	}
+
+	.branch-status,
+	.test-bar,
+	.workspace-bar {
+		min-height: 44px;
+	}
+}
+
+/*
+ * The status bar packs eight things into one row — mode, workspace, run
+ * state, path, timings, cursor — and on a phone that is wider than the
+ * phone. It hides its overflow, so the right-hand items were simply gone.
+ * The two that repeat what is already on screen give way first: the path
+ * is on the tab above it, and the timings are in the terminal.
+ */
+@media (max-width: 640px) {
+	.status-path,
+	.status-timing {
+		display: none;
+	}
+}
+

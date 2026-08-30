@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
 	cssVariables,
@@ -118,10 +118,14 @@ describe("generated custom properties", () => {
 	 * stylesheet reads a property nothing defines, some theme renders wrong.
 	 */
 	it("defines every custom property the stylesheet reads", () => {
-		const css = readFileSync(
-			new URL("../../styles.css", import.meta.url),
-			"utf8",
-		);
+		// Every stylesheet, not just the entry: the entry is a list of
+		// imports, and reading it alone would leave this test scanning
+		// nothing and passing forever.
+		const stylesheets = new URL("../../styles/", import.meta.url);
+		const css = readdirSync(stylesheets)
+			.filter((name) => name.endsWith(".css"))
+			.map((name) => readFileSync(new URL(name, stylesheets), "utf8"))
+			.join("\n");
 		const generated = new Set(Object.keys(cssVariables(paletteOf("mocha"))));
 		// Properties the stylesheet declares for itself (radii, shadows, fonts).
 		const declared = new Set(

@@ -16,7 +16,7 @@ use crate::protocol::{
 use crate::domain::session::{Session, SessionSettings, Snapshot};
 use crate::exec::supervisor::{self, ProcessLimits, RunOptions, StreamCallbacks};
 
-use crate::languages::common::aborted_message;
+use crate::languages::common::report_aborted_tests;
 use crate::languages::common::{
     classify_execution, dedupe_diagnostics, execute_program, instrument_files,
     ExecuteConfig, InstrumentConfig,
@@ -31,6 +31,8 @@ pub struct CFamilyConfig {
     pub compiler: &'static str,
     pub std: &'static str,
     pub runtime_header: &'static str,
+    /// What `-x` calls this header when precompiling it.
+    pub header_language: &'static str,
     pub test_main_name: &'static str,
 }
 
@@ -39,6 +41,7 @@ pub const C_CONFIG: CFamilyConfig = CFamilyConfig {
     compiler: "clang",
     std: "c17",
     runtime_header: "atomis_runtime.h",
+    header_language: "c-header",
     test_main_name: "__atomis_test_main.c",
 };
 
@@ -47,6 +50,7 @@ pub const CPP_CONFIG: CFamilyConfig = CFamilyConfig {
     compiler: "clang++",
     std: "c++20",
     runtime_header: "atomis_runtime.hpp",
+    header_language: "c++-header",
     test_main_name: "__atomis_test_main.cpp",
 };
 
@@ -89,6 +93,72 @@ pub fn discover_cfamily_tests(files: &[ProjectFile], config: &CFamilyConfig) -> 
         }
     }
     tests
+}
+
+/// Clang spends most of a small program's compile on the runtime header's
+/// standard includes — measured at ~200ms of ~320ms for the C++ scaffold.
+/// Precompiling that header once per session turns every later compile into
+/// ~127ms. Returns None when the PCH cannot be built, and the caller falls
+/// back to including the header the ordinary way: a slower run beats a
+/// broken one.
+async fn runtime_pch(
+    session: &Session,
+    settings: &SessionSettings,
+    config: &CFamilyConfig,
+    cancel: &CancellationToken,
+) -> (Option<std::path::PathBuf>, f64) {
+    // The repository's copy, not the session's: `generated/` is rewritten on
+    // every run, so its mtime always looks newer than the PCH and the header
+    // would be recompiled every time — which measured slower than not
+    // precompiling at all. The two files have identical content; the session
+    // copy is scaffolded from this one.
+    let header = crate::languages::packs::project_root()
+        .join("cfamily/runtime")
+        .join(config.runtime_header);
+    let target = session.root.join("target");
+    if tokio::fs::create_dir_all(&target).await.is_err() {
+        return (None, 0.0);
+    }
+    let pch = target.join(format!("{}-runtime.pch", config.runtime_header));
+    // Reuse it while it is at least as new as the header it was built from.
+    let fresh = match (tokio::fs::metadata(&pch).await, tokio::fs::metadata(&header).await) {
+        (Ok(built), Ok(source)) => match (built.modified(), source.modified()) {
+            (Ok(built), Ok(source)) => built >= source,
+            _ => false,
+        },
+        _ => false,
+    };
+    if fresh {
+        return (Some(pch), 0.0);
+    }
+    let result = supervisor::run(
+        config.compiler,
+        &[
+            format!("-std={}", config.std),
+            "-g".into(),
+            "-O0".into(),
+            "-x".into(),
+            config.header_language.into(),
+            header.to_string_lossy().into_owned(),
+            "-o".into(),
+            pch.to_string_lossy().into_owned(),
+        ],
+        RunOptions {
+            cwd: session.root.clone(),
+            limits: ProcessLimits::new(COMPILE_TIMEOUT_MS, 256 * 1024, 1024 * 1024),
+            cancel: cancel.clone(),
+            probe_fd: false,
+            env: Vec::new(),
+            sandbox: session.sandbox(settings),
+            callbacks: StreamCallbacks::default(),
+        },
+    )
+    .await;
+    if result.exit_code == Some(0) {
+        (Some(pch), result.duration_ms)
+    } else {
+        (None, result.duration_ms)
+    }
 }
 
 fn clang_project_path(file: &str) -> Option<String> {
@@ -294,18 +364,29 @@ pub async fn run(
         .join("target")
         .join(format!("{lang_flag}-bin"));
     let _ = tokio::fs::create_dir_all(session.root.join("target")).await;
+    let (pch, pch_ms) = runtime_pch(session, settings, &config, &cancel).await;
     let mut compile_args: Vec<String> = vec![
         format!("-std={}", config.std),
         "-g".into(),
         "-O0".into(),
-        "-include".into(),
-        session
-            .root
-            .join("generated")
-            .join(config.runtime_header)
-            .to_string_lossy()
-            .into_owned(),
     ];
+    match &pch {
+        Some(pch) => {
+            compile_args.push("-include-pch".into());
+            compile_args.push(pch.to_string_lossy().into_owned());
+        }
+        None => {
+            compile_args.push("-include".into());
+            compile_args.push(
+                session
+                    .root
+                    .join("generated")
+                    .join(config.runtime_header)
+                    .to_string_lossy()
+                    .into_owned(),
+            );
+        }
+    }
     for file in &code_files {
         compile_args.push(
             session
@@ -333,7 +414,8 @@ pub async fn run(
         },
     )
     .await;
-    metrics.compilation_ms = compile.duration_ms;
+    // Building the header counts as compiling: it is time the person waits.
+    metrics.compilation_ms = compile.duration_ms + pch_ms;
     if compile.cancelled || cancel.is_cancelled() {
         return cancelled_outcome(metrics, "superseded");
     }
@@ -679,23 +761,15 @@ async fn run_tests(
     }
     let mut state = state.lock().expect("cfamily test state");
     let started: Vec<String> = state.started.values().cloned().collect();
-    for name in started {
-        state.counts.1 += 1;
-        let matched = catalog.iter().find(|c| c.name == name);
-        let message = aborted_message(&state.stderr_buffer, &execution.stderr);
-        let _ = events.send(RunnerEvent::TestResult {
-            test_id: matched.map(|m| m.test_id.clone()),
-            name: matched.map(|m| m.name.clone()).unwrap_or(name),
-            status: if execution.timed_out {
-                TestStatus::TimedOut
-            } else {
-                TestStatus::Failed
-            },
-            duration_ms: 0.0,
-            message,
-        });
-        state.stderr_buffer.clear();
-    }
+    let state = &mut *state;
+    state.counts.1 += report_aborted_tests(
+        started,
+        &mut state.stderr_buffer,
+        &execution.stderr,
+        execution.timed_out,
+        events,
+        &|name| catalog.iter().find(|c| c.name == name).map(|c| (c.test_id.clone(), c.name.clone())),
+    );
     if let Some(message) = read_error {
         let _ = events.send(RunnerEvent::Output {
             stream: Stream::Stderr,

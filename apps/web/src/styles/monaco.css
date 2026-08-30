@@ -1,0 +1,467 @@
+/* ── Monaco decorations ────────────────────────────────── */
+
+.inline-value {
+	color: var(--overlay) !important;
+	font-style: italic;
+	opacity: 0.95;
+	cursor: pointer;
+	pointer-events: auto;
+}
+
+.inline-value:hover {
+	color: var(--mauve) !important;
+}
+
+.inline-value.stale {
+	text-decoration: line-through;
+	color: var(--dim) !important;
+}
+
+/* Workspace switch: the shell eases back instead of reloading, and the
+   new tree unfolds row by row like an accordion. */
+.app-shell.switching {
+	opacity: 0.6;
+	pointer-events: none;
+}
+
+.tree-rows {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-height: 0;
+}
+
+.tree-rows > * {
+	animation: tree-unfold 170ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
+	animation-delay: calc(var(--row, 0) * 14ms);
+	transform-origin: top;
+}
+
+@keyframes tree-unfold {
+	from {
+		max-height: 0;
+		opacity: 0;
+		transform: translateY(-3px);
+	}
+	to {
+		max-height: 40px;
+		opacity: 1;
+		transform: none;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.app-shell,
+	.tree-rows > * {
+		animation: none;
+		transition: none;
+	}
+}
+
+.workspace-picker .palette-results {
+	max-height: 320px;
+}
+
+.workspace-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.workspace-open {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 2px;
+	background: none;
+	border: 0;
+	color: inherit;
+	cursor: pointer;
+	font: inherit;
+	padding: 2px 0;
+	text-align: left;
+}
+
+.workspace-name {
+	color: var(--text);
+}
+
+.workspace-meta {
+	color: var(--dim);
+	font-size: 11px;
+}
+
+.workspace-actions {
+	display: flex;
+	gap: 4px;
+	opacity: 0;
+}
+
+.workspace-row:hover .workspace-actions,
+.workspace-row.selected .workspace-actions {
+	opacity: 1;
+}
+
+.workspace-actions button {
+	background: none;
+	border: 0;
+	color: var(--dim);
+	cursor: pointer;
+	padding: 2px;
+}
+
+.workspace-actions button:hover {
+	color: var(--mauve);
+}
+
+.workspace-scratch {
+	background: none;
+	border: 0;
+	color: inherit;
+	cursor: pointer;
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	font: inherit;
+	gap: 2px;
+	text-align: left;
+	width: 100%;
+}
+
+.workspace-error {
+	color: var(--red);
+	font-size: 11px;
+	margin: 0;
+	padding: 4px 12px;
+}
+
+.deps-panel {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 10px 12px;
+	overflow: auto;
+}
+
+.deps-add {
+	display: flex;
+	gap: 6px;
+}
+
+.deps-add input {
+	background: var(--panel-side);
+	border: 1px solid var(--panel-border);
+	border-radius: 6px;
+	color: var(--text);
+	flex: 1;
+	font: inherit;
+	padding: 5px 8px;
+}
+
+.deps-add input:focus {
+	border-color: var(--mauve);
+	outline: none;
+}
+
+.deps-install {
+	background: var(--mauve);
+	border: 0;
+	border-radius: 6px;
+	color: var(--base);
+	cursor: pointer;
+	font: inherit;
+	font-weight: 600;
+	padding: 5px 12px;
+}
+
+.deps-install:disabled {
+	cursor: default;
+	opacity: 0.5;
+}
+
+.deps-note {
+	color: var(--dim);
+	font-size: 11px;
+	margin: 0;
+}
+
+.deps-error {
+	color: var(--red);
+	font-size: 11px;
+	margin: 0;
+	white-space: pre-wrap;
+}
+
+.deps-list {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.deps-row {
+	align-items: center;
+	border-radius: 5px;
+	display: flex;
+	gap: 8px;
+	padding: 3px 6px;
+}
+
+.deps-row:hover {
+	background: var(--panel-side);
+}
+
+.deps-name {
+	color: var(--text);
+	flex: 1;
+}
+
+.deps-version {
+	color: var(--dim);
+	font-size: 11px;
+}
+
+.deps-row button {
+	background: none;
+	border: 0;
+	color: var(--dim);
+	cursor: pointer;
+	opacity: 0;
+	padding: 2px;
+}
+
+.deps-row:hover button {
+	opacity: 1;
+}
+
+.deps-row button:hover {
+	color: var(--red);
+}
+
+.deps-output {
+	background: var(--panel-side);
+	border-radius: 6px;
+	color: var(--subtext);
+	font-size: 11px;
+	margin: 0;
+	max-height: 160px;
+	overflow: auto;
+	padding: 8px;
+	white-space: pre-wrap;
+}
+
+.deps-manifest {
+	align-self: flex-start;
+	background: none;
+	border: 0;
+	color: var(--dim);
+	cursor: pointer;
+	font: inherit;
+	font-size: 11px;
+	padding: 0;
+	text-decoration: underline;
+}
+
+.qs-match {
+	color: var(--yellow) !important;
+	font-weight: 700;
+	text-decoration: underline;
+	text-underline-offset: 2px;
+}
+
+.inline-log {
+	color: var(--dim) !important;
+	font-style: italic;
+	opacity: 0.9;
+}
+
+.inline-log.err {
+	color: var(--red) !important;
+	opacity: 0.85;
+}
+
+.inline-log.stale {
+	text-decoration: line-through;
+	opacity: 0.6;
+}
+
+.manual-probe {
+	cursor: pointer;
+	border-radius: 50%;
+}
+
+/* Hidden until you hover the gutter cell (VS Code breakpoint style);
+ * only manually-enabled probes stay visible. */
+.manual-probe::after {
+	content: "◦";
+	color: var(--dim);
+	display: block;
+	text-align: center;
+	line-height: 22px;
+	opacity: 0;
+	transition: opacity 0.1s ease;
+}
+
+.manual-probe:hover::after {
+	opacity: 0.8;
+}
+
+.manual-probe.enabled::after {
+	content: "●";
+	color: var(--mauve);
+	opacity: 1;
+}
+
+.error-lens-line {
+	background: color-mix(in srgb, var(--red) 7%, transparent);
+}
+
+.error-lens-warning {
+	background: color-mix(in srgb, var(--yellow) 6%, transparent);
+}
+
+.error-lens-glyph {
+	border-left: 2px solid var(--red);
+}
+
+.error-lens-glyph-warning {
+	border-left-color: var(--yellow);
+}
+
+.error-lens-message {
+	margin-left: 18px;
+	font-size: 12px;
+	font-style: italic;
+	color: var(--red);
+	white-space: nowrap;
+	pointer-events: none;
+}
+
+.error-lens-message-warning {
+	color: var(--yellow);
+}
+
+.error-lens-message-information,
+.error-lens-message-hint {
+	color: var(--blue);
+}
+
+.test-lens-message {
+	margin-left: 18px;
+	font-size: 12px;
+	font-style: italic;
+	color: var(--green-dim);
+	white-space: nowrap;
+	pointer-events: none;
+}
+
+.test-lens-message.failed {
+	color: var(--red);
+}
+
+.test-lens-line-failed {
+	background: color-mix(in srgb, var(--red) 9%, transparent);
+	box-shadow: inset 2px 0 0 var(--red);
+}
+
+.test-line-number {
+	color: var(--green) !important;
+}
+
+.test-line-number.failed {
+	color: var(--red) !important;
+}
+
+.log-source-line {
+	background: color-mix(in srgb, var(--mauve) 10%, transparent);
+}
+
+.log-source-glyph {
+	border-left: 2px solid var(--mauve);
+}
+
+.log-loop-line {
+	background: color-mix(in srgb, var(--yellow) 7%, transparent);
+}
+
+.log-loop-glyph {
+	border-left: 2px solid var(--yellow);
+}
+
+/* ── Startup ───────────────────────────────────────────── */
+
+.startup {
+	height: 100%;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 10px;
+	background: var(--base);
+	color: var(--subtext);
+	padding: 24px;
+	text-align: center;
+}
+
+.startup-logo {
+	/* The PNG already carries its rounded silhouette. */
+	height: 96px;
+	width: 96px;
+}
+
+/* While the doctor runs, the mark breathes so the wait reads as work. */
+.startup-logo.pulsing {
+	animation: logo-breathe 2.4s ease-in-out infinite;
+}
+
+@keyframes logo-breathe {
+	0%,
+	100% {
+		opacity: 0.75;
+		transform: scale(0.97);
+	}
+	50% {
+		opacity: 1;
+		transform: scale(1);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.startup-logo.pulsing {
+		animation: none;
+	}
+}
+
+.startup h1 {
+	color: var(--mauve);
+	margin: 0;
+}
+
+.startup h2 {
+	color: var(--red);
+	margin: 0;
+	font-size: 15px;
+}
+
+.startup pre {
+	background: var(--surface);
+	border: 1px solid var(--surface0);
+	border-radius: 10px;
+	padding: 12px 16px;
+	max-width: min(680px, 90vw);
+	overflow: auto;
+	text-align: left;
+}
+
+.startup code {
+	color: var(--green);
+}
+
+/* ── Responsive ────────────────────────────────────────── */
+
+@media (max-width: 780px) {
+	.app-shell {
+		padding: 10px;
+		gap: 8px;
+	}
+}
