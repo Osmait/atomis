@@ -2988,3 +2988,51 @@ input:focus-visible,
 	background: var(--mauve);
 	color: var(--base);
 }
+
+/*
+ * Touch. A finger is not a mouse pointer: Apple asks for 44x44pt, and every
+ * control here was around 26x23 — small enough that on the iPad the miss
+ * rate is what you notice, not the design.
+ *
+ * The buttons genuinely grow rather than getting an invisible overlay: in
+ * the toolbar they sit 10px apart, so an expanded hit area would have let
+ * each one steal its neighbour's taps. Growing them lets flex reflow around
+ * the new size instead, which cannot overlap.
+ *
+ * Full-width rows — tabs, tree entries, the status and test bars — are easy
+ * to hit along their length, so only their height is lifted, and less far:
+ * 44px rows would halve how much of a file tree you can see.
+ */
+@media (pointer: coarse) {
+	.chrome-icon,
+	.run-button,
+	.tab-add,
+	.term-menu-btn,
+	.tree-menu-btn {
+		min-width: 44px;
+		min-height: 44px;
+		justify-content: center;
+	}
+
+	.run-button {
+		height: 44px;
+	}
+
+	.auto-text {
+		min-width: 44px;
+		min-height: 44px;
+	}
+
+	.tab-pill,
+	.tree-root-toggle,
+	.tree-folder-row,
+	.tree-file {
+		min-height: 40px;
+	}
+
+	.branch-status,
+	.test-bar,
+	.workspace-bar {
+		min-height: 44px;
+	}
+}
