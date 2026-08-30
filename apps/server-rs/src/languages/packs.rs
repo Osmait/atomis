@@ -14,6 +14,20 @@ pub struct ToolCheck {
     pub expected: &'static str,
 }
 
+/// A boxed run, because each `async fn` has its own opaque type and a pack
+/// needs one shared shape to hold.
+pub type RunFuture<'a> = std::pin::Pin<
+    Box<dyn std::future::Future<Output = crate::languages::runtime::RunnerOutcome> + Send + 'a>,
+>;
+
+pub type RunFn = for<'a> fn(
+    &'a crate::domain::session::Session,
+    &'a crate::domain::session::Snapshot,
+    &'a crate::domain::session::SessionSettings,
+    tokio_util::sync::CancellationToken,
+    crate::languages::runtime::Events,
+) -> RunFuture<'a>;
+
 pub struct LanguagePack {
     pub id: Language,
     pub extensions: &'static [&'static str],
@@ -24,6 +38,14 @@ pub struct LanguagePack {
     pub run: ToolCheck,
     pub lsp: Option<ToolCheck>,
     pub lsp_command: Option<&'static str>,
+    /// How a file of this language is compiled and run.
+    pub execute: RunFn,
+    /// The instrumenter binary or script, relative to the project root.
+    pub instrumenter: &'static str,
+    /// Extra arguments the language server wants, given the session root.
+    pub lsp_args: fn(&Path) -> Vec<String>,
+    /// How a dependency is added, when the language has a package manager.
+    pub deps: Option<&'static crate::languages::deps::DepsSupport>,
 }
 
 pub fn project_root() -> PathBuf {
@@ -120,6 +142,21 @@ fn clangd_compatible(version: &str) -> bool {
     version.to_lowercase().contains("clangd")
 }
 
+fn no_args(_root: &Path) -> Vec<String> {
+    Vec::new()
+}
+
+fn stdio_args(_root: &Path) -> Vec<String> {
+    vec!["--stdio".into()]
+}
+
+fn zls_config_args(root: &Path) -> Vec<String> {
+    vec![
+        "--config-path".into(),
+        format!("{}/zls.json", root.to_string_lossy()),
+    ]
+}
+
 pub static PACKS: [LanguagePack; 7] = [
     LanguagePack {
         id: Language::Zig,
@@ -141,6 +178,10 @@ pub static PACKS: [LanguagePack; 7] = [
             expected: "ZLS 0.16.x",
         }),
         lsp_command: Some("zls"),
+        execute: crate::languages::zig::boxed_run,
+        instrumenter: "zig-out/bin/runzig-instrument",
+        lsp_args: zls_config_args,
+        deps: Some(&crate::languages::deps::ZIG),
     },
     LanguagePack {
         id: Language::Rust,
@@ -162,6 +203,10 @@ pub static PACKS: [LanguagePack; 7] = [
             expected: "rust-analyzer",
         }),
         lsp_command: Some("rust-analyzer"),
+        execute: crate::languages::rust::boxed_run,
+        instrumenter: "rust/instrumenter/target/release/rustlive-instrument",
+        lsp_args: no_args,
+        deps: Some(&crate::languages::deps::RUST),
     },
     LanguagePack {
         id: Language::Go,
@@ -183,6 +228,10 @@ pub static PACKS: [LanguagePack; 7] = [
             expected: "gopls",
         }),
         lsp_command: Some("gopls"),
+        execute: crate::languages::go::boxed_run,
+        instrumenter: "go/instrumenter/bin/golive-instrument",
+        lsp_args: no_args,
+        deps: Some(&crate::languages::deps::GO),
     },
     LanguagePack {
         id: Language::Ts,
@@ -204,6 +253,10 @@ pub static PACKS: [LanguagePack; 7] = [
             expected: "typescript-language-server",
         }),
         lsp_command: Some("typescript-language-server"),
+        execute: crate::languages::ts::boxed_run,
+        instrumenter: "ts/instrumenter/instrument.mjs",
+        lsp_args: stdio_args,
+        deps: Some(&crate::languages::deps::TS),
     },
     LanguagePack {
         id: Language::Py,
@@ -225,6 +278,10 @@ pub static PACKS: [LanguagePack; 7] = [
             expected: "pyright-langserver",
         }),
         lsp_command: Some("pyright-langserver"),
+        execute: crate::languages::py::boxed_run,
+        instrumenter: "python/instrumenter/pylive_instrument.py",
+        lsp_args: stdio_args,
+        deps: Some(&crate::languages::deps::PY),
     },
     LanguagePack {
         id: Language::C,
@@ -246,6 +303,10 @@ pub static PACKS: [LanguagePack; 7] = [
             expected: "clangd",
         }),
         lsp_command: Some("clangd"),
+        execute: crate::languages::cfamily::boxed_run_c,
+        instrumenter: "cfamily/instrumenter/clive-instrument.mjs",
+        lsp_args: no_args,
+        deps: None,
     },
     LanguagePack {
         id: Language::Cpp,
@@ -267,6 +328,10 @@ pub static PACKS: [LanguagePack; 7] = [
             expected: "clangd",
         }),
         lsp_command: Some("clangd"),
+        execute: crate::languages::cfamily::boxed_run_cpp,
+        instrumenter: "cfamily/instrumenter/clive-instrument.mjs",
+        lsp_args: no_args,
+        deps: None,
     },
 ];
 
@@ -284,26 +349,11 @@ pub fn pack_for_path(path: &str) -> Option<&'static LanguagePack> {
 }
 
 pub fn instrumenter_path(language: Language) -> PathBuf {
-    let root = project_root();
-    match language {
-        Language::Zig => root.join("zig-out/bin/runzig-instrument"),
-        Language::Rust => root.join("rust/instrumenter/target/release/rustlive-instrument"),
-        Language::Go => root.join("go/instrumenter/bin/golive-instrument"),
-        Language::Ts => root.join("ts/instrumenter/instrument.mjs"),
-        Language::Py => root.join("python/instrumenter/pylive_instrument.py"),
-        Language::C | Language::Cpp => root.join("cfamily/instrumenter/clive-instrument.mjs"),
-    }
+    project_root().join(pack(language).instrumenter)
 }
 
 pub fn lsp_args(language: Language, root: &Path) -> Vec<String> {
-    match language {
-        Language::Zig => vec![
-            "--config-path".into(),
-            format!("{}/zls.json", root.to_string_lossy()),
-        ],
-        Language::Ts | Language::Py => vec!["--stdio".into()],
-        _ => vec![],
-    }
+    (pack(language).lsp_args)(root)
 }
 
 /// Copies the per-language session template files into a fresh session root.

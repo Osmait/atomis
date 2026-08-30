@@ -14,7 +14,7 @@ use crate::protocol::{
 use crate::domain::session::{Session, SessionSettings, Snapshot};
 use crate::exec::supervisor::{self, ProcessLimits, ProcessResult, RunOptions, StreamCallbacks};
 
-use super::{Events, InstrumentationOutput, ProbeForwarder, RunnerEvent};
+use crate::languages::runtime::{Events, InstrumentationOutput, ProbeForwarder, RunnerEvent};
 
 pub struct InstrumentConfig<'a> {
     /// Diagnostic `source` name, e.g. "runzig-instrument".
@@ -294,7 +294,7 @@ pub fn classify_execution(
     metrics: &mut RunResult,
     execution: &ExecuteOutcome,
     cancel: &CancellationToken,
-) -> Option<super::RunnerOutcome> {
+) -> Option<crate::languages::runtime::RunnerOutcome> {
     let result = &execution.result;
     metrics.execution_ms = result.duration_ms;
     metrics.exit_code = result.exit_code;
@@ -303,16 +303,16 @@ pub fn classify_execution(
     metrics.cancelled = result.cancelled;
     if result.cancelled || cancel.is_cancelled() {
         metrics.reason = Some("cancelled".to_string());
-        return Some(super::RunnerOutcome {
+        return Some(crate::languages::runtime::RunnerOutcome {
             result: metrics.clone(),
-            terminal_state: super::TerminalState::Cancelled,
+            terminal_state: crate::languages::runtime::TerminalState::Cancelled,
         });
     }
     if result.timed_out {
         metrics.reason = Some("execution timeout".to_string());
-        return Some(super::RunnerOutcome {
+        return Some(crate::languages::runtime::RunnerOutcome {
             result: metrics.clone(),
-            terminal_state: super::TerminalState::TimedOut,
+            terminal_state: crate::languages::runtime::TerminalState::TimedOut,
         });
     }
     if result.limit.is_some() || execution.probe_error.is_some() {
@@ -322,9 +322,9 @@ pub fn classify_execution(
                 .clone()
                 .unwrap_or_else(|| format!("{} limit exceeded", result.limit.unwrap_or("runtime"))),
         );
-        return Some(super::RunnerOutcome {
+        return Some(crate::languages::runtime::RunnerOutcome {
             result: metrics.clone(),
-            terminal_state: super::TerminalState::RuntimeError,
+            terminal_state: crate::languages::runtime::TerminalState::RuntimeError,
         });
     }
     None

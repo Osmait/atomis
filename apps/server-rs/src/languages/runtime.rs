@@ -1,16 +1,9 @@
-//! Language runners: the shared event surface (RunnerEvent), outcomes and
-//! generated-mirror maintenance, mirroring CompilerRunner.ts exports.
+//! What every language's runner has in common: the event surface they
+//! emit on, the outcome they return, and the generated-mirror maintenance
+//! around a run. The runners themselves live one per language folder.
 
 #![allow(dead_code)]
 
-pub mod cfamily;
-pub mod common;
-pub mod go;
-pub mod py;
-pub mod rust;
-pub mod ts;
-pub mod zig;
-pub mod zig_diag;
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -153,7 +146,9 @@ pub fn cancelled_outcome(mut metrics: RunResult, reason: &str) -> RunnerOutcome 
     }
 }
 
-/// Dispatch a run for one language.
+/// Runs one language, through the pack that describes it. There is no
+/// dispatch here on purpose: the language decides, and adding one does not
+/// mean remembering to extend a `match` in this file.
 pub async fn run_language(
     language: Language,
     session: &Session,
@@ -162,27 +157,8 @@ pub async fn run_language(
     cancel: CancellationToken,
     events: Events,
 ) -> Option<RunnerOutcome> {
-    match language {
-        Language::Zig => Some(zig::run(session, snapshot, settings, cancel, events).await),
-        Language::Rust => Some(rust::run(session, snapshot, settings, cancel, events).await),
-        Language::Go => Some(go::run(session, snapshot, settings, cancel, events).await),
-        Language::Ts => Some(ts::run(session, snapshot, settings, cancel, events).await),
-        Language::Py => Some(py::run(session, snapshot, settings, cancel, events).await),
-        Language::C => Some(
-            cfamily::run(session, snapshot, settings, cancel, events, cfamily::C_CONFIG).await,
-        ),
-        Language::Cpp => Some(
-            cfamily::run(
-                session,
-                snapshot,
-                settings,
-                cancel,
-                events,
-                cfamily::CPP_CONFIG,
-            )
-            .await,
-        ),
-    }
+    let pack = crate::languages::packs::pack(language);
+    Some((pack.execute)(session, snapshot, settings, cancel, events).await)
 }
 
 /// Streaming probe forwarder shared by every runner: counts per probe id and

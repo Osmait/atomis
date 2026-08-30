@@ -11,7 +11,7 @@ use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
 use crate::protocol::{Language, RunState, ServerEvent};
-use crate::languages::runners::{self, RunnerEvent};
+use crate::languages::runtime::{self, RunnerEvent};
 use crate::domain::session::Session;
 use crate::util::{now_ms, random_uuid};
 
@@ -143,7 +143,7 @@ impl RunScheduler {
                 }
             });
 
-            let outcome = runners::run_language(
+            let outcome = runtime::run_language(
                 target,
                 &session,
                 &snapshot,

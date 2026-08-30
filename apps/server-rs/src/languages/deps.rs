@@ -30,20 +30,29 @@ pub struct DepsSupport {
     pub runs_untrusted_code: bool,
     /// What the user types: a package name, or a URL for registry-less zig.
     pub input_hint: &'static str,
+    /// Reads the manifest's declarations.
+    pub parse: fn(&str) -> Vec<Dependency>,
+    /// Rewrites the manifest without one entry, where Atomis edits it
+    /// itself because the toolchain has no remove command.
+    pub edit_out: Option<fn(&str, &str) -> Option<String>>,
+    /// What to pass the remove command; go asks for the null version.
+    pub remove_argument: fn(&str) -> String,
+}
+
+fn same_name(name: &str) -> String {
+    name.to_string()
+}
+
+/// Go removes a module by asking for the null version.
+fn go_null_version(name: &str) -> String {
+    format!("{name}@none")
 }
 
 pub fn support(language: Language) -> Option<&'static DepsSupport> {
-    match language {
-        Language::Rust => Some(&RUST),
-        Language::Go => Some(&GO),
-        Language::Ts => Some(&TS),
-        Language::Zig => Some(&ZIG),
-        Language::Py => Some(&PY),
-        _ => None,
-    }
+    crate::languages::packs::pack(language).deps
 }
 
-static RUST: DepsSupport = DepsSupport {
+pub static RUST: DepsSupport = DepsSupport {
     manifest: "Cargo.toml",
     add: &["cargo", "add"],
     remove: Some(&["cargo", "remove"]),
@@ -53,9 +62,12 @@ static RUST: DepsSupport = DepsSupport {
     fetch_after_add: Some(&["cargo", "fetch"]),
     runs_untrusted_code: false,
     input_hint: "crate name, optionally name@version",
+    parse: parse_cargo_toml,
+    edit_out: None,
+    remove_argument: same_name,
 };
 
-static GO: DepsSupport = DepsSupport {
+pub static GO: DepsSupport = DepsSupport {
     manifest: "go.mod",
     add: &["go", "get"],
     remove: Some(&["go", "get"]),
@@ -64,9 +76,12 @@ static GO: DepsSupport = DepsSupport {
     fetch_after_add: None,
     runs_untrusted_code: false,
     input_hint: "module path, e.g. github.com/user/repo",
+    parse: parse_go_mod,
+    edit_out: None,
+    remove_argument: go_null_version,
 };
 
-static TS: DepsSupport = DepsSupport {
+pub static TS: DepsSupport = DepsSupport {
     manifest: "package.json",
     add: &["npm", "install"],
     remove: Some(&["npm", "uninstall"]),
@@ -76,17 +91,17 @@ static TS: DepsSupport = DepsSupport {
     // npm runs the package's own install scripts.
     runs_untrusted_code: true,
     input_hint: "package name, optionally name@version",
+    parse: parse_package_json,
+    edit_out: None,
+    remove_argument: same_name,
 };
 
 /// Go removes a module by asking for the null version.
 pub fn remove_argument(language: Language, name: &str) -> String {
-    match language {
-        Language::Go => format!("{name}@none"),
-        _ => name.to_string(),
-    }
+    support(language).map_or_else(|| name.to_string(), |deps| (deps.remove_argument)(name))
 }
 
-static ZIG: DepsSupport = DepsSupport {
+pub static ZIG: DepsSupport = DepsSupport {
     manifest: "build.zig.zon",
     // Zig has no registry: a dependency is a URL, and the package's own
     // name in the fetched manifest is what the build then imports.
@@ -97,9 +112,12 @@ static ZIG: DepsSupport = DepsSupport {
     fetch_after_add: None,
     runs_untrusted_code: false,
     input_hint: "package URL, e.g. git+https://github.com/user/repo",
+    parse: parse_build_zon,
+    edit_out: Some(zon_without),
+    remove_argument: same_name,
 };
 
-static PY: DepsSupport = DepsSupport {
+pub static PY: DepsSupport = DepsSupport {
     manifest: "pyproject.toml",
     // uv resolves, locks and installs into the workspace's own .venv.
     add: &["uv", "add"],
@@ -109,17 +127,13 @@ static PY: DepsSupport = DepsSupport {
     // Building a wheel from source runs the package's build backend.
     runs_untrusted_code: true,
     input_hint: "package name, optionally name==version",
+    parse: parse_pyproject,
+    edit_out: None,
+    remove_argument: same_name,
 };
 
 pub fn parse_manifest(language: Language, text: &str) -> Vec<Dependency> {
-    match language {
-        Language::Rust => parse_cargo_toml(text),
-        Language::Go => parse_go_mod(text),
-        Language::Ts => parse_package_json(text),
-        Language::Zig => parse_build_zon(text),
-        Language::Py => parse_pyproject(text),
-        _ => Vec::new(),
-    }
+    support(language).map_or_else(Vec::new, |deps| (deps.parse)(text))
 }
 
 /// The `dependencies` array of a pyproject's `[project]` table, as uv
@@ -236,9 +250,12 @@ fn parse_build_zon(text: &str) -> Vec<Dependency> {
 /// Removes one dependency from a build.zig.zon, returning the new text.
 /// Used where the toolchain offers no remove command.
 pub fn manifest_without(language: Language, text: &str, name: &str) -> Option<String> {
-    if language != Language::Zig {
-        return None;
-    }
+    let edit = support(language).and_then(|deps| deps.edit_out)?;
+    edit(text, name)
+}
+
+/// Drops one `.name = .{ … }` block from a build.zig.zon.
+fn zon_without(text: &str, name: &str) -> Option<String> {
     let opener = format!(".{name} = .{{");
     let mut out = String::with_capacity(text.len());
     let mut skipping = false;

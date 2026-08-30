@@ -17,11 +17,11 @@ use crate::protocol::{
 use crate::domain::session::{Session, SessionSettings, Snapshot};
 use crate::exec::supervisor::{self, ProcessLimits, RunOptions, StreamCallbacks};
 
-use super::{
+use crate::languages::runtime::{
     cancelled_outcome, reset_generated, Events, InstrumentationOutput, ProbeForwarder,
     RunnerEvent, RunnerOutcome, TerminalState,
 };
-use super::zig_diag::{discover_tests, match_runner_name, parse_compiler_diagnostics};
+use crate::languages::zig::diagnostics::{discover_tests, match_runner_name, parse_compiler_diagnostics};
 
 fn instrument_error(path: &str, message: &str) -> AppDiagnostic {
     AppDiagnostic {

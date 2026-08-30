@@ -16,11 +16,11 @@ use crate::protocol::{
 use crate::domain::session::{Session, SessionSettings, Snapshot};
 use crate::exec::supervisor::{self, ProcessLimits, RunOptions, StreamCallbacks};
 
-use super::common::{
+use crate::languages::common::{
     classify_execution, dedupe_diagnostics, execute_program, instrument_files, truncate_chars,
     ExecuteConfig, InstrumentConfig,
 };
-use super::{cancelled_outcome, reset_generated, Events, RunnerEvent, RunnerOutcome, TerminalState};
+use crate::languages::runtime::{cancelled_outcome, reset_generated, Events, RunnerEvent, RunnerOutcome, TerminalState};
 
 const COMPILE_TIMEOUT_MS: u64 = 60_000;
 

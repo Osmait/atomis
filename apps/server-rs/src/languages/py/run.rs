@@ -15,11 +15,11 @@ use crate::protocol::{
 use crate::domain::session::{Session, SessionSettings, Snapshot};
 use crate::exec::supervisor::{self, ProcessLimits, RunOptions, StreamCallbacks};
 
-use super::common::{
+use crate::languages::common::{
     classify_execution, execute_program, instrument_files, truncate_chars, ExecuteConfig,
     InstrumentConfig,
 };
-use super::{cancelled_outcome, reset_generated, Events, RunnerEvent, RunnerOutcome, TerminalState};
+use crate::languages::runtime::{cancelled_outcome, reset_generated, Events, RunnerEvent, RunnerOutcome, TerminalState};
 
 pub fn is_py_test_file(path: &str) -> bool {
     let name = path.rsplit('/').next().unwrap_or(path);
