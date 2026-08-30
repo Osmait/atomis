@@ -1,4 +1,4 @@
-import type { Monaco, OnMount } from "@monaco-editor/react";
+import type { Monaco } from "@monaco-editor/react";
 import { EditorPane } from "../features/editor/EditorPane.js";
 import React, {
 	useCallback,
@@ -11,7 +11,6 @@ import { createPortal } from "react-dom";
 import type {
 	CreateSessionResponse,
 	Language,
-	ProbeDescriptor,
 } from "@atomis/protocol";
 import type * as MonacoApi from "monaco-editor";
 import { CommandPalette } from "./CommandPalette.js";
@@ -26,10 +25,7 @@ import { StatusBar, ZenPill } from "./StatusBar.js";
 import type { TerminalTab } from "../features/terminal/Terminal.js";
 import { TerminalPane } from "../features/terminal/TerminalPane.js";
 import { WorkspacePicker } from "../features/workspaces/WorkspacePicker.js";
-import {
-	installVimExtensions,
-	updateVimAppCommands,
-} from "../features/editor/vimExtensions.js";
+import { updateVimAppCommands } from "../features/editor/vimExtensions.js";
 import { useDismissable } from "../shared/ui/useDismissable.js";
 import { useEditorDecorations } from "../features/editor/useEditorDecorations.js";
 import { useGlobalShortcuts } from "./useGlobalShortcuts.js";
@@ -70,7 +66,7 @@ import {
 	zenStatusLabel,
 	zenTone,
 } from "../shared/lib/runSummary.js";
-import { toggleProbe, type InlineValue } from "../shared/lib/runtimeState.js";
+import { type InlineValue } from "../shared/lib/runtimeState.js";
 import {
 	CHROME_KEY,
 	loadChrome,
@@ -83,7 +79,11 @@ import { fontStack } from "../shared/lib/fonts.js";
 import { useRuntimeSocket } from "../features/runtime/useRuntimeSocket.js";
 
 import { useAppearance } from "../features/settings/useAppearance.js";
+import { settingsToggles } from "../features/settings/toggles.js";
 import { useVim } from "../features/editor/useVim.js";
+import { useEditorMount } from "../features/editor/useEditorMount.js";
+import { useEditorClipboard } from "../features/editor/useEditorClipboard.js";
+import { useSourceNavigation } from "../features/editor/useSourceNavigation.js";
 import { useWorkspaces } from "../features/workspaces/useWorkspaces.js";
 import { useSessionLifecycle } from "../features/session/useSessionLifecycle.js";
 import {
@@ -98,7 +98,6 @@ import {
 	loadValueFmt,
 	loadVimMode,
 	saveEntrySource,
-	saveInlineLogs,
 	saveLayout,
 	saveScaffold,
 	saveSettings,
@@ -530,233 +529,45 @@ export function App(): React.JSX.Element {
 		return () => clearTimeout(timer);
 	}, [activePath, session, run]);
 
-	const copyFromEditor = useCallback(async (): Promise<void> => {
-		setEditorContextMenu(undefined);
-		const editor = editorRef.current;
-		const model = editor?.getModel();
-		const selection = editor?.getSelection();
-		if (!editor || !model || !selection) return;
-		const text = selection.isEmpty()
-			? model.getLineContent(selection.startLineNumber)
-			: model.getValueInRange(selection);
-		try {
-			await navigator.clipboard.writeText(text);
-		} catch (error) {
-			setStatus(
-				`Copy failed: ${error instanceof Error ? error.message : String(error)}`,
-			);
-		}
-		editor.focus();
-	}, []);
+	const { copyFromEditor, pasteIntoEditor } = useEditorClipboard({
+		editorRef,
+		setEditorContextMenu,
+		setStatus,
+	});
 
-	const pasteIntoEditor = useCallback(async (): Promise<void> => {
-		setEditorContextMenu(undefined);
-		const editor = editorRef.current;
-		if (!editor) return;
-		editor.focus();
-		const selection = editor.getSelection();
-		if (!selection) return;
-		try {
-			const text = await navigator.clipboard.readText();
-			editor.executeEdits("atomis.clipboard", [
-				{ range: selection, text, forceMoveMarkers: true },
-			]);
-		} catch (error) {
-			setStatus(
-				`Paste failed: ${error instanceof Error ? error.message : String(error)}`,
-			);
-		}
-		editor.focus();
-	}, []);
+	const { highlightLogSource, onEntryClick, jumpToLine } = useSourceNavigation({
+		editorRef,
+		activePathRef,
+		entryRef,
+		logSourceDecorationsRef,
+		pinnedLogLocationRef,
+		selectFile,
+	});
 
-	const highlightLogSource = useCallback(
-		(location?: LogSourceLocation, reveal = false): void => {
-			const editor = editorRef.current;
-			const decorations = logSourceDecorationsRef.current;
-			const model = editor?.getModel();
-			if (!editor || !decorations || !model) return;
-			if (
-				!location ||
-				(location.path && location.path !== `src/${activePathRef.current}`) ||
-				location.line > model.getLineCount()
-			) {
-				decorations.clear();
-				return;
-			}
-			const ranges: MonacoApi.editor.IModelDeltaDecoration[] = [
-				{
-					range: {
-						startLineNumber: location.line,
-						startColumn: 1,
-						endLineNumber: location.line,
-						endColumn: model.getLineMaxColumn(location.line),
-					} as MonacoApi.Range,
-					options: {
-						isWholeLine: true,
-						className: "log-source-line",
-						linesDecorationsClassName: "log-source-glyph",
-					},
-				},
-			];
-			if (
-				location.loop &&
-				location.loop.line !== location.line &&
-				location.loop.line <= model.getLineCount()
-			)
-				ranges.push({
-					range: {
-						startLineNumber: location.loop.line,
-						startColumn: 1,
-						endLineNumber: location.loop.line,
-						endColumn: model.getLineMaxColumn(location.loop.line),
-					} as MonacoApi.Range,
-					options: {
-						isWholeLine: true,
-						className: "log-loop-line",
-						linesDecorationsClassName: "log-loop-glyph",
-					},
-				});
-			decorations.set(ranges);
-			if (reveal) {
-				editor.setPosition({
-					lineNumber: location.line,
-					column: location.column,
-				});
-				editor.revealLineInCenter(location.line);
-				editor.focus();
-			}
-		},
-		[activePathRef],
-	);
-
-	const handleMount: OnMount = useCallback(
-		(editor, monaco) => {
-			if (!session) return;
-			editorRef.current = editor;
-			monacoRef.current = monaco;
-			const model = editor.getModel();
-			if (!model) return;
-			// Monaco owns the buffer now; take its value as the truth for the
-			// entry file. This used to write the ref alone, leaving the state
-			// the editor renders from behind it.
-			setProjectFiles((previous) =>
-				previous.map((file) =>
-					file.path === entryRef.current
-						? { ...file, source: model.getValue() }
-						: file,
-				),
-			);
-			decorationsRef.current = editor.createDecorationsCollection();
-			errorLensDecorationsRef.current = editor.createDecorationsCollection();
-			logSourceDecorationsRef.current = editor.createDecorationsCollection();
-			testLensDecorationsRef.current = editor.createDecorationsCollection();
-			inlineLogDecorationsRef.current = editor.createDecorationsCollection();
-			setCursorPosition({
-				line: editor.getPosition()?.lineNumber ?? 1,
-				column: editor.getPosition()?.column ?? 1,
-			});
-			editor.onDidChangeCursorPosition(({ position: nextPosition }) =>
-				setCursorPosition({
-					line: nextPosition.lineNumber,
-					column: nextPosition.column,
-				}),
-			);
-
-			openInLsp(activePathRef.current, model);
-
-			editor.onKeyDown((event) => {
-				if (
-					(event.ctrlKey || event.metaKey) &&
-					event.keyCode === monaco.KeyCode.Enter
-				) {
-					event.preventDefault();
-					event.stopPropagation();
-					run();
-				}
-			});
-			const editorNode = editor.getContainerDomNode();
-			const showContextMenu = (event: MouseEvent): void => {
-				event.preventDefault();
-				event.stopPropagation();
-				setEditorContextMenu({
-					x: Math.min(event.clientX, window.innerWidth - 170),
-					y: Math.min(event.clientY, window.innerHeight - 90),
-				});
-			};
-			editorNode.addEventListener("contextmenu", showContextMenu, true);
-			editor.onDidDispose(() =>
-				editorNode.removeEventListener("contextmenu", showContextMenu, true),
-			);
-			setupVimKeys(run);
-			installVimExtensions();
-			attachVim();
-			editor.onDidFocusEditorText(() => setFocusZone("editor"));
-			editor.onMouseDown((mouse) => {
-				const element = mouse.target.element as HTMLElement | null;
-				if (
-					element?.classList?.contains("inline-value") &&
-					mouse.target.position
-				) {
-					const line = mouse.target.position.lineNumber;
-					const clicked = catalogRef.current.find(
-						(candidate) =>
-							candidate.supported &&
-							candidate.originalRange.startLine === line &&
-							((candidate as ProbeDescriptor & { path?: string }).path ??
-								`src/${entryRef.current}`) ===
-								`src/${activePathRef.current}`,
-					);
-					if (clicked) {
-						setPeek((previous) =>
-							previous?.probeId === clicked.probeId
-								? null
-								: { path: activePathRef.current, probeId: clicked.probeId },
-						);
-						return;
-					}
-				}
-				if (
-					mouse.target.type !==
-						monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN ||
-					!mouse.target.position
-				)
-					return;
-				const probe = catalogRef.current.find(
-					(candidate) =>
-						candidate.supported &&
-						candidate.originalRange.startLine ===
-							mouse.target.position?.lineNumber,
-				);
-				if (!probe) return;
-				const next = {
-					...settingsRef.current,
-					manualProbeIds: toggleProbe(
-						settingsRef.current.manualProbeIds,
-						probe.probeId,
-					),
-				};
-				sendSettings(next);
-				setTimeout(run, 0);
-			});
-
-			// Nothing else claims the caret on load, so the window opens with
-			// no place to type. The editor is what you came for.
-			editor.focus();
-		},
-		[
-			activePathRef,
-			attachVim,
-			catalogRef,
-			setFocusZone,
-			openInLsp,
-			run,
-			sendSettings,
-			session,
-			setPeek,
-			setProjectFiles,
-			setupVimKeys,
-		],
-	);
+	const handleMount = useEditorMount({
+		session,
+		editorRef,
+		monacoRef,
+		entryRef,
+		activePathRef,
+		catalogRef,
+		settingsRef,
+		decorationsRef,
+		errorLensDecorationsRef,
+		logSourceDecorationsRef,
+		testLensDecorationsRef,
+		inlineLogDecorationsRef,
+		setProjectFiles,
+		setCursorPosition,
+		setEditorContextMenu,
+		setPeek,
+		setFocusZone,
+		openInLsp,
+		setupVimKeys,
+		attachVim,
+		sendSettings,
+		run,
+	});
 
 	useEffect(() => {
 		updateVimAppCommands({
@@ -997,30 +808,7 @@ export function App(): React.JSX.Element {
 		return () => clearTimeout(timer);
 	}, [sendRuntime, session]);
 
-	const onEntryClick = useCallback(
-		(location: LogSourceLocation): void => {
-			const path = (location.path ?? `src/${entryRef.current}`).replace(
-				/^src\//,
-				"",
-			);
-			selectFile(path);
-			pinnedLogLocationRef.current = location;
-			setTimeout(() => highlightLogSource(location, true), 0);
-		},
-		[highlightLogSource, selectFile],
-	);
 
-	const jumpToLine = useCallback(
-		(path: string, line: number, column: number): void => {
-			selectFile(path.replace(/^src\//, ""));
-			setTimeout(() => {
-				editorRef.current?.setPosition({ lineNumber: line, column });
-				editorRef.current?.revealLineInCenter(line);
-				editorRef.current?.focus();
-			}, 0);
-		},
-		[selectFile],
-	);
 
 	if (startupError)
 		return (
@@ -1389,105 +1177,25 @@ export function App(): React.JSX.Element {
 					onLeader={(leader) => updateAppearance({ leader })}
 					fontSize={appearance.fontSize}
 					theme={appearance.theme}
-					toggles={[
-						{
-							label: "Auto Run",
-							group: "run",
-							hint: "runs when you stop typing",
-							on: settings.autoRun,
-							disabled: runDisabled,
-							act: toggleAutoRun,
-						},
-						{
-							label: "Auto Inspect",
-							group: "run",
-							hint: "inline values",
-							on: settings.autoInspect,
-							act: () => {
-								sendSettings({
-									...settings,
-									autoInspect: !settings.autoInspect,
-								});
-								setTimeout(run, 0);
-							},
-						},
-						{
-							label: "Inline logs",
-							group: "editor",
-							hint: "log output next to its line",
-							on: inlineLogs,
-							act: () => {
-								setInlineLogs((previous) => {
-									saveInlineLogs(!previous);
-									return !previous;
-								});
-							},
-						},
-						{
-							label: "Sandbox",
-							group: "run",
-							hint: sandboxHint,
-							on: settings.sandbox,
-							disabled: !sandboxAvailable,
-							act: () =>
-								sendSettings({
-									...settings,
-									sandbox: !settings.sandbox,
-								}),
-						},
-						{
-							label: "Allow network",
-							group: "run",
-							hint: networkHint,
-							on: settings.network,
-							disabled: !settings.sandbox && sandboxAvailable,
-							act: () =>
-								sendSettings({
-									...settings,
-									network: !settings.network,
-								}),
-						},
-						{
-							label: "Vim Mode",
-							group: "editor",
-							hint: "",
-							on: vimEnabled,
-							act: () => changeVimMode(!vimEnabled),
-						},
-						{
-							label: "Toolbar",
-							group: "appearance",
-							hint: "tabs, auto, settings and Run",
-							on: chrome.toolbar,
-							act: () => updateChrome({ toolbar: !chrome.toolbar }),
-						},
-						{
-							label: "Status bar",
-							group: "appearance",
-							hint: "mode, workspace and cursor along the bottom",
-							on: chrome.statusBar,
-							act: () => updateChrome({ statusBar: !chrome.statusBar }),
-						},
-						{
-							label: "Hide tabs for one file",
-							group: "appearance",
-							hint: "the strip appears once a second file opens",
-							on: chrome.hideSingleTab,
-							disabled: !chrome.toolbar,
-							act: () =>
-								updateChrome({ hideSingleTab: !chrome.hideSingleTab }),
-						},
-						{
-							label: "Zen Mode",
-							group: "appearance",
-							hint: "⌘.",
-							on: zen,
-							act: () => {
-								setSettingsOpen(false);
-								toggleZen();
-							},
-						},
-					]}
+					toggles={settingsToggles({
+						settings,
+						sendSettings,
+						run,
+						runDisabled,
+						toggleAutoRun,
+						inlineLogs,
+						setInlineLogs,
+						chrome,
+						updateChrome,
+						vimEnabled,
+						changeVimMode,
+						zen,
+						toggleZen,
+						setSettingsOpen,
+						sandboxAvailable,
+						sandboxHint,
+						networkHint,
+					})}
 					valueFmt={valueFmt}
 				/>
 			)}

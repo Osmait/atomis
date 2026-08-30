@@ -1,0 +1,220 @@
+import { useCallback } from "react";
+import type { OnMount } from "@monaco-editor/react";
+import type * as MonacoApi from "monaco-editor";
+import type { Monaco } from "@monaco-editor/react";
+import type { CreateSessionResponse, ProbeDescriptor } from "@atomis/protocol";
+import type { ProjectFile } from "../../shared/types.js";
+import type { Settings } from "../../shared/stores/settings.js";
+import { toggleProbe } from "../../shared/lib/runtimeState.js";
+import { installVimExtensions } from "./vimExtensions.js";
+
+/** What the editor needs on the way up, and who to tell once it is. */
+export interface EditorMountDeps {
+	session: CreateSessionResponse | undefined;
+	editorRef: React.RefObject<MonacoApi.editor.IStandaloneCodeEditor | undefined>;
+	monacoRef: React.RefObject<Monaco | undefined>;
+	entryRef: React.RefObject<string>;
+	activePathRef: React.RefObject<string>;
+	catalogRef: React.RefObject<ProbeDescriptor[]>;
+	settingsRef: React.RefObject<Settings>;
+	decorationsRef: React.RefObject<
+		MonacoApi.editor.IEditorDecorationsCollection | undefined
+	>;
+	errorLensDecorationsRef: React.RefObject<
+		MonacoApi.editor.IEditorDecorationsCollection | undefined
+	>;
+	logSourceDecorationsRef: React.RefObject<
+		MonacoApi.editor.IEditorDecorationsCollection | undefined
+	>;
+	testLensDecorationsRef: React.RefObject<
+		MonacoApi.editor.IEditorDecorationsCollection | undefined
+	>;
+	inlineLogDecorationsRef: React.RefObject<
+		MonacoApi.editor.IEditorDecorationsCollection | undefined
+	>;
+	setProjectFiles: (update: (previous: ProjectFile[]) => ProjectFile[]) => void;
+	setCursorPosition: (position: { line: number; column: number }) => void;
+	setEditorContextMenu: (menu: { x: number; y: number } | undefined) => void;
+	setPeek: (
+		update: (
+			previous: { path: string; probeId: string } | null | undefined,
+		) => { path: string; probeId: string } | null,
+	) => void;
+	setFocusZone: (zone: "editor") => void;
+	openInLsp: (path: string, model: MonacoApi.editor.ITextModel) => void;
+	setupVimKeys: (run: () => void) => void;
+	attachVim: () => void;
+	sendSettings: (next: Settings) => void;
+	run: () => void;
+}
+
+/**
+ * Everything that happens the moment Monaco exists: collections to draw on,
+ * the caret, the keys, the context menu, vim, and the click targets that turn
+ * a gutter into a probe. It runs once per editor and reads the world through
+ * refs, which is why it lives away from the component that owns them.
+ */
+export function useEditorMount({
+	session,
+	editorRef,
+	monacoRef,
+	entryRef,
+	activePathRef,
+	catalogRef,
+	settingsRef,
+	decorationsRef,
+	errorLensDecorationsRef,
+	logSourceDecorationsRef,
+	testLensDecorationsRef,
+	inlineLogDecorationsRef,
+	setProjectFiles,
+	setCursorPosition,
+	setEditorContextMenu,
+	setPeek,
+	setFocusZone,
+	openInLsp,
+	setupVimKeys,
+	attachVim,
+	sendSettings,
+	run,
+}: EditorMountDeps): OnMount {
+	return useCallback<OnMount>(
+	(editor, monaco) => {
+		if (!session) return;
+		editorRef.current = editor;
+		monacoRef.current = monaco;
+		const model = editor.getModel();
+		if (!model) return;
+		// Monaco owns the buffer now; take its value as the truth for the
+		// entry file. This used to write the ref alone, leaving the state
+		// the editor renders from behind it.
+		setProjectFiles((previous) =>
+			previous.map((file) =>
+				file.path === entryRef.current
+					? { ...file, source: model.getValue() }
+					: file,
+			),
+		);
+		decorationsRef.current = editor.createDecorationsCollection();
+		errorLensDecorationsRef.current = editor.createDecorationsCollection();
+		logSourceDecorationsRef.current = editor.createDecorationsCollection();
+		testLensDecorationsRef.current = editor.createDecorationsCollection();
+		inlineLogDecorationsRef.current = editor.createDecorationsCollection();
+		setCursorPosition({
+			line: editor.getPosition()?.lineNumber ?? 1,
+			column: editor.getPosition()?.column ?? 1,
+		});
+		editor.onDidChangeCursorPosition(({ position: nextPosition }) =>
+			setCursorPosition({
+				line: nextPosition.lineNumber,
+				column: nextPosition.column,
+			}),
+		);
+
+		openInLsp(activePathRef.current, model);
+
+		editor.onKeyDown((event) => {
+			if (
+				(event.ctrlKey || event.metaKey) &&
+				event.keyCode === monaco.KeyCode.Enter
+			) {
+				event.preventDefault();
+				event.stopPropagation();
+				run();
+			}
+		});
+		const editorNode = editor.getContainerDomNode();
+		const showContextMenu = (event: MouseEvent): void => {
+			event.preventDefault();
+			event.stopPropagation();
+			setEditorContextMenu({
+				x: Math.min(event.clientX, window.innerWidth - 170),
+				y: Math.min(event.clientY, window.innerHeight - 90),
+			});
+		};
+		editorNode.addEventListener("contextmenu", showContextMenu, true);
+		editor.onDidDispose(() =>
+			editorNode.removeEventListener("contextmenu", showContextMenu, true),
+		);
+		setupVimKeys(run);
+		installVimExtensions();
+		attachVim();
+		editor.onDidFocusEditorText(() => setFocusZone("editor"));
+		editor.onMouseDown((mouse) => {
+			const element = mouse.target.element as HTMLElement | null;
+			if (
+				element?.classList?.contains("inline-value") &&
+				mouse.target.position
+			) {
+				const line = mouse.target.position.lineNumber;
+				const clicked = catalogRef.current.find(
+					(candidate) =>
+						candidate.supported &&
+						candidate.originalRange.startLine === line &&
+						((candidate as ProbeDescriptor & { path?: string }).path ??
+							`src/${entryRef.current}`) ===
+							`src/${activePathRef.current}`,
+				);
+				if (clicked) {
+					setPeek((previous) =>
+						previous?.probeId === clicked.probeId
+							? null
+							: { path: activePathRef.current, probeId: clicked.probeId },
+					);
+					return;
+				}
+			}
+			if (
+				mouse.target.type !==
+					monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN ||
+				!mouse.target.position
+			)
+				return;
+			const probe = catalogRef.current.find(
+				(candidate) =>
+					candidate.supported &&
+					candidate.originalRange.startLine ===
+						mouse.target.position?.lineNumber,
+			);
+			if (!probe) return;
+			const next = {
+				...settingsRef.current,
+				manualProbeIds: toggleProbe(
+					settingsRef.current.manualProbeIds,
+					probe.probeId,
+				),
+			};
+			sendSettings(next);
+			setTimeout(run, 0);
+		});
+
+		// Nothing else claims the caret on load, so the window opens with
+		// no place to type. The editor is what you came for.
+		editor.focus();
+	},
+		[
+			activePathRef,
+			attachVim,
+			catalogRef,
+			decorationsRef,
+			entryRef,
+			errorLensDecorationsRef,
+			editorRef,
+			inlineLogDecorationsRef,
+			logSourceDecorationsRef,
+			monacoRef,
+			setFocusZone,
+			openInLsp,
+			run,
+			sendSettings,
+			session,
+			setCursorPosition,
+			setEditorContextMenu,
+			setPeek,
+			setProjectFiles,
+			settingsRef,
+			setupVimKeys,
+			testLensDecorationsRef,
+		],
+	);
+}

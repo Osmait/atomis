@@ -1,10 +1,10 @@
 {
-  "takenAt": "2026-08-30T23:01:06.499Z",
-  "commit": "f54b12d",
+  "takenAt": "2026-08-30T23:32:40.315Z",
+  "commit": "5b7c594",
   "totals": {
-    "files": 182,
-    "lines": 35542,
-    "productionLines": 28969,
+    "files": 197,
+    "lines": 38849,
+    "productionLines": 32276,
     "testLines": 6573,
     "filesOver500Lines": 12
   },
@@ -16,9 +16,9 @@
       "testLines": 1220
     },
     "web (react)": {
-      "files": 96,
-      "lines": 14877,
-      "productionLines": 12159,
+      "files": 108,
+      "lines": 17651,
+      "productionLines": 14933,
       "testLines": 2718
     },
     "protocol": {
@@ -40,16 +40,16 @@
       "testLines": 1980
     },
     "scripts": {
-      "files": 7,
-      "lines": 318,
-      "productionLines": 318,
+      "files": 10,
+      "lines": 846,
+      "productionLines": 846,
       "testLines": 0
     }
   },
   "largest": [
     {
       "path": "apps/web/src/app/App.tsx",
-      "lines": 1541
+      "lines": 1249
     },
     {
       "path": "apps/server-rs/src/protocol.rs",

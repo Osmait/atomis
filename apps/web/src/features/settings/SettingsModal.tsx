@@ -21,7 +21,7 @@ import { paletteOf, type AppTheme, type Palette } from "../../shared/lib/themes.
 /** Which tab a behaviour toggle belongs to. */
 export type ToggleGroup = "run" | "editor" | "appearance";
 
-interface Toggle {
+export interface Toggle {
 	label: string;
 	hint: string;
 	group: ToggleGroup;
