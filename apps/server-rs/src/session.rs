@@ -76,6 +76,10 @@ pub struct Session {
     pub probes: Mutex<Vec<ProbeDescriptor>>,
     pub support: HashMap<Language, LanguageSupport>,
     pub runtime_connected: AtomicBool,
+    /// Bumped every time a runtime socket attaches. A disconnect schedules
+    /// the teardown against the value it saw, so a session that has been
+    /// picked up again in the meantime is left alone.
+    pub attach_generation: std::sync::atomic::AtomicU64,
     /// Allowlist handed to every child process while the sandbox is on.
     pub sandbox_policy: std::sync::Arc<crate::sandbox::SandboxPolicy>,
     /// Set when the session is attached to a persistent workspace, whose
@@ -558,6 +562,7 @@ impl SessionManager {
             probes: Mutex::new(Vec::new()),
             support,
             runtime_connected: AtomicBool::new(false),
+            attach_generation: std::sync::atomic::AtomicU64::new(0),
             sandbox_policy,
             workspace_id: workspace.clone(),
         });

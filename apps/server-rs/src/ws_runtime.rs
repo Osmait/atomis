@@ -27,6 +27,10 @@ fn run_disabled_message(language: Language) -> String {
     }
 }
 
+/// How long a session outlives its socket, so a sleeping tablet or a network
+/// blip can pick it back up instead of losing the workspace.
+const RECONNECT_GRACE: std::time::Duration = std::time::Duration::from_secs(120);
+
 pub async fn handle_runtime(state: Arc<AppState>, session: Arc<Session>, socket: WebSocket) {
     if session
         .runtime_connected
@@ -41,6 +45,8 @@ pub async fn handle_runtime(state: Arc<AppState>, session: Arc<Session>, socket:
             .await;
         return;
     }
+
+    let generation = session.attach_generation.fetch_add(1, Ordering::SeqCst) + 1;
 
     let (outbox_tx, mut outbox_rx) = tokio::sync::mpsc::unbounded_channel::<ServerEvent>();
     let scheduler = RunScheduler::new(Arc::clone(&session), outbox_tx.clone());
@@ -167,10 +173,24 @@ pub async fn handle_runtime(state: Arc<AppState>, session: Arc<Session>, socket:
     writer.abort();
     session.runtime_connected.store(false, Ordering::SeqCst);
     state.lsp_registry.close_session(&session.id).await;
+
+    // A scratch session's directory is deleted with it, so a dropped
+    // connection used to cost the user their files — and a tablet drops one
+    // every time its screen locks. Wait, and only tear down if nothing has
+    // attached since: `attach_generation` still reading what this connection
+    // saw means nobody came back for it.
     let state_for_destroy = Arc::clone(&state);
+    let session_for_destroy = Arc::clone(&session);
     let session_id = session.id.clone();
     tokio::spawn(async move {
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        tokio::time::sleep(RECONNECT_GRACE).await;
+        if session_for_destroy
+            .attach_generation
+            .load(Ordering::SeqCst)
+            != generation
+        {
+            return;
+        }
         state_for_destroy.sessions.destroy(&session_id).await;
     });
 }

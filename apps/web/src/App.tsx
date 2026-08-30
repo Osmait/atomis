@@ -96,6 +96,9 @@ import {
 import { subscribeToPreferences } from "./state/storage.js";
 import { cssVariables, paletteOf, type AppTheme } from "./state/themes.js";
 import { fontStack } from "./state/fonts.js";
+
+/** Longest gap between reconnection attempts. */
+const MAX_RETRY_MS = 10_000;
 import { defineEditorThemes } from "./editor/theme.js";
 import {
 	INLINE_LOGS_KEY,
@@ -190,6 +193,12 @@ export function App(): React.JSX.Element {
 	const [switching, setSwitching] = useState(false);
 	const [workspaceError, setWorkspaceError] = useState<string>();
 	const [vimModeLabel, setVimModeLabel] = useState("NORMAL");
+	/** Bumped to re-run the runtime socket effect after a drop. */
+	const [reconnect, setReconnect] = useState(0);
+	const retryRef = useRef(0);
+	const retryTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
+		undefined,
+	);
 
 	// Settings changed on another device arrive over the runtime socket and
 	// land in the shared store; re-read through the same loaders so what
@@ -869,6 +878,9 @@ export function App(): React.JSX.Element {
 		const socket = new WebSocket(websocketUrl("/ws/runtime", session));
 		runtimeRef.current = socket;
 		socket.addEventListener("open", () => {
+			const reattached = retryRef.current > 0;
+			retryRef.current = 0;
+			if (reattached) setStatus("Runtime reconnected");
 			sendRuntime({
 				type: "settings.update",
 				sessionId: session.sessionId,
@@ -877,12 +889,17 @@ export function App(): React.JSX.Element {
 			const mainSource =
 				filesRef.current.find((file) => file.path === entryRef.current)
 					?.source ?? session.initialSource;
-			if (mainSource !== session.initialSource) {
-				versionRef.current = 2;
+			// On a first connect the server is at version 1 with the initial
+			// source; on a reattach it may have missed edits made while the
+			// socket was down, so push what is on screen either way. The
+			// version only ever moves forward, so the server accepts it.
+			if (reattached || mainSource !== session.initialSource) {
+				const version = Math.max(versionRef.current + 1, 2);
+				versionRef.current = version;
 				sendRuntime({
 					type: "document.update",
 					sessionId: session.sessionId,
-					version: 2,
+					version,
 					path: entryRef.current,
 					source: mainSource,
 				});
@@ -897,14 +914,37 @@ export function App(): React.JSX.Element {
 				);
 			}
 		});
-		socket.addEventListener("close", () => setStatus("Runtime disconnected"));
+		socket.addEventListener("close", () => {
+			// Only the socket this effect still owns may schedule a retry: one
+			// closed by the cleanup below belongs to a session we have left.
+			if (runtimeRef.current !== socket) return;
+			runtimeRef.current = undefined;
+			// The language servers went down with the session's socket, so the
+			// cached clients are talking to nothing. Drop them; ensureLspClient
+			// builds new ones once we are back.
+			for (const client of Object.values(lspClientsRef.current))
+				client?.dispose();
+			lspClientsRef.current = {};
+
+			const attempt = (retryRef.current += 1);
+			const delay = Math.min(1000 * 2 ** (attempt - 1), MAX_RETRY_MS);
+			setStatus(
+				`Runtime disconnected — reconnecting in ${Math.round(delay / 1000)}s (attempt ${attempt})`,
+			);
+			retryTimerRef.current = setTimeout(
+				() => setReconnect((previous) => previous + 1),
+				delay,
+			);
+		});
 		return () => {
 			// Closing here stops the old session's events from reaching the
 			// new one; the server tears its side down on disconnect.
-			socket.close();
 			if (runtimeRef.current === socket) runtimeRef.current = undefined;
+			socket.close();
+			if (retryTimerRef.current !== undefined)
+				clearTimeout(retryTimerRef.current);
 		};
-	}, [handleRuntimeEvent, sendRuntime, session]);
+	}, [handleRuntimeEvent, reconnect, sendRuntime, session]);
 
 	// Monaco models are keyed by absolute session paths, so the previous
 	// workspace's models would linger after a switch. Drop anything that is
