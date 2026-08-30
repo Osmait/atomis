@@ -7,15 +7,8 @@
 //! ones; anything exotic simply does not show up in the list, it is never
 //! misread as something else.
 
+pub use crate::protocol::Dependency;
 use crate::protocol::Language;
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Dependency {
-    pub name: String,
-    /// Version as declared; empty when the manifest does not pin one.
-    pub version: String,
-}
 
 /// How one language adds, removes and records dependencies.
 pub struct DepsSupport {

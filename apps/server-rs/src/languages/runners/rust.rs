@@ -9,13 +9,13 @@ use regex::Regex;
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
-use crate::packs;
+use crate::languages::packs;
 use crate::protocol::{
     AppDiagnostic, Language, OutputCategory, RunResult, RunState, Severity, Stream, TestCase,
     TestStatus,
 };
-use crate::session::{Session, SessionSettings, Snapshot};
-use crate::supervisor::{self, ProcessLimits, RunOptions, StreamCallbacks};
+use crate::domain::session::{Session, SessionSettings, Snapshot};
+use crate::exec::supervisor::{self, ProcessLimits, RunOptions, StreamCallbacks};
 
 use super::common::{
     classify_execution, dedupe_diagnostics, execute_program, instrument_files, truncate_chars,

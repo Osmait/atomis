@@ -6,367 +6,24 @@ use std::net::SocketAddr;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-use axum::extract::ws::WebSocketUpgrade;
-use axum::extract::{Path, Query, State};
-use axum::http::{HeaderMap, StatusCode};
-use axum::response::{IntoResponse, Json, Response};
 use axum::routing::{get, post};
 use axum::Router;
-use serde_json::json;
 
-mod deps;
-mod doctor;
-mod markers;
-mod ndjson;
-mod packs;
-mod preferences;
+mod domain;
+mod http;
+mod exec;
+mod languages;
 mod protocol;
-mod runners;
-mod sandbox;
-mod scheduler;
-mod session;
 mod state;
-mod supervisor;
 mod util;
-mod workspace;
-mod ws_lsp;
-mod ws_runtime;
+mod ws;
 
-use protocol::Language;
+use http::routes::{
+    create_session, create_workspace, delete_workspace, doctor_route,
+    get_preferences, health, list_workspaces, put_preferences, rename_workspace,
+    ws_lsp_route, ws_runtime_route,
+};
 use state::AppState;
-
-async fn health() -> Json<serde_json::Value> {
-    Json(json!({ "ok": true, "host": "127.0.0.1" }))
-}
-
-async fn doctor_route() -> Json<serde_json::Value> {
-    Json(json!({ "checks": doctor::run_doctor().await }))
-}
-
-/// Same-origin GETs carry no `Origin` header (browsers only send it for
-/// non-safe methods), so a read-only endpoint accepts its absence — a
-/// cross-site read would carry one and be rejected. Mutations keep using
-/// the strict check.
-fn origin_ok_read(state: &AppState, headers: &HeaderMap) -> bool {
-    match headers.get("origin") {
-        None => true,
-        Some(_) => origin_ok(state, headers),
-    }
-}
-
-fn origin_ok(state: &AppState, headers: &HeaderMap) -> bool {
-    let origin = headers.get("origin").and_then(|v| v.to_str().ok());
-    util::valid_origin(origin, state.port.load(Ordering::SeqCst))
-}
-
-/// The Origin guard says the request came from the page; this says it came
-/// from someone holding the secret. Both must pass, and when no token is
-/// configured this one is a no-op.
-fn token_ok(state: &AppState, headers: &HeaderMap, query_token: Option<&str>) -> bool {
-    util::token_ok(
-        state.access_token.as_deref(),
-        headers.get("authorization").and_then(|v| v.to_str().ok()),
-        query_token,
-    )
-}
-
-fn allowed(state: &AppState, headers: &HeaderMap) -> bool {
-    origin_ok(state, headers) && token_ok(state, headers, None)
-}
-
-fn allowed_read(state: &AppState, headers: &HeaderMap) -> bool {
-    origin_ok_read(state, headers) && token_ok(state, headers, None)
-}
-
-async fn create_session(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-    body: Option<Json<serde_json::Value>>,
-) -> Response {
-    if !allowed(&state, &headers) {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Origin is not allowed" })))
-            .into_response();
-    }
-    let raw = body.map(|Json(value)| value).unwrap_or(json!({}));
-    let request: protocol::CreateSessionRequest = match serde_json::from_value(raw) {
-        Ok(request) => request,
-        Err(_) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({ "error": "Invalid session request" })),
-            )
-                .into_response()
-        }
-    };
-    match state
-        .sessions
-        .create(
-            request.language.unwrap_or(Language::Zig),
-            request.scaffold.unwrap_or_default(),
-            request.workspace,
-        )
-        .await
-    {
-        Ok(response) => Json(response).into_response(),
-        Err(error) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": error })),
-        )
-            .into_response(),
-    }
-}
-
-#[derive(serde::Deserialize)]
-struct CreateWorkspaceRequest {
-    name: Option<String>,
-    language: Option<Language>,
-    scaffold: Option<protocol::WorkspaceScaffold>,
-}
-
-#[derive(serde::Deserialize)]
-struct RenameWorkspaceRequest {
-    name: String,
-}
-
-async fn list_workspaces(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-) -> Response {
-    if !allowed_read(&state, &headers) {
-        return StatusCode::FORBIDDEN.into_response();
-    }
-    Json(json!({ "workspaces": workspace::list().await })).into_response()
-}
-
-/// Creates the directory and scaffolds it by running one throwaway session
-/// against it, so a new workspace is born exactly like a fresh session.
-async fn create_workspace(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-    body: Option<Json<serde_json::Value>>,
-) -> Response {
-    if !allowed(&state, &headers) {
-        return StatusCode::FORBIDDEN.into_response();
-    }
-    let raw = body.map(|Json(value)| value).unwrap_or(json!({}));
-    let Ok(request) = serde_json::from_value::<CreateWorkspaceRequest>(raw) else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": "Invalid workspace request" })),
-        )
-            .into_response();
-    };
-    let Some(name) = workspace::sanitize_name(request.name.as_deref().unwrap_or("")) else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": "A workspace needs a name" })),
-        )
-            .into_response();
-    };
-    let language = request.language.unwrap_or(Language::Zig);
-    let id = util::random_hex(16);
-    let dir = workspaces_dir_for(&id);
-    if let Err(error) = tokio::fs::create_dir_all(&dir).await {
-        return internal(error.to_string());
-    }
-    let now = util::now_ms();
-    let meta = workspace::WorkspaceMeta {
-        id: id.clone(),
-        name,
-        language,
-        created_at: now,
-        updated_at: now,
-    };
-    if let Err(error) = workspace::write_meta(&dir, &meta).await {
-        return internal(error);
-    }
-    // Scaffolding happens on first attach: create a session, then drop it.
-    match state
-        .sessions
-        .create(
-            language,
-            request.scaffold.unwrap_or_default(),
-            Some(id.clone()),
-        )
-        .await
-    {
-        Ok(created) => {
-            state.sessions.destroy(&created.session_id).await;
-            Json(json!({ "workspace": meta })).into_response()
-        }
-        Err(error) => {
-            let _ = tokio::fs::remove_dir_all(&dir).await;
-            internal(error)
-        }
-    }
-}
-
-async fn rename_workspace(
-    State(state): State<Arc<AppState>>,
-    Path(id): Path<String>,
-    headers: HeaderMap,
-    Json(request): Json<RenameWorkspaceRequest>,
-) -> Response {
-    if !allowed(&state, &headers) {
-        return StatusCode::FORBIDDEN.into_response();
-    }
-    match workspace::rename(&id, &request.name).await {
-        Ok(meta) => Json(json!({ "workspace": meta })).into_response(),
-        Err(error) => (StatusCode::BAD_REQUEST, Json(json!({ "error": error }))).into_response(),
-    }
-}
-
-async fn delete_workspace(
-    State(state): State<Arc<AppState>>,
-    Path(id): Path<String>,
-    headers: HeaderMap,
-) -> Response {
-    if !allowed(&state, &headers) {
-        return StatusCode::FORBIDDEN.into_response();
-    }
-    match workspace::delete(&id).await {
-        Ok(()) => StatusCode::NO_CONTENT.into_response(),
-        Err(error) => (StatusCode::BAD_REQUEST, Json(json!({ "error": error }))).into_response(),
-    }
-}
-
-#[derive(serde::Deserialize)]
-struct PreferencesRequest {
-    preferences: preferences::PreferencesPatch,
-}
-
-/// Settings shared by every device that opens this server, so the same
-/// Atomis on a laptop and on a tablet agrees with itself.
-async fn get_preferences(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
-    if !allowed_read(&state, &headers) {
-        return StatusCode::FORBIDDEN.into_response();
-    }
-    Json(json!({ "preferences": preferences::read().await })).into_response()
-}
-
-/// A patch, not a replacement: a device sends only the keys it changed, so
-/// two devices editing different settings never clobber each other.
-async fn put_preferences(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-    body: Option<Json<serde_json::Value>>,
-) -> Response {
-    if !allowed(&state, &headers) {
-        return StatusCode::FORBIDDEN.into_response();
-    }
-    let raw = body.map(|Json(value)| value).unwrap_or(json!({}));
-    let Ok(request) = serde_json::from_value::<PreferencesRequest>(raw) else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": "Invalid preferences request" })),
-        )
-            .into_response();
-    };
-    let patch = request.preferences.clone();
-    match preferences::merge(request.preferences).await {
-        Ok(stored) => {
-            // Only after the write succeeded, and only the keys that moved.
-            // Errs when no tab is listening, which is not a failure.
-            let _ = state.preference_changes.send(patch);
-            Json(json!({ "preferences": stored })).into_response()
-        }
-        Err(error) => (StatusCode::BAD_REQUEST, Json(json!({ "error": error }))).into_response(),
-    }
-}
-
-fn workspaces_dir_for(id: &str) -> std::path::PathBuf {
-    workspace::workspaces_root().join(id)
-}
-
-fn internal(error: String) -> Response {
-    (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        Json(json!({ "error": error })),
-    )
-        .into_response()
-}
-
-#[derive(serde::Deserialize)]
-struct WsQuery {
-    #[serde(rename = "sessionId", default)]
-    session_id: String,
-    #[serde(default)]
-    token: String,
-    /// The server-wide access token, when one is configured.
-    #[serde(rename = "t")]
-    access: Option<String>,
-    #[serde(default)]
-    lang: Option<String>,
-}
-
-async fn ws_runtime_route(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-    Query(query): Query<WsQuery>,
-    upgrade: WebSocketUpgrade,
-) -> Response {
-    if !origin_ok(&state, &headers) || !token_ok(&state, &headers, query.access.as_deref())
-    {
-        return StatusCode::FORBIDDEN.into_response();
-    }
-    let Some(session) = state
-        .sessions
-        .authenticate(&query.session_id, &query.token)
-        .await
-    else {
-        return StatusCode::UNAUTHORIZED.into_response();
-    };
-    upgrade.on_upgrade(move |socket| ws_runtime::handle_runtime(state, session, socket))
-}
-
-async fn ws_lsp_route(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-    Query(query): Query<WsQuery>,
-    upgrade: WebSocketUpgrade,
-) -> Response {
-    if !origin_ok(&state, &headers) || !token_ok(&state, &headers, query.access.as_deref())
-    {
-        return StatusCode::FORBIDDEN.into_response();
-    }
-    let Some(session) = state
-        .sessions
-        .authenticate(&query.session_id, &query.token)
-        .await
-    else {
-        return StatusCode::UNAUTHORIZED.into_response();
-    };
-    let language = query
-        .lang
-        .as_deref()
-        .and_then(Language::parse)
-        .unwrap_or(Language::Zig);
-    if !session
-        .support
-        .get(&language)
-        .is_some_and(|support| support.lsp)
-    {
-        // Mirror the Node close(1011, …): accept the upgrade, close at once.
-        return upgrade.on_upgrade(move |mut socket| async move {
-            let reason = if language == Language::Rust {
-                "rust-analyzer is required"
-            } else {
-                "ZLS 0.16.x is required"
-            };
-            let _ = socket
-                .send(axum::extract::ws::Message::Close(Some(
-                    axum::extract::ws::CloseFrame {
-                        code: 1011,
-                        reason: reason.into(),
-                    },
-                )))
-                .await;
-        });
-    }
-    upgrade.on_upgrade(move |socket| async move {
-        state.lsp_registry.attach(session, language, socket).await;
-    })
-}
 
 /// Resolves when the process that spawned us is gone.
 ///
@@ -397,7 +54,7 @@ async fn parent_gone() {
 async fn main() {
     // `atomis-server --doctor` replaces the old `tsx apps/server/doctor.ts`.
     if std::env::args().any(|argument| argument == "--doctor") {
-        let checks = doctor::run_doctor().await;
+        let checks = languages::doctor::run_doctor().await;
         println!("Atomis doctor\n");
         let mut failed = false;
         for check in &checks {
@@ -455,7 +112,7 @@ async fn main() {
     let production = std::env::var("NODE_ENV").is_ok_and(|v| v == "production");
     let web_dist = std::env::var("ATOMIS_WEB_DIST")
         .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| packs::project_root().join("apps/web/dist"));
+        .unwrap_or_else(|_| languages::packs::project_root().join("apps/web/dist"));
     if production && web_dist.exists() {
         let serve = tower_http::services::ServeDir::new(&web_dist)
             .fallback(tower_http::services::ServeFile::new(web_dist.join("index.html")));

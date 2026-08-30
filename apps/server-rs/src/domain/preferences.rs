@@ -6,7 +6,6 @@
 //! object beside the workspaces. Layout state stays in the browser — a
 //! tablet and a 27" monitor genuinely want different panels open.
 
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use tokio::sync::Mutex;
@@ -20,17 +19,14 @@ const MAX_KEYS: usize = 64;
 const MAX_KEY_BYTES: usize = 128;
 const MAX_VALUE_BYTES: usize = 16 * 1024;
 
-pub type Preferences = BTreeMap<String, String>;
-
-/// A patch entry of `None` deletes the key.
-pub type PreferencesPatch = BTreeMap<String, Option<String>>;
+pub use crate::protocol::{Preferences, PreferencesPatch};
 
 /// Overridable with ATOMIS_PREFERENCES for tests and packaged builds.
 pub fn path() -> PathBuf {
     if let Some(explicit) = std::env::var_os("ATOMIS_PREFERENCES") {
         return PathBuf::from(explicit);
     }
-    crate::workspace::data_root().join(FILE)
+    crate::domain::workspace::data_root().join(FILE)
 }
 
 /// Serializes read-modify-write, so two devices saving at the same moment

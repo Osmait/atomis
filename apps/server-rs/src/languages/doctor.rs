@@ -70,20 +70,20 @@ pub async fn run_doctor() -> Vec<DoctorCheck> {
         help: Some("Install Node 22, then run: corepack enable && pnpm run doctor".to_string()),
     });
 
-    let sandbox = crate::sandbox::detect_support();
+    let sandbox = crate::exec::sandbox::detect_support();
     checks.push(DoctorCheck {
         name: "Sandbox".to_string(),
         // Informational: Atomis runs without it, degraded to "your code has
         // your permissions".
         ok: true,
         detected: match sandbox {
-            crate::sandbox::SandboxSupport::FilesAndNetwork => {
+            crate::exec::sandbox::SandboxSupport::FilesAndNetwork => {
                 "Landlock: workspace-only files, no TCP (UDP not covered)".to_string()
             }
-            crate::sandbox::SandboxSupport::FilesOnly => {
+            crate::exec::sandbox::SandboxSupport::FilesOnly => {
                 "Landlock: workspace-only files (kernel < 6.7: TCP not confined)".to_string()
             }
-            crate::sandbox::SandboxSupport::Unsupported => {
+            crate::exec::sandbox::SandboxSupport::Unsupported => {
                 "unavailable — code runs with your permissions".to_string()
             }
         },
@@ -230,7 +230,7 @@ pub async fn run_doctor() -> Vec<DoctorCheck> {
 
     // Probe descriptor fd 3 through the supervisor's own pipe machinery.
     let probe_result = {
-        use crate::supervisor::{run, ProcessLimits, RunOptions, StreamCallbacks};
+        use crate::exec::supervisor::{run, ProcessLimits, RunOptions, StreamCallbacks};
         use std::sync::{Arc, Mutex};
         let script = directory.join("fd3.sh");
         let _ = tokio::fs::write(&script, "#!/bin/sh\nprintf 'probe\\n' >&3\n").await;

@@ -14,9 +14,9 @@ use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Mutex;
 
-use crate::packs;
+use crate::languages::packs;
 use crate::protocol::Language;
-use crate::session::Session;
+use crate::domain::session::Session;
 
 const MAX_LSP_MESSAGE: usize = 8 * 1024 * 1024;
 
@@ -291,7 +291,7 @@ impl LspProxy {
         let mut builder = tokio::process::Command::new(command);
         // A language server is a system tool too: an inherited bundle path
         // would break it the same way it breaks a compiler.
-        crate::supervisor::scrub_bundle_env(&mut builder);
+        crate::exec::supervisor::scrub_bundle_env(&mut builder);
         builder
             .args(&args)
             .current_dir(&self.session.root)

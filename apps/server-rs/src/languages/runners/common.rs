@@ -6,13 +6,13 @@ use std::collections::HashMap;
 
 use tokio_util::sync::CancellationToken;
 
-use crate::markers::MarkerParser;
-use crate::ndjson::ProbeReader;
+use crate::languages::markers::MarkerParser;
+use crate::languages::ndjson::ProbeReader;
 use crate::protocol::{
     AppDiagnostic, OutputCategory, ProbeDescriptor, RunResult, Severity, Stream,
 };
-use crate::session::{Session, SessionSettings, Snapshot};
-use crate::supervisor::{self, ProcessLimits, ProcessResult, RunOptions, StreamCallbacks};
+use crate::domain::session::{Session, SessionSettings, Snapshot};
+use crate::exec::supervisor::{self, ProcessLimits, ProcessResult, RunOptions, StreamCallbacks};
 
 use super::{Events, InstrumentationOutput, ProbeForwarder, RunnerEvent};
 
@@ -187,7 +187,7 @@ pub async fn instrument_files(
 
 pub struct ExecuteConfig {
     pub command: String,
-    pub sandbox: Option<std::sync::Arc<crate::sandbox::SandboxPolicy>>,
+    pub sandbox: Option<std::sync::Arc<crate::exec::sandbox::SandboxPolicy>>,
     pub args: Vec<String>,
     pub cwd: std::path::PathBuf,
     pub env: Vec<(String, String)>,

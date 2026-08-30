@@ -7,15 +7,15 @@ use std::sync::{Arc, Mutex};
 
 use tokio_util::sync::CancellationToken;
 
-use crate::markers::MarkerParser;
-use crate::ndjson::{ProbeReader, RawTestEvent, RawTestStatus, TestReader};
-use crate::packs;
+use crate::languages::markers::MarkerParser;
+use crate::languages::ndjson::{ProbeReader, RawTestEvent, RawTestStatus, TestReader};
+use crate::languages::packs;
 use crate::protocol::{
     AppDiagnostic, Language, OutputCategory, ProbeDescriptor, RunResult, RunState, Severity,
     Stream, TestCase, TestStatus,
 };
-use crate::session::{Session, SessionSettings, Snapshot};
-use crate::supervisor::{self, ProcessLimits, RunOptions, StreamCallbacks};
+use crate::domain::session::{Session, SessionSettings, Snapshot};
+use crate::exec::supervisor::{self, ProcessLimits, RunOptions, StreamCallbacks};
 
 use super::{
     cancelled_outcome, reset_generated, Events, InstrumentationOutput, ProbeForwarder,

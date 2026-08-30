@@ -6,14 +6,14 @@ use std::sync::{Arc, Mutex as StdMutex};
 
 use tokio_util::sync::CancellationToken;
 
-use crate::ndjson::{RawTestEvent, RawTestStatus, TestReader};
-use crate::packs;
+use crate::languages::ndjson::{RawTestEvent, RawTestStatus, TestReader};
+use crate::languages::packs;
 use crate::protocol::{
     AppDiagnostic, Language, OutputCategory, RunResult, RunState, Severity, Stream, TestCase,
     TestStatus,
 };
-use crate::session::{Session, SessionSettings, Snapshot};
-use crate::supervisor::{self, ProcessLimits, RunOptions, StreamCallbacks};
+use crate::domain::session::{Session, SessionSettings, Snapshot};
+use crate::exec::supervisor::{self, ProcessLimits, RunOptions, StreamCallbacks};
 
 use super::common::{
     classify_execution, execute_program, instrument_files, truncate_chars, ExecuteConfig,

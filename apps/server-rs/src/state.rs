@@ -1,8 +1,8 @@
 //! Shared server state.
 
-use crate::preferences::PreferencesPatch;
-use crate::session::SessionManager;
-use crate::ws_lsp::LspRegistry;
+use crate::domain::preferences::PreferencesPatch;
+use crate::domain::session::SessionManager;
+use crate::ws::lsp::LspRegistry;
 
 /// Enough that a burst of settings toggles never makes a live tab miss one;
 /// a tab that still falls behind is told by the lag and re-reads.

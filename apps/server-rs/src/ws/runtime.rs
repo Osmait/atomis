@@ -7,12 +7,12 @@ use std::sync::Arc;
 
 use axum::extract::ws::{Message, WebSocket};
 
-use crate::packs;
+use crate::languages::packs;
 use crate::protocol::{
     Language, RunState, RuntimeClientMessage, ServerEvent, MAX_RUNTIME_MESSAGE_BYTES,
 };
-use crate::scheduler::RunScheduler;
-use crate::session::{Session, SessionSettings, Snapshot};
+use crate::domain::scheduler::RunScheduler;
+use crate::domain::session::{Session, SessionSettings, Snapshot};
 use crate::state::AppState;
 
 fn to_json(event: &ServerEvent) -> String {
@@ -202,7 +202,7 @@ async fn send_deps_catalog(
     outbox: &tokio::sync::mpsc::UnboundedSender<ServerEvent>,
 ) {
     let language = session.language;
-    let Some(support) = crate::deps::support(language) else {
+    let Some(support) = crate::languages::deps::support(language) else {
         let _ = outbox.send(ServerEvent::DepsCatalog {
             language,
             supported: false,
@@ -222,7 +222,7 @@ async fn send_deps_catalog(
         manifest: Some(support.manifest.to_string()),
         input_hint: Some(support.input_hint.to_string()),
         runs_untrusted_code: support.runs_untrusted_code,
-        dependencies: crate::deps::parse_manifest(language, &text),
+        dependencies: crate::languages::deps::parse_manifest(language, &text),
     });
 }
 
@@ -236,11 +236,11 @@ async fn run_deps_command(
     installing: bool,
 ) -> Result<(), String> {
     let language = session.language;
-    let support = crate::deps::support(language).ok_or("This language has no package manager")?;
+    let support = crate::languages::deps::support(language).ok_or("This language has no package manager")?;
     let settings = session.settings.lock().await.clone();
     let base = session.sandbox(&settings);
     let sandbox = match (&base, installing) {
-        (Some(policy), true) => Some(std::sync::Arc::new(crate::sandbox::with_fetch_network(
+        (Some(policy), true) => Some(std::sync::Arc::new(crate::exec::sandbox::with_fetch_network(
             policy,
         ))),
         (policy, _) => policy.clone(),
@@ -253,7 +253,7 @@ async fn run_deps_command(
         let text = tokio::fs::read_to_string(&path)
             .await
             .map_err(|error| error.to_string())?;
-        let state = match crate::deps::manifest_without(language, &text, &name) {
+        let state = match crate::languages::deps::manifest_without(language, &text, &name) {
             Some(updated) => {
                 tokio::fs::write(&path, updated)
                     .await
@@ -282,7 +282,7 @@ async fn run_deps_command(
     args.push(if installing {
         name.clone()
     } else {
-        crate::deps::remove_argument(language, &name)
+        crate::languages::deps::remove_argument(language, &name)
     });
 
     let _ = outbox.send(ServerEvent::DepsState {
@@ -307,18 +307,18 @@ async fn run_deps_command(
 
     let stdout_events = outbox.clone();
     let stderr_events = outbox.clone();
-    let result = crate::supervisor::run(
+    let result = crate::exec::supervisor::run(
         command,
         &args,
-        crate::supervisor::RunOptions {
+        crate::exec::supervisor::RunOptions {
             cwd: session.root.clone(),
             // Fetching a dependency tree is slower than a build.
-            limits: crate::supervisor::ProcessLimits::new(180_000, 512 * 1024, 512 * 1024),
+            limits: crate::exec::supervisor::ProcessLimits::new(180_000, 512 * 1024, 512 * 1024),
             cancel: tokio_util::sync::CancellationToken::new(),
             probe_fd: false,
             env,
             sandbox: sandbox.clone(),
-            callbacks: crate::supervisor::StreamCallbacks {
+            callbacks: crate::exec::supervisor::StreamCallbacks {
                 stdout: Some(Box::new(move |chunk: &str| {
                     let _ = stdout_events.send(ServerEvent::DepsOutput {
                         stream: crate::protocol::Stream::Stdout,
@@ -344,15 +344,15 @@ async fn run_deps_command(
         if let Some(fetch) = support.fetch_after_add {
             let (fetch_command, fetch_args) = fetch.split_first().ok_or("empty fetch command")?;
             let fetch_events = outbox.clone();
-            result = crate::supervisor::run(
+            result = crate::exec::supervisor::run(
                 fetch_command,
                 &fetch_args
                     .iter()
                     .map(|arg| (*arg).to_string())
                     .collect::<Vec<_>>(),
-                crate::supervisor::RunOptions {
+                crate::exec::supervisor::RunOptions {
                     cwd: session.root.clone(),
-                    limits: crate::supervisor::ProcessLimits::new(180_000, 512 * 1024, 512 * 1024),
+                    limits: crate::exec::supervisor::ProcessLimits::new(180_000, 512 * 1024, 512 * 1024),
                     cancel: tokio_util::sync::CancellationToken::new(),
                     probe_fd: false,
                     env: support
@@ -361,7 +361,7 @@ async fn run_deps_command(
                         .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
                         .collect(),
                     sandbox: sandbox.clone(),
-                    callbacks: crate::supervisor::StreamCallbacks {
+                    callbacks: crate::exec::supervisor::StreamCallbacks {
                         stderr: Some(Box::new(move |chunk: &str| {
                             let _ = fetch_events.send(ServerEvent::DepsOutput {
                                 stream: crate::protocol::Stream::Stderr,
@@ -494,7 +494,7 @@ async fn handle_message(
                 manual_probe_ids,
                 // A client that predates the toggle keeps the default.
                 sandbox: sandbox.unwrap_or_else(|| {
-                    crate::sandbox::detect_support().available()
+                    crate::exec::sandbox::detect_support().available()
                 }),
                 network: network.unwrap_or(false),
             };

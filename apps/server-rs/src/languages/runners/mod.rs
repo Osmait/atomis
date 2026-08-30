@@ -18,12 +18,12 @@ use std::path::Path;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_util::sync::CancellationToken;
 
-use crate::ndjson::RawProbeEvent;
+use crate::languages::ndjson::RawProbeEvent;
 use crate::protocol::{
     AppDiagnostic, Language, LogSourceLocation, OutputCategory, ProbeDescriptor, RunResult,
     RunState, Stream, TestCase, TestStatus,
 };
-use crate::session::{Session, SessionSettings, Snapshot};
+use crate::domain::session::{Session, SessionSettings, Snapshot};
 
 #[derive(Debug)]
 pub enum RunnerEvent {

@@ -11,7 +11,7 @@ use std::sync::Arc;
 use serde_json::{json, Map, Value};
 use tokio::sync::Mutex;
 
-use crate::packs::{self, PACKS};
+use crate::languages::packs::{self, PACKS};
 use crate::protocol::{
     CreateSessionResponse, Language, ProbeDescriptor, ProjectFile, MAX_PROJECT_BYTES,
     MAX_PROJECT_FILES,
@@ -40,7 +40,7 @@ impl Default for SessionSettings {
             auto_inspect: true,
             debounce_ms: 400,
             timeout_ms: 2000,
-            sandbox: crate::sandbox::detect_support().available(),
+            sandbox: crate::exec::sandbox::detect_support().available(),
             network: false,
             manual_probe_ids: Vec::new(),
         }
@@ -81,7 +81,7 @@ pub struct Session {
     /// picked up again in the meantime is left alone.
     pub attach_generation: std::sync::atomic::AtomicU64,
     /// Allowlist handed to every child process while the sandbox is on.
-    pub sandbox_policy: std::sync::Arc<crate::sandbox::SandboxPolicy>,
+    pub sandbox_policy: std::sync::Arc<crate::exec::sandbox::SandboxPolicy>,
     /// Set when the session is attached to a persistent workspace, whose
     /// directory must survive the disconnect that ends the session.
     pub workspace_id: Option<String>,
@@ -93,14 +93,14 @@ impl Session {
     pub fn sandbox(
         &self,
         settings: &SessionSettings,
-    ) -> Option<std::sync::Arc<crate::sandbox::SandboxPolicy>> {
+    ) -> Option<std::sync::Arc<crate::exec::sandbox::SandboxPolicy>> {
         if !settings.sandbox {
             return None;
         }
         if settings.network {
             // Widening happens here, once, so every spawn of the session
             // agrees on what the program is allowed to reach.
-            return Some(std::sync::Arc::new(crate::sandbox::with_outbound_network(
+            return Some(std::sync::Arc::new(crate::exec::sandbox::with_outbound_network(
                 &self.sandbox_policy,
             )));
         }
@@ -373,9 +373,9 @@ impl SessionManager {
         // session gets a fresh one under the temp root.
         let workspace_meta = match &workspace {
             Some(workspace_id) => {
-                let dir = crate::workspace::workspace_dir(workspace_id)
+                let dir = crate::domain::workspace::workspace_dir(workspace_id)
                     .ok_or("Invalid workspace id")?;
-                let meta = crate::workspace::read_meta(&dir)
+                let meta = crate::domain::workspace::read_meta(&dir)
                     .await
                     .ok_or("Unknown workspace")?;
                 Some((dir, meta))
@@ -455,7 +455,7 @@ impl SessionManager {
 
         // Bilingual-by-extension workspace: scaffold and create the entry file
         // of every supported language; the preferred one becomes the first tab.
-        let included: Vec<&'static crate::packs::LanguagePack> = PACKS
+        let included: Vec<&'static crate::languages::packs::LanguagePack> = PACKS
             .iter()
             .filter(|p| support.get(&p.id).is_some_and(|s| s.present))
             .collect();
@@ -478,7 +478,7 @@ impl SessionManager {
         // Language templates outside src/ are staged either way, so files
         // of any supported language can be created and run later.
         let existing = match &workspace_meta {
-            Some(_) => crate::workspace::read_sources(&source_root).await,
+            Some(_) => crate::domain::workspace::read_sources(&source_root).await,
             None => Vec::new(),
         };
         let mut sources: Vec<(String, String)> = Vec::new();
@@ -536,9 +536,9 @@ impl SessionManager {
             .map(|(_, s)| s.clone())
             .unwrap_or_else(|| crate::protocol::DEFAULT_ZIG_SOURCE.to_string());
 
-        let sandbox_policy = std::sync::Arc::new(crate::sandbox::policy_for(
+        let sandbox_policy = std::sync::Arc::new(crate::exec::sandbox::policy_for(
             &root,
-            &crate::packs::project_root(),
+            &crate::languages::packs::project_root(),
             std::env::var_os("HOME")
                 .map(std::path::PathBuf::from)
                 .as_deref(),
@@ -567,7 +567,7 @@ impl SessionManager {
             workspace_id: workspace.clone(),
         });
         if let Some(workspace_id) = &workspace {
-            crate::workspace::touch(workspace_id).await;
+            crate::domain::workspace::touch(workspace_id).await;
         }
         self.sessions.lock().await.insert(id.clone(), session);
 
@@ -601,8 +601,8 @@ impl SessionManager {
             initial_source,
             files: initial_files,
             degraded,
-            sandbox_support: crate::sandbox::detect_support().as_str().to_string(),
-            sandbox: crate::sandbox::detect_support().available(),
+            sandbox_support: crate::exec::sandbox::detect_support().as_str().to_string(),
+            sandbox: crate::exec::sandbox::detect_support().available(),
             workspace: workspace_meta.map(|(_, meta)| meta),
         })
     }
@@ -628,7 +628,7 @@ impl SessionManager {
         if let Some(session) = session {
             if let Some(workspace_id) = &session.workspace_id {
                 // Persistent: the files stay, only the in-memory session goes.
-                crate::workspace::touch(workspace_id).await;
+                crate::domain::workspace::touch(workspace_id).await;
                 return;
             }
             let _ = tokio::fs::remove_dir_all(&session.root).await;

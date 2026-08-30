@@ -11,8 +11,8 @@ use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
 use crate::protocol::{Language, RunState, ServerEvent};
-use crate::runners::{self, RunnerEvent};
-use crate::session::Session;
+use crate::languages::runners::{self, RunnerEvent};
+use crate::domain::session::Session;
 use crate::util::{now_ms, random_uuid};
 
 pub type Outbox = UnboundedSender<ServerEvent>;

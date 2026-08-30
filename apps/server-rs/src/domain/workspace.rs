@@ -10,23 +10,12 @@
 
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
 
-use crate::protocol::Language;
+pub use crate::protocol::WorkspaceMeta;
 use crate::util::now_ms;
 
 const META_FILE: &str = "atomis.json";
 const MAX_NAME_CHARS: usize = 64;
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkspaceMeta {
-    pub id: String,
-    pub name: String,
-    pub language: Language,
-    pub created_at: u64,
-    pub updated_at: u64,
-}
 
 /// `$XDG_DATA_HOME/atomis`, falling back to `~/.local/share/atomis`:
 /// everything Atomis keeps between runs lives under here.

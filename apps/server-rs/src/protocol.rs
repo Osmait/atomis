@@ -187,7 +187,7 @@ pub struct CreateSessionResponse {
     pub sandbox: bool,
     /// The persistent workspace this session is attached to, if any.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub workspace: Option<crate::workspace::WorkspaceMeta>,
+    pub workspace: Option<WorkspaceMeta>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
@@ -487,6 +487,33 @@ pub fn valid_project_path(value: &str) -> Result<(), String> {
     }
 }
 
+/// A persistent workspace as the UI sees it. Declared here rather than in
+/// the module that manages workspaces: this is a shape on the wire, and the
+/// wire module is the one thing nothing else may depend on.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceMeta {
+    pub id: String,
+    pub name: String,
+    pub language: Language,
+    pub created_at: u64,
+    pub updated_at: u64,
+}
+
+/// One entry of a workspace's dependency manifest.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Dependency {
+    pub name: String,
+    /// Version as declared; empty when the manifest does not pin one.
+    pub version: String,
+}
+
+/// The UI settings shared across devices, and a patch against them where a
+/// `None` deletes the key.
+pub type Preferences = std::collections::BTreeMap<String, String>;
+pub type PreferencesPatch = std::collections::BTreeMap<String, Option<String>>;
+
 // ── Server → client events ──
 
 #[derive(Debug, Clone, Serialize)]
@@ -503,7 +530,7 @@ pub enum ServerEvent {
     #[serde(rename = "preferences.changed", rename_all = "camelCase")]
     PreferencesChanged {
         /// Only the keys that changed; a null value means the key was removed.
-        preferences: crate::preferences::PreferencesPatch,
+        preferences: PreferencesPatch,
     },
     #[serde(rename = "project.files", rename_all = "camelCase")]
     ProjectFiles {
@@ -520,7 +547,7 @@ pub enum ServerEvent {
         input_hint: Option<String>,
         /// Installing runs code written by the package author (npm).
         runs_untrusted_code: bool,
-        dependencies: Vec<crate::deps::Dependency>,
+        dependencies: Vec<Dependency>,
     },
     /// Progress of an install or removal, with its streamed output.
     #[serde(rename = "deps.state", rename_all = "camelCase")]
