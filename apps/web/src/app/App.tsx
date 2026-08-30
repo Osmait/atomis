@@ -13,12 +13,6 @@ import type {
 	ProbeDescriptor,
 } from "@atomis/protocol";
 import type * as MonacoApi from "monaco-editor";
-import {
-	initVimMode,
-	StatusBar as VimStatusBar,
-	VimMode,
-	type VimAdapterInstance,
-} from "monaco-vim";
 import { CommandPalette } from "./CommandPalette.js";
 import { DepsPanel } from "../features/terminal/DepsPanel.js";
 import {
@@ -63,8 +57,6 @@ import { lspSeverityName, type JsonValue } from "../features/editor/lsp/protocol
 import {
 	APPEARANCE_KEY,
 	loadAppearance,
-	saveAppearance,
-	type Appearance,
 } from "../shared/stores/appearance.js";
 import { flattenProblems, type OwnedDiagnostic } from "../shared/lib/diagnostics.js";
 import { buildTreeRows } from "../shared/lib/fileTree.js";
@@ -94,11 +86,12 @@ import {
 	type ChromeSettings,
 } from "../shared/stores/chrome.js";
 import { subscribeToPreferences } from "../shared/stores/storage.js";
-import { cssVariables, paletteOf, type AppTheme } from "../shared/lib/themes.js";
 import { fontStack } from "../shared/lib/fonts.js";
 import { useRuntimeSocket } from "../features/runtime/useRuntimeSocket.js";
 
 import { defineEditorThemes } from "../features/editor/theme.js";
+import { useAppearance } from "../features/settings/useAppearance.js";
+import { useVim } from "../features/editor/useVim.js";
 import {
 	INLINE_LOGS_KEY,
 	SETTINGS_KEY,
@@ -118,7 +111,6 @@ import {
 	saveScaffold,
 	saveSettings,
 	saveValueFmt,
-	saveVimMode,
 	type LayoutState,
 	type Settings,
 } from "../shared/stores/settings.js";
@@ -134,31 +126,6 @@ import {
 import type { WorkspaceMeta } from "@atomis/protocol";
 import type { LogSourceLocation, ProjectFile } from "../shared/types.js";
 
-interface VimModeWithCommands {
-	Vim: {
-		defineEx: (name: string, prefix: string, callback: () => void) => void;
-		unmap: (keys: string, context?: "normal" | "insert" | "visual") => boolean;
-		exitInsertMode: (adapter: object) => void;
-		exitVisualMode: (adapter: object) => void;
-	};
-}
-
-interface VimAdapterState {
-	state?: { vim?: { insertMode?: boolean; visualMode?: boolean } };
-}
-
-let vimModeListener: ((mode: string) => void) | undefined;
-
-class NvimStatusBar extends VimStatusBar {
-	override setMode(event: { mode: string; subMode?: string }): void {
-		const suffix =
-			event.mode === "visual" && event.subMode
-				? ` ${event.subMode.replace("wise", "").toUpperCase()}`
-				: "";
-		vimModeListener?.(`${event.mode.toUpperCase()}${suffix}`);
-	}
-}
-
 export function App(): React.JSX.Element {
 	const entryRef = useRef("main.zig");
 	const [session, setSession] = useState<CreateSessionResponse>();
@@ -167,9 +134,6 @@ export function App(): React.JSX.Element {
 	const [settings, setSettings] = useState<Settings>(loadSettings);
 	const [valueFmt, setValueFmt] = useState<ValueFmt>(loadValueFmt);
 	const [settingsOpen, setSettingsOpen] = useState(false);
-	const [appearance, setAppearance] = useState<Appearance>(loadAppearance);
-	const appearanceRef = useRef(appearance);
-	appearanceRef.current = appearance;
 	const [status, setStatus] = useState("Starting…");
 	const [tab, setTab] = useState<TerminalTab>("output");
 	const [drawerTab, setDrawerTab] = useState<"tests" | "hist">("tests");
@@ -177,7 +141,6 @@ export function App(): React.JSX.Element {
 		Partial<Record<Language, Record<string, JsonValue>>>
 	>({});
 	const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 });
-	const [vimEnabled, setVimEnabled] = useState(loadVimMode);
 	const [inlineLogs, setInlineLogs] = useState(loadInlineLogs);
 	const [editorContextMenu, setEditorContextMenu] = useState<{
 		x: number;
@@ -191,7 +154,37 @@ export function App(): React.JSX.Element {
 	const [workspaceBusy, setWorkspaceBusy] = useState(false);
 	const [switching, setSwitching] = useState(false);
 	const [workspaceError, setWorkspaceError] = useState<string>();
-	const [vimModeLabel, setVimModeLabel] = useState("NORMAL");
+
+
+	const editorRef = useRef<MonacoApi.editor.IStandaloneCodeEditor | undefined>(
+		undefined,
+	);
+	const monacoRef = useRef<Monaco | undefined>(undefined);
+
+	const {
+		vimEnabled,
+		vimEnabledRef,
+		vimModeLabel,
+		vimModeRef,
+		vimStatusRef,
+		changeVimMode,
+		syncVimEnabled,
+		setupVimKeys,
+		attachVim,
+		formatAndNormal,
+		disposeVim,
+	} = useVim({ editorRef });
+
+	const {
+		appearance,
+		appearanceRef,
+		updateAppearance,
+		activeTheme,
+		palette,
+		previewTheme,
+		setPreviewTheme,
+		setAppearance,
+	} = useAppearance({ monacoRef, zen: layout.zen, session });
 
 	// Settings changed on another device arrive over the runtime socket and
 	// land in the shared store; re-read through the same loaders so what
@@ -204,41 +197,16 @@ export function App(): React.JSX.Element {
 				if (changed.has(SETTINGS_KEY)) setSettings(loadSettings());
 				if (changed.has(VALUE_FMT_KEY)) setValueFmt(loadValueFmt());
 				if (changed.has(APPEARANCE_KEY)) setAppearance(loadAppearance());
-				if (changed.has(VIM_MODE_KEY)) setVimEnabled(loadVimMode());
+				if (changed.has(VIM_MODE_KEY)) syncVimEnabled(loadVimMode());
 				if (changed.has(INLINE_LOGS_KEY)) setInlineLogs(loadInlineLogs());
 				if (changed.has(CHROME_KEY)) setChrome(loadChrome());
 			}),
-		[],
+		[setAppearance, syncVimEnabled],
 	);
 
-	// Hovering a theme in the settings dialog paints the whole window with it
-	// without committing; leaving the row puts the saved one back. So every
-	// consumer reads this, not `appearance.theme`.
-	const [previewTheme, setPreviewTheme] = useState<AppTheme>();
-	const activeTheme = previewTheme ?? appearance.theme;
-	const palette = paletteOf(activeTheme);
-
-	// One place paints the window: the palette becomes the custom properties
-	// the stylesheet already reads, so a new theme needs no CSS of its own.
-	useEffect(() => {
-		const root = document.documentElement;
-		for (const [name, value] of Object.entries(cssVariables(palette)))
-			root.style.setProperty(name, value);
-		root.style.colorScheme = palette.scheme;
-	}, [palette]);
-
-	const vimModeRef = useRef("NORMAL");
-	vimModeRef.current = vimModeLabel;
-	const editorRef = useRef<MonacoApi.editor.IStandaloneCodeEditor | undefined>(
-		undefined,
-	);
-	const monacoRef = useRef<Monaco | undefined>(undefined);
 	const lspClientsRef = useRef<Partial<Record<Language, LspClient>>>({});
 	const sessionRef = useRef<CreateSessionResponse | undefined>(undefined);
 	const activeLanguageRef = useRef<Language>("zig");
-	const vimRef = useRef<VimAdapterInstance | null>(null);
-	const vimStatusRef = useRef<HTMLDivElement | null>(null);
-	const vimEnabledRef = useRef(vimEnabled);
 	const decorationsRef = useRef<
 		MonacoApi.editor.IEditorDecorationsCollection | undefined
 	>(undefined);
@@ -575,14 +543,6 @@ export function App(): React.JSX.Element {
 		[sendRuntime, session],
 	);
 
-	const updateAppearance = useCallback((next: Partial<Appearance>): void => {
-		setAppearance((previous) => {
-			const merged = { ...previous, ...next };
-			saveAppearance(merged);
-			return merged;
-		});
-	}, []);
-
 	const run = useCallback((): void => {
 		if (!session) return;
 		const language =
@@ -615,21 +575,6 @@ export function App(): React.JSX.Element {
 		const timer = setTimeout(run, 80);
 		return () => clearTimeout(timer);
 	}, [activePath, session, run]);
-
-	const changeVimMode = useCallback((enabled: boolean): void => {
-		vimEnabledRef.current = enabled;
-		setVimEnabled(enabled);
-		saveVimMode(enabled);
-		vimRef.current?.dispose();
-		vimRef.current = null;
-		if (enabled && editorRef.current && vimStatusRef.current)
-			vimRef.current = initVimMode(
-				editorRef.current,
-				vimStatusRef.current,
-				NvimStatusBar,
-			);
-		editorRef.current?.focus();
-	}, []);
 
 	const copyFromEditor = useCallback(async (): Promise<void> => {
 		setEditorContextMenu(undefined);
@@ -788,18 +733,9 @@ export function App(): React.JSX.Element {
 			editor.onDidDispose(() =>
 				editorNode.removeEventListener("contextmenu", showContextMenu, true),
 			);
-			const vimCommands = VimMode as object as VimModeWithCommands;
-			for (const shortcut of ["<C-a>", "<C-c>", "<C-v>", "<C-x>"])
-				vimCommands.Vim.unmap(shortcut);
-			vimCommands.Vim.unmap("<C-c>", "insert");
-			vimCommands.Vim.defineEx("write", "w", run);
+			setupVimKeys(run);
 			installVimExtensions();
-			if (vimEnabledRef.current && vimStatusRef.current)
-				vimRef.current = initVimMode(
-					editor,
-					vimStatusRef.current,
-					NvimStatusBar,
-				);
+			attachVim();
 			editor.onDidFocusEditorText(() => setFocusZone("editor"));
 			editor.onMouseDown((mouse) => {
 				const element = mouse.target.element as HTMLElement | null;
@@ -855,6 +791,7 @@ export function App(): React.JSX.Element {
 		},
 		[
 			activePathRef,
+			attachVim,
 			catalogRef,
 			setFocusZone,
 			openInLsp,
@@ -863,6 +800,7 @@ export function App(): React.JSX.Element {
 			session,
 			setPeek,
 			setProjectFiles,
+			setupVimKeys,
 		],
 	);
 
@@ -931,29 +869,13 @@ export function App(): React.JSX.Element {
 
 	useEffect(
 		() => () => {
-			vimRef.current?.dispose();
+			disposeVim();
 			for (const client of Object.values(lspClientsRef.current))
 				client?.dispose();
 			closeRuntime();
 		},
-		[closeRuntime],
+		[closeRuntime, disposeVim],
 	);
-
-	const formatAndNormal = useCallback((): void => {
-		const editor = editorRef.current;
-		if (!editor) return;
-		const vimCommands = VimMode as object as VimModeWithCommands;
-		const adapter = vimRef.current as VimAdapterState | null;
-		try {
-			if (adapter?.state?.vim?.insertMode)
-				vimCommands.Vim.exitInsertMode(adapter);
-			else if (adapter?.state?.vim?.visualMode)
-				vimCommands.Vim.exitVisualMode(adapter);
-		} catch {
-			// vim state not ready yet; formatting still applies
-		}
-		void editor.getAction("editor.action.formatDocument")?.run();
-	}, []);
 
 	useGlobalShortcuts({
 		paletteOpenRef,
@@ -1002,26 +924,6 @@ export function App(): React.JSX.Element {
 			[setTreeContextMenu],
 		),
 	);
-
-	useEffect(() => {
-		vimModeListener = (mode) => setVimModeLabel(mode);
-		return () => {
-			vimModeListener = undefined;
-		};
-	}, []);
-
-	useEffect(() => {
-		setVimModeLabel(vimEnabled ? "NORMAL" : "EDIT");
-	}, [vimEnabled]);
-
-	useEffect(() => {
-		const monaco = monacoRef.current;
-		if (!monaco) return;
-		// Redefining under the same name is what repaints an editor already
-		// on screen; setTheme alone would re-apply the previous colours.
-		defineEditorThemes(monaco, palette);
-		monaco.editor.setTheme(layout.zen ? "atomis-zen" : "atomis-dark");
-	}, [layout.zen, palette, session]);
 
 	const activeFile = files.find((file) => file.path === activePath) ?? files[0];
 	useEffect(() => {
