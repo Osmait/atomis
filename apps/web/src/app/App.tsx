@@ -1,4 +1,5 @@
-import Editor, { type Monaco, type OnMount } from "@monaco-editor/react";
+import type { Monaco, OnMount } from "@monaco-editor/react";
+import { EditorPane } from "../features/editor/EditorPane.js";
 import React, {
 	useCallback,
 	useEffect,
@@ -14,19 +15,17 @@ import type {
 } from "@atomis/protocol";
 import type * as MonacoApi from "monaco-editor";
 import { CommandPalette } from "./CommandPalette.js";
-import { DepsPanel } from "../features/terminal/DepsPanel.js";
 import {
 	EditorContextMenu,
 	TreeContextMenu,
 } from "./ContextMenus.js";
-import { EditorChrome } from "./EditorChrome.js";
-import { FileTree } from "../features/files/FileTree.js";
+import { Sidebar } from "../features/files/Sidebar.js";
 import { PeekPanel } from "../features/editor/PeekPanel.js";
 import { SettingsModal } from "../features/settings/SettingsModal.js";
 import { StatusBar, ZenPill } from "./StatusBar.js";
-import { Terminal, type TerminalTab } from "../features/terminal/Terminal.js";
+import type { TerminalTab } from "../features/terminal/Terminal.js";
+import { TerminalPane } from "../features/terminal/TerminalPane.js";
 import { WorkspacePicker } from "../features/workspaces/WorkspacePicker.js";
-import { TestsDrawer } from "../features/terminal/TestsDrawer.js";
 import {
 	installVimExtensions,
 	updateVimAppCommands,
@@ -44,7 +43,6 @@ import {
 	ENTRY_FILES,
 	languageForPath,
 	monacoLanguageFor,
-	registerAllLanguages,
 	WEB_LANGUAGE_PACKS,
 } from "../features/editor/languagePacks.js";
 import {
@@ -62,14 +60,9 @@ import { flattenProblems, type OwnedDiagnostic } from "../shared/lib/diagnostics
 import { buildTreeRows } from "../shared/lib/fileTree.js";
 import { apiFetch, websocketUrl } from "../shared/api/client.js";
 import {
-	caseTone,
 	computeFailsByFile,
-	drawerScoreLabel,
-	drawerSubLabel,
 	isActive,
 	isBusy,
-	RUN_STATE_LABELS,
-	stageLabel,
 	TEST_HINTS,
 	termTone,
 	testsTone,
@@ -89,7 +82,6 @@ import { subscribeToPreferences } from "../shared/stores/storage.js";
 import { fontStack } from "../shared/lib/fonts.js";
 import { useRuntimeSocket } from "../features/runtime/useRuntimeSocket.js";
 
-import { defineEditorThemes } from "../features/editor/theme.js";
 import { useAppearance } from "../features/settings/useAppearance.js";
 import { useVim } from "../features/editor/useVim.js";
 import { useWorkspaces } from "../features/workspaces/useWorkspaces.js";
@@ -115,7 +107,6 @@ import {
 	type LayoutState,
 	type Settings,
 } from "../shared/stores/settings.js";
-import { groupOutput } from "../shared/lib/terminalFolds.js";
 import {
 	loadActiveWorkspace,
 	saveActiveWorkspace,
@@ -271,18 +262,7 @@ export function App(): React.JSX.Element {
 		tests,
 		testResults,
 		testSummary,
-		history,
-		drawer,
 		setDrawer,
-		deps,
-		depsSupported,
-		depsManifest,
-		depsHint,
-		depsUntrusted,
-		depsState,
-		depsError,
-		depsOutput,
-		openFolds,
 		setOpenFolds,
 		handleRuntimeEvent,
 	} = runtime;
@@ -1131,7 +1111,6 @@ export function App(): React.JSX.Element {
 						}
 					: { kind: "file" as const, path: row.path },
 			);
-	const outputRows = groupOutput(output);
 	const testsDone = !busy && testSummary !== undefined;
 	const tone = {
 		tests: testsTone({ testsDone, testCount: tests.length, failingCount }),
@@ -1146,18 +1125,6 @@ export function App(): React.JSX.Element {
 			failingCount,
 		}),
 	};
-	const drawerScore = drawerScoreLabel({
-		testCount: tests.length,
-		testsDone,
-		failingCount,
-	});
-	const drawerSub = drawerSubLabel({
-		testCount: tests.length,
-		testsDone,
-		busy,
-		failingCount,
-		...(result !== undefined ? { executionMs: result.executionMs } : {}),
-	});
 	const activeLanguage =
 		languageForPath(activePath) ?? activeLanguageRef.current;
 	const runDisabled = Boolean(session.degraded[activeLanguage]);
@@ -1182,8 +1149,6 @@ export function App(): React.JSX.Element {
 		: settings.sandbox
 			? "your code may call out; files stay confined"
 			: "sandbox off — the network is already open";
-	const drawerToneFor = (testId: string): string =>
-		caseTone(testsDone, testResults.get(testId));
 
 	return (
 		<main
@@ -1193,115 +1158,87 @@ export function App(): React.JSX.Element {
 		>
 			<div className="workspace">
 				{treeVisible && (
-					<FileTree
+					<Sidebar
 						activeIsEntry={ENTRY_FILES.has(activePath)}
 						activePath={activePath}
-						draft={project.treeDraft}
-						draftInvalid={project.treeDraftInvalid}
-						draftValue={project.treeDraftValue}
 						failsByFile={failsByFile}
 						focused={focusZone === "tree"}
-						onCreateFile={project.createFile}
-						onCreateFolder={project.createFolder}
-						onDeleteActive={() => project.deleteFile(activePathRef.current)}
-						onDraftCancel={() => project.setTreeDraft(undefined)}
-						onDraftChange={(value) => {
-							project.setTreeDraftInvalid(false);
-							project.setTreeDraftValue(value);
-						}}
-						onDraftCommit={project.commitTreeDraft}
+						onClearWorkspace={clearWorkspace}
 						onHideTree={() => updateLayout({ treeOpen: false })}
 						onLoadDemo={loadDemoWorkspace}
-						onSwitchWorkspace={openWorkspacePicker}
-						onClearWorkspace={clearWorkspace}
-						onOpenContextMenu={project.setTreeContextMenu}
-						onRenameActive={() => project.renameFile(activePathRef.current)}
 						onSelect={selectFile}
+						onSwitchWorkspace={openWorkspacePicker}
 						onToggleFolder={toggleFolder}
-						onToggleSrc={() =>
-							project.setSrcCollapsed((previous) => !previous)
-						}
+						project={project}
 						revealKey={session.sessionId}
-						scratch={!session.workspace}
-						workspaceName={session.workspace?.name ?? "Scratch session"}
 						rows={treeRows}
-						srcCollapsed={project.srcCollapsed}
+						scratch={!session.workspace}
 						treeSel={treeSel}
+						workspaceName={session.workspace?.name ?? "Scratch session"}
 					/>
 				)}
 
 				<div className="inner">
-					<section className="editor-card">
-						{!zen && chrome.toolbar && (
-							<EditorChrome
-								active={active}
-								activePath={activePath}
-								autoRun={settings.autoRun}
-								onCloseTab={project.closeTab}
-								onOpenPalette={() => setPaletteOpen(true)}
-								onOpenSettings={() => setSettingsOpen(true)}
-								onRun={run}
-								onSelect={selectFile}
-								onShowTree={() => updateLayout({ treeOpen: true })}
-								onStop={stop}
-								onToggleAutoRun={toggleAutoRun}
-								openTabs={openTabs}
-								runDisabled={runDisabled}
-								showTabs={tabsVisible(chrome, openTabs.length)}
-								showTreeRestore={!treeVisible && !tight}
-								stale={stale}
-							/>
-						)}
-						<div className="editor-wrap">
-							<Editor
-								height="100%"
-								path={activeFile?.uri ?? session.documentUri}
-								language={editorLanguage}
-								value={visibleSource}
-								theme={zen ? "atomis-zen" : "atomis-dark"}
-								beforeMount={(monaco) => {
-									registerAllLanguages(monaco);
-									defineEditorThemes(monaco, palette);
-								}}
-								onMount={handleMount}
-								onChange={onChange}
-								options={{
-									automaticLayout: true,
-									fontFamily: fontStack(appearance.font),
-									fontLigatures: true,
-									fontSize: appearance.fontSize,
-									glyphMargin: true,
-									inlineSuggest: { enabled: true },
-									lineHeight: appearance.fontSize + 11,
-									suggestFontSize: appearance.fontSize,
-									suggestLineHeight: appearance.fontSize + 11,
-									minimap: { enabled: false },
-									overviewRulerBorder: false,
-									padding: { top: 14 },
-									renderLineHighlight: "none",
-									scrollBeyondLastLine: false,
-								}}
-							/>
-						</div>
-					</section>
+					<EditorPane
+						appearance={appearance}
+						chrome={
+							!zen && chrome.toolbar
+								? {
+										active,
+										activePath,
+										autoRun: settings.autoRun,
+										onCloseTab: project.closeTab,
+										onOpenPalette: () => setPaletteOpen(true),
+										onOpenSettings: () => setSettingsOpen(true),
+										onRun: run,
+										onSelect: selectFile,
+										onShowTree: () => updateLayout({ treeOpen: true }),
+										onStop: stop,
+										onToggleAutoRun: toggleAutoRun,
+										openTabs,
+										runDisabled,
+										showTabs: tabsVisible(chrome, openTabs.length),
+										showTreeRestore: !treeVisible && !tight,
+										stale,
+									}
+								: undefined
+						}
+						language={editorLanguage}
+						onChange={onChange}
+						onMount={handleMount}
+						palette={palette}
+						path={activeFile?.uri ?? session.documentUri}
+						value={visibleSource}
+						zen={zen}
+					/>
 
 					{termVisible && (
-						<Terminal
-							active={active}
+						<TerminalPane
+							activeLanguage={activeLanguage}
+							activePath={activePath}
 							allProblems={allProblems}
-							busy={busy}
-							caseTone={drawerToneFor}
+							failsByFile={failsByFile}
+							casesHintEmpty={casesHintEmpty}
+							casesHintSource={casesHintSource}
 							dockEffective={dockEffective}
-							drawer={drawer}
-							drawerScore={drawerScore}
+							drawerTab={drawerTab}
 							entryFile={entryRef.current}
 							focused={focusZone === "term"}
+							highlightLogSource={(location) => highlightLogSource(location)}
+							jumpToLine={jumpToLine}
 							lspLabel={
 								Object.keys(capabilities[activeLanguage] ?? {})
 									.filter((key) => capabilities[activeLanguage]?.[key])
 									.join(", ") || status
 							}
 							narrow={narrow}
+							onAddDependency={(name) =>
+								sendRuntime({
+									type: "deps.add",
+									sessionId: session.sessionId,
+									name,
+								})
+							}
 							onClearOutput={() => {
 								setOutput([]);
 								pinnedLogLocationRef.current = undefined;
@@ -1310,57 +1247,21 @@ export function App(): React.JSX.Element {
 							onCloseTerm={() => updateLayout({ termOpen: false })}
 							onDock={(dock) => updateLayout({ dock, termMax: false })}
 							onEntryClick={onEntryClick}
-							onEntryHover={(location) => highlightLogSource(location)}
 							onEntryLeave={() =>
 								highlightLogSource(pinnedLogLocationRef.current)
 							}
-							onOpenDrawer={() => setDrawer(true)}
-							onProblemJump={(item) =>
-								jumpToLine(
-									item.path ?? `src/${entryRef.current}`,
-									item.line,
-									item.column,
-								)
+							onOpenManifest={(manifest) => {
+								// Manifests live beside src/, so the palette cannot
+								// open them: show where they are.
+								setStatus(`${manifest} lives in the workspace root`);
+							}}
+							onRemoveDependency={(name) =>
+								sendRuntime({
+									type: "deps.remove",
+									sessionId: session.sessionId,
+									name,
+								})
 							}
-							depsBusy={
-								depsState === "installing" || depsState === "removing"
-							}
-							depsCount={deps.length}
-							depsPanel={
-								<DepsPanel
-									dependencies={deps}
-									language={activeLanguage}
-									onAdd={(name) =>
-										sendRuntime({
-											type: "deps.add",
-											sessionId: session.sessionId,
-											name,
-										})
-									}
-									onOpenManifest={(manifest) => {
-										// Manifests live beside src/, so the palette
-										// cannot open them: show where they are.
-										setStatus(`${manifest} lives in the workspace root`);
-									}}
-									onRemove={(name) =>
-										sendRuntime({
-											type: "deps.remove",
-											sessionId: session.sessionId,
-											name,
-										})
-									}
-									output={depsOutput}
-									runsUntrustedCode={depsUntrusted}
-									sandboxed={settings.sandbox}
-									state={depsState}
-									supported={depsSupported}
-									{...(depsError ? { error: depsError } : {})}
-									{...(depsHint ? { inputHint: depsHint } : {})}
-									{...(depsManifest ? { manifest: depsManifest } : {})}
-								/>
-							}
-							onTab={setTab}
-							onToggleDrawer={() => setDrawer((previous) => !previous)}
 							onToggleFold={(key) =>
 								setOpenFolds((previous) => {
 									const next = new Set(previous);
@@ -1369,52 +1270,20 @@ export function App(): React.JSX.Element {
 									return next;
 								})
 							}
-							onToggleMax={() =>
-								updateLayout({ termMax: !layout.termMax })
-							}
-							openFolds={openFolds}
-							output={output}
-							outputRows={outputRows}
-							probesLabel={`${catalog.length} / ${values.size}`}
-							runCommand={pack.runCommand}
-							runStateLabel={RUN_STATE_LABELS[runState]}
-							stageLabel={stageLabel(runState, activePath)}
+							onToggleMax={() => updateLayout({ termMax: !layout.termMax })}
+							pack={pack}
+							run={run}
+							runtime={runtime}
+							sandboxed={settings.sandbox}
+							setDrawerTab={setDrawerTab}
+							setTab={setTab}
 							tab={tab}
 							termMax={layout.termMax}
-							termTone={tone.term}
-							testCommand={pack.testCommand}
-							tests={tests}
-							testsLabel={
-								testSummary
-									? `${testSummary.passed} ok · ${testSummary.failed} err · ${testSummary.skipped} skip${testSummary.leaked ? ` · ${testSummary.leaked} leak` : ""}`
-									: tests.length
-										? `${tests.length} detected`
-										: "—"
-							}
-							testsTone={tone.tests}
 							toolchainLabel={
 								session.toolchains?.[activeLanguage]?.run ??
 								session.zigVersion
 							}
-							{...(result !== undefined ? { result } : {})}
-						>
-							<TestsDrawer
-								caseTone={drawerToneFor}
-								drawerScore={drawerScore}
-								drawerSub={drawerSub}
-								drawerTab={drawerTab}
-								hintEmpty={casesHintEmpty}
-								hintSource={casesHintSource}
-								history={history}
-								onClose={() => setDrawer(false)}
-								onDrawerTab={setDrawerTab}
-								onJump={(test) => jumpToLine(test.path, test.line, test.column)}
-								onRun={run}
-								testResults={testResults}
-								tests={tests}
-								testsTone={tone.tests}
-							/>
-						</Terminal>
+						/>
 					)}
 				</div>
 			</div>
