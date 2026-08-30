@@ -1,5 +1,6 @@
 //! Shared server state.
 
+use crate::domain::collab::Collab;
 use crate::domain::preferences::PreferencesPatch;
 use crate::domain::session::SessionManager;
 use crate::ws::lsp::LspRegistry;
@@ -17,6 +18,8 @@ pub struct AppState {
     pub preference_changes: tokio::sync::broadcast::Sender<PreferencesPatch>,
     /// Read once at startup: an empty value means no token is required.
     pub access_token: Option<String>,
+    /// Who shares which persistent workspace, and what revision it is on.
+    pub collab: Collab,
 }
 
 impl AppState {
@@ -27,6 +30,7 @@ impl AppState {
             port: std::sync::atomic::AtomicU16::new(0),
             preference_changes: tokio::sync::broadcast::channel(PREFERENCES_BACKLOG).0,
             access_token: crate::util::configured_access_token(),
+            collab: Collab::new(),
         }
     }
 }

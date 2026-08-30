@@ -11,6 +11,10 @@ interface StatusBarProps {
 	vimStatusRef: React.RefObject<HTMLDivElement | null>;
 	valuesCount: number;
 	workspaceName: string;
+	/** Sessions sharing this workspace, this one included. */
+	peers: number;
+	/** A file whose write was refused because someone else changed it. */
+	conflict?: string;
 	onWorkspace: () => void;
 	runState: RunState;
 	activePath: string;
@@ -49,6 +53,19 @@ export function StatusBar(props: StatusBarProps): React.JSX.Element {
 			>
 				⌂ {props.workspaceName} <b>+{props.valuesCount}</b>
 			</button>
+			{props.peers > 1 && (
+				<span
+					className="peer-count"
+					title="This workspace is open on another device — its edits arrive here, and yours can be refused if it writes first"
+				>
+					{props.peers} devices
+				</span>
+			)}
+			{props.conflict && (
+				<span className="conflict-note" title={props.conflict}>
+					not saved — {props.conflict} changed elsewhere
+				</span>
+			)}
 			<span className={`run-state state-${props.runState}`}>
 				{RUN_STATE_LABELS[props.runState]}
 			</span>

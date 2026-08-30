@@ -2,6 +2,7 @@
 //! Speaks `protocol` for the shapes that reach the wire, and `exec` for the
 //! processes; knows nothing about HTTP or WebSockets.
 
+pub mod collab;
 pub mod preferences;
 pub mod scheduler;
 pub mod session;

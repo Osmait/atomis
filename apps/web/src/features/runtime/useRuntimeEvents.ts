@@ -81,6 +81,17 @@ export function useRuntimeEvents(options: RuntimeEventsOptions) {
 	const valuesRef = useRef(values);
 	valuesRef.current = values;
 	const [stale, setStale] = useState(false);
+	/** How many sessions share this workspace, this one included. */
+	const [peers, setPeers] = useState(1);
+	/** The shared workspace revision our next edit will be built on. */
+	const [revision, setRevision] = useState<number | undefined>(undefined);
+	const revisionRef = useRef<number | undefined>(undefined);
+	/** The file another session changed under a write we could not apply. */
+	const [conflict, setConflict] = useState<string | undefined>(undefined);
+	/** The last edit that arrived from another session sharing this workspace. */
+	const [remoteEdit, setRemoteEdit] = useState<
+		{ path: string; source: string; revision: number } | undefined
+	>(undefined);
 	const [output, setOutput] = useState<TerminalEntry[]>([]);
 	const [diagnostics, setDiagnostics] = useState<
 		Record<string, ProjectDiagnostic[]>
@@ -112,6 +123,35 @@ export function useRuntimeEvents(options: RuntimeEventsOptions) {
 			// It carries no documentVersion, so handle it before the gate.
 			if (event.type === "preferences.changed") {
 				applyRemotePreferences(event.preferences);
+				return;
+			}
+			// Nor is anything about the workspace being shared. These come
+			// from another session entirely, so the version gate below —
+			// which is about *our* edits — must not swallow them.
+			if (event.type === "workspace.peers") {
+				setPeers(event.count);
+				return;
+			}
+			if (event.type === "document.changed") {
+				revisionRef.current = event.revision;
+				setRevision(event.revision);
+				// The join announcement carries the revision and no file.
+				// Recorded rather than applied: what to do with someone
+				// else's edit depends on the editor and the open file, which
+				// the shell holds. Keyed by revision so two identical edits
+				// still register as two.
+				if (event.path)
+					setRemoteEdit({
+						path: event.path,
+						source: event.source,
+						revision: event.revision,
+					});
+				return;
+			}
+			if (event.type === "document.conflict") {
+				revisionRef.current = event.revision;
+				setRevision(event.revision);
+				setConflict(event.path);
 				return;
 			}
 			const projectEvent = event as object as {
@@ -306,6 +346,12 @@ export function useRuntimeEvents(options: RuntimeEventsOptions) {
 		valuesRef,
 		stale,
 		setStale,
+		peers,
+		revision,
+		revisionRef,
+		conflict,
+		setConflict,
+		remoteEdit,
 		output,
 		setOutput,
 		diagnostics,

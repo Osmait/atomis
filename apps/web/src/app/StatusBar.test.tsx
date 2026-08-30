@@ -16,6 +16,7 @@ function renderBar(
 			degradedMessages={[]}
 			focusZone="editor"
 			leaderPending={false}
+			peers={1}
 			runState="succeeded"
 			timingLabel="zig · utf-8"
 			valuesCount={3}

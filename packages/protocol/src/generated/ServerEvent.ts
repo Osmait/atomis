@@ -14,7 +14,7 @@ import type { Stream } from "./Stream";
 import type { TestCase } from "./TestCase";
 import type { TestStatus } from "./TestStatus";
 
-export type ServerEvent = { "type": "run.state", documentVersion: number, runId?: string, state: RunState, } | { "type": "preferences.changed", 
+export type ServerEvent = { "type": "run.state", documentVersion: number, runId?: string, state: RunState, } | { "type": "workspace.peers", count: number, } | { "type": "document.changed", path: string, source: string, revision: number, } | { "type": "document.conflict", path: string, revision: number, } | { "type": "preferences.changed", 
 /**
  * Only the keys that changed; a null value means the key was removed.
  */

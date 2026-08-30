@@ -327,6 +327,11 @@ pub enum RuntimeClientMessage {
         #[serde(default = "default_entry_path")]
         path: String,
         source: String,
+        /// The workspace revision this edit was built on. Absent from a
+        /// scratch session, and from a client that has not been told one.
+        #[serde(default, rename = "baseRevision")]
+        #[cfg_attr(test, ts(optional, type = "number"))]
+        base_revision: Option<u64>,
     },
     #[serde(rename = "file.create")]
     FileCreate {
@@ -605,6 +610,25 @@ pub enum ServerEvent {
         #[cfg_attr(test, ts(optional))]
         run_id: Option<String>,
         state: RunState,
+    },
+    /// How many sessions have this persistent workspace open, this one
+    /// included. Sent only to workspace-backed sessions.
+    #[serde(rename = "workspace.peers", rename_all = "camelCase")]
+    WorkspacePeers { count: u32 },
+    /// Another session sharing this workspace changed a file.
+    #[serde(rename = "document.changed", rename_all = "camelCase")]
+    DocumentChanged {
+        path: String,
+        source: String,
+        #[cfg_attr(test, ts(type = "number"))]
+        revision: u64,
+    },
+    /// A write was refused because the workspace moved on underneath it.
+    #[serde(rename = "document.conflict", rename_all = "camelCase")]
+    DocumentConflict {
+        path: String,
+        #[cfg_attr(test, ts(type = "number"))]
+        revision: u64,
     },
     /// A setting changed on some other device sharing this server.
     #[serde(rename = "preferences.changed", rename_all = "camelCase")]

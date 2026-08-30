@@ -2595,6 +2595,18 @@ input:focus-visible,
 }
 
 /* The dialog scrolls inside its body so the tabs stay put. */
+.peer-count {
+	padding: 0 10px;
+	color: var(--sky);
+	font-size: 11px;
+}
+
+.conflict-note {
+	padding: 0 10px;
+	color: var(--peach);
+	font-size: 11px;
+}
+
 .settings-tabs {
 	display: flex;
 	gap: 2px;

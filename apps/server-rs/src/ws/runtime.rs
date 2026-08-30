@@ -72,6 +72,77 @@ pub async fn handle_runtime(state: Arc<AppState>, session: Arc<Session>, socket:
         }
     });
 
+    // A workspace-backed session shares its files with whatever else has the
+    // same workspace open, so it has to hear about them and about their
+    // edits. A scratch session shares nothing and skips all of it.
+    let workspace = session.workspace_id.clone();
+    if let Some(workspace) = workspace.as_deref() {
+        let revision = state.collab.join(workspace, &session.id).await;
+        let _ = outbox_tx.send(ServerEvent::DocumentChanged {
+            path: String::new(),
+            source: String::new(),
+            revision,
+        });
+        let count = state.collab.peer_count(workspace).await;
+        let _ = outbox_tx.send(ServerEvent::WorkspacePeers {
+            count: count as u32,
+        });
+    }
+
+    let collab_forwarder = workspace.clone().map(|workspace| {
+        let mut changes = state.collab.subscribe();
+        let outbox_tx = outbox_tx.clone();
+        let own_id = session.id.clone();
+        tokio::spawn(async move {
+            loop {
+                match changes.recv().await {
+                    Ok(crate::domain::collab::WorkspaceChange::Peers {
+                        workspace: which,
+                        count,
+                    }) => {
+                        if which != workspace {
+                            continue;
+                        }
+                        if outbox_tx
+                            .send(ServerEvent::WorkspacePeers {
+                                count: count as u32,
+                            })
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                    Ok(crate::domain::collab::WorkspaceChange::Document {
+                        workspace: which,
+                        origin,
+                        path,
+                        source,
+                        revision,
+                    }) => {
+                        // Skip our own echo: we already have it on screen.
+                        if which != workspace || origin == own_id {
+                            continue;
+                        }
+                        if outbox_tx
+                            .send(ServerEvent::DocumentChanged {
+                                path,
+                                source,
+                                revision,
+                            })
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                    // Lagged: this peer missed an edit it will pick up on the
+                    // next one, or on its next load. Keep listening.
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                }
+            }
+        })
+    });
+
     // Preferences are not session state, so they arrive out of band: every
     // open socket gets the same fan-out, and the tab that made the change
     // recognises its own values and ignores the echo.
@@ -159,7 +230,7 @@ pub async fn handle_runtime(state: Arc<AppState>, session: Arc<Session>, socket:
         if message.session_id() != session.id {
             break;
         }
-        if let Err(error) = handle_message(&session, &scheduler, &outbox_tx, message).await {
+        if let Err(error) = handle_message(&session, &scheduler, &outbox_tx, &state.collab, message).await {
             let _ = outbox_tx.send(ServerEvent::ServerError {
                 recoverable: true,
                 message: error,
@@ -169,6 +240,12 @@ pub async fn handle_runtime(state: Arc<AppState>, session: Arc<Session>, socket:
     }
 
     scheduler.close().await;
+    if let Some(workspace) = workspace.as_deref() {
+        state.collab.leave(workspace, &session.id).await;
+    }
+    if let Some(forwarder) = collab_forwarder {
+        forwarder.abort();
+    }
     preferences.abort();
     writer.abort();
     session.runtime_connected.store(false, Ordering::SeqCst);
@@ -405,6 +482,7 @@ async fn handle_message(
     session: &Arc<Session>,
     scheduler: &Arc<RunScheduler>,
     outbox: &tokio::sync::mpsc::UnboundedSender<ServerEvent>,
+    collab: &crate::domain::collab::Collab,
     message: RuntimeClientMessage,
 ) -> Result<(), String> {
     match message {
@@ -422,8 +500,39 @@ async fn handle_message(
             version,
             path,
             source,
+            base_revision,
             ..
         } => {
+            // In a shared workspace the file on disk is not ours alone. A
+            // write built on a revision that has moved is refused rather
+            // than applied: silently replacing the other device's work is
+            // what this exists to stop.
+            if let Some(workspace) = session.workspace_id.as_deref() {
+                match collab
+                    .record_edit(workspace, &session.id, &path, &source, base_revision)
+                    .await
+                {
+                    Ok(revision) => {
+                        // The writer skips its own broadcast, so this is the
+                        // only way it learns the revision it just created —
+                        // without it every write after the first carries a
+                        // base that has moved and is refused. An empty path
+                        // is a revision and nothing else, same as on join.
+                        let _ = outbox.send(ServerEvent::DocumentChanged {
+                            path: String::new(),
+                            source: String::new(),
+                            revision,
+                        });
+                    }
+                    Err(conflict) => {
+                        let _ = outbox.send(ServerEvent::DocumentConflict {
+                            path,
+                            revision: conflict.current,
+                        });
+                        return Ok(());
+                    }
+                }
+            }
             let snapshot = session.update(version, &path, &source).await?;
             after_store_change(session, scheduler, outbox, &snapshot, &path, false).await;
             Ok(())

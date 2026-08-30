@@ -250,6 +250,11 @@ export function App(): React.JSX.Element {
 		valuesRef,
 		stale,
 		setStale,
+		peers,
+		revisionRef,
+		conflict,
+		setConflict,
+		remoteEdit,
 		output,
 		setOutput,
 		setDiagnostics,
@@ -373,6 +378,33 @@ export function App(): React.JSX.Element {
 		setSrcCollapsed,
 		setTreeContextMenu,
 	} = project;
+
+	/**
+	 * A file another session sharing this workspace changed.
+	 *
+	 * Applied unless the caret is in that very file: taking text out from
+	 * under someone's hands is worse than telling them. In that case the
+	 * status bar says so, and their next write is refused by the server
+	 * anyway — which is what the revision is for.
+	 */
+	useEffect(() => {
+		if (!remoteEdit) return;
+		const { path, source } = remoteEdit;
+		if (
+			activePathRef.current === path &&
+			editorRef.current?.hasTextFocus() === true
+		) {
+			setConflict(path);
+			return;
+		}
+		setProjectFiles((previous) =>
+			previous.map((file) => (file.path === path ? { ...file, source } : file)),
+		);
+		const model = editorRef.current?.getModel();
+		if (activePathRef.current === path && model && model.getValue() !== source)
+			model.setValue(source);
+	}, [activePathRef, remoteEdit, setConflict, setProjectFiles]);
+
 
 	const updateLayout = useCallback((patch: Partial<LayoutState>): void => {
 		setLayout((previous) => {
@@ -886,9 +918,14 @@ export function App(): React.JSX.Element {
 				version,
 				path,
 				source,
+				// What this edit was built on, so a shared workspace can
+				// refuse it rather than let it replace someone else's work.
+				...(revisionRef.current === undefined
+					? {}
+					: { baseRevision: revisionRef.current }),
 			});
 		},
-		[activePathRef, sendRuntime, session, setProjectFiles, setStale],
+		[activePathRef, revisionRef, sendRuntime, session, setProjectFiles, setStale],
 	);
 
 	const loadDemoWorkspace = useCallback((): void => {
@@ -1255,7 +1292,9 @@ export function App(): React.JSX.Element {
 						? `run ${result.executionMs.toFixed(0)}ms · compile ${result.compilationMs.toFixed(0)}ms`
 						: `${activeLanguage} · utf-8`
 				}
+				peers={peers}
 				valuesCount={values.size}
+				{...(conflict ? { conflict } : {})}
 				vimModeLabel={vimModeLabel}
 				vimStatusRef={vimStatusRef}
 				/>
