@@ -10,10 +10,10 @@
     "doctor": "cargo run --quiet --manifest-path apps/server-rs/Cargo.toml -- --doctor",
     "zig:build": "zig build",
     "dev": "pnpm zig:build && pnpm rust:build && pnpm go:build && pnpm --filter @atomis/protocol build && concurrently -k -n server,web -c blue,green \"cargo run --manifest-path apps/server-rs/Cargo.toml\" \"pnpm --filter @atomis/web dev\"",
-    "typecheck": "pnpm -r typecheck && tsc --noEmit -p tsconfig.e2e.json",
+    "typecheck": "pnpm protocol:generate && pnpm -r typecheck && tsc --noEmit -p tsconfig.e2e.json",
     "test": "pnpm zig:build test && pnpm rust:build && pnpm rust:test && pnpm go:build && pnpm go:test && pnpm ts:test && pnpm py:test && pnpm cfamily:test && cargo test --manifest-path apps/server-rs/Cargo.toml && pnpm --filter @atomis/protocol build && pnpm -r --if-present test",
     "test:e2e": "playwright test",
-    "build": "pnpm zig:build && pnpm rust:build && pnpm go:build && pnpm -r build && cargo build --release --manifest-path apps/server-rs/Cargo.toml",
+    "build": "pnpm protocol:generate && pnpm zig:build && pnpm rust:build && pnpm go:build && pnpm -r build && cargo build --release --manifest-path apps/server-rs/Cargo.toml",
     "start": "NODE_ENV=production cargo run --release --manifest-path apps/server-rs/Cargo.toml",
     "start:remote": "node scripts/serve-tailscale.mjs",
     "desktop": "pnpm --filter @atomis/desktop dev",
@@ -28,7 +28,8 @@
     "cfamily:test": "node --test cfamily/instrumenter/instrument.test.mjs",
     "desktop:build": "pnpm build && node scripts/desktop-build.mjs",
     "desktop:bundle": "pnpm desktop:build && pnpm --filter @atomis/desktop bundle:linux",
-    "lint": "oxlint --deny-warnings apps/web/src apps/web/vite.config.ts packages/protocol/src tests playwright.config.ts scripts && cargo clippy --manifest-path apps/server-rs/Cargo.toml --all-targets -- -D warnings"
+    "lint": "oxlint --deny-warnings apps/web/src apps/web/vite.config.ts packages/protocol/src tests playwright.config.ts scripts && cargo clippy --manifest-path apps/server-rs/Cargo.toml --all-targets -- -D warnings",
+    "protocol:generate": "cargo test --manifest-path apps/server-rs/Cargo.toml export_bindings && rm -rf apps/server-rs/bindings"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",

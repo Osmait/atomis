@@ -1,5 +1,9 @@
 # Protocols
 
+The shapes the server sends are **generated** from the Rust types that send them: `pnpm protocol:generate` writes `packages/protocol/src/generated/`, and `packages/protocol/src/conformance.ts` asserts at compile time that the hand-written types in `index.ts` still say the same thing. Both sides were written by hand until then, and adding a field to one and forgetting the other failed at runtime or not at all. Generation runs as part of `pnpm typecheck` and `pnpm build`, so a stale binding is a build error rather than a surprise.
+
+Writing the check found four places where the two had already drifted: `manifest`/`inputHint` were sent as `null` while the client expected them absent; `rustcVersion`, `sandbox` and four other fields were declared optional but always sent; and `kind`, `protocolVersion` and `sandboxSupport` were plain strings on the wire while the client narrowed them to literals. Each is now stated once, on the Rust side.
+
 All runtime messages are JSON and versioned at protocol version 1. Shared TypeScript definitions and Zod validation live in `packages/protocol`.
 
 ## Session HTTP

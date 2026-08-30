@@ -135,17 +135,17 @@ export interface CreateSessionResponse {
 	documentUri: string;
 	zigVersion: string;
 	zlsVersion: string;
-	rustcVersion?: string;
-	cargoVersion?: string;
-	rustAnalyzerVersion?: string;
-	toolchains?: Partial<Record<Language, { run: string; lsp: string }>>;
+	rustcVersion: string;
+	cargoVersion: string;
+	rustAnalyzerVersion: string;
+	toolchains: Partial<Record<Language, { run: string; lsp: string }>>;
 	initialSource: string;
 	files: ProjectFile[];
 	degraded: Partial<Record<string, string>>;
 	/** What the kernel can enforce for this session. */
-	sandboxSupport?: SandboxSupport;
+	sandboxSupport: SandboxSupport;
 	/** Whether the session starts sandboxed. */
-	sandbox?: boolean;
+	sandbox: boolean;
 	/** Set when the session is attached to a persistent workspace. */
 	workspace?: WorkspaceMeta;
 }
