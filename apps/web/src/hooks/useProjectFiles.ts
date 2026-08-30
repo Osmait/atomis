@@ -10,7 +10,7 @@ import {
 } from "../state/paths.js";
 import { saveLanguage } from "../state/settings.js";
 import { closeTab as computeCloseTab } from "../state/tabs.js";
-import type { LogSourceLocation, ProjectFile } from "../types.js";
+import type { LogSourceLocation, ProjectFile, ProjectFilesReader } from "../types.js";
 
 export interface TreeDraft {
 	kind: "file" | "folder" | "rename";
@@ -31,8 +31,10 @@ interface ProjectFilesOptions {
 	versionRef: React.RefObject<number>;
 	entryRef: React.RefObject<string>;
 	activeLanguageRef: React.RefObject<Language>;
-	filesRef: React.RefObject<ProjectFile[]>;
-	setFiles: (files: ProjectFile[]) => void;
+	filesRef: ProjectFilesReader;
+	setProjectFiles: (
+		next: ProjectFile[] | ((previous: ProjectFile[]) => ProjectFile[]),
+	) => void;
 	lspClientsRef: React.RefObject<Partial<Record<Language, LspClient>>>;
 	monacoRef: React.RefObject<Monaco | undefined>;
 	openInLsp: (path: string, model: MonacoApi.editor.ITextModel) => void;
@@ -57,7 +59,7 @@ export function useProjectFiles(options: ProjectFilesOptions) {
 		entryRef,
 		activeLanguageRef,
 		filesRef,
-		setFiles,
+		setProjectFiles,
 		lspClientsRef,
 		monacoRef,
 		openInLsp,
@@ -154,8 +156,7 @@ export function useProjectFiles(options: ProjectFilesOptions) {
 			const nextFiles = [...filesRef.current, file].toSorted(
 				(left, right) => left.path.localeCompare(right.path),
 			);
-			filesRef.current = nextFiles;
-			setFiles(nextFiles);
+			setProjectFiles(nextFiles);
 			const version = ++versionRef.current;
 			sendRuntime({
 				type: "file.create",
@@ -169,7 +170,7 @@ export function useProjectFiles(options: ProjectFilesOptions) {
 			setOpenTabs((previous) => [...previous, path]);
 			return true;
 		},
-		[filesRef, sendRuntime, session, setFiles, setStatus, versionRef],
+		[filesRef, sendRuntime, session, setProjectFiles, setStatus, versionRef],
 	);
 
 	// VS Code-style inline creation: the tree shows an input row instead of
@@ -235,10 +236,9 @@ export function useProjectFiles(options: ProjectFilesOptions) {
 				path: newPath,
 				uri: new URL(newPath, base).href,
 			};
-			filesRef.current = filesRef.current.map((file) =>
-				file.path === path ? renamed : file,
+			setProjectFiles((previous) =>
+				previous.map((file) => (file.path === path ? renamed : file)),
 			);
-			setFiles(filesRef.current);
 			setOpenTabs((previous) =>
 				previous.map((tab) => (tab === path ? newPath : tab)),
 			);
@@ -258,7 +258,7 @@ export function useProjectFiles(options: ProjectFilesOptions) {
 			});
 			return true;
 		},
-		[filesRef, lspClientsRef, sendRuntime, session, setFiles, setStatus, versionRef],
+		[filesRef, lspClientsRef, sendRuntime, session, setProjectFiles, setStatus, versionRef],
 	);
 
 	const renameFile = useCallback((path: string): void => {
@@ -295,8 +295,9 @@ export function useProjectFiles(options: ProjectFilesOptions) {
 			if (!window.confirm(`Delete src/${path}?`)) return;
 			const current = filesRef.current.find((file) => file.path === path);
 			if (!current) return;
-			filesRef.current = filesRef.current.filter((file) => file.path !== path);
-			setFiles(filesRef.current);
+			setProjectFiles((previous) =>
+				previous.filter((file) => file.path !== path),
+			);
 			setOpenTabs((previous) => previous.filter((tab) => tab !== path));
 			if (activePathRef.current === path) {
 				activePathRef.current = entryRef.current;
@@ -315,7 +316,7 @@ export function useProjectFiles(options: ProjectFilesOptions) {
 				path,
 			});
 		},
-		[entryRef, filesRef, lspClientsRef, monacoRef, sendRuntime, session, setFiles, versionRef],
+		[entryRef, filesRef, lspClientsRef, monacoRef, sendRuntime, session, setProjectFiles, versionRef],
 	);
 
 	/** Session bootstrap: reset to the created session's entry file. */

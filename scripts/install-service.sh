@@ -64,6 +64,16 @@ for tool in zig zls cargo go node python3 clang; do
 done
 [[ -n "$missing" ]] && echo "Note: not on PATH, those languages stay disabled:$missing"
 
+# Optional second lock. Tailscale already limits who can reach the port to
+# your own devices; this limits it to whoever holds the secret, which is the
+# only thing that tells a browser apart from a curl on the same tailnet — the
+# Origin of a request is the machine's own name, not a secret.
+#   ATOMIS_TOKEN=$(openssl rand -hex 24) scripts/install-service.sh
+token_line=""
+if [[ -n "${ATOMIS_TOKEN:-}" ]]; then
+	token_line="Environment=ATOMIS_TOKEN=$ATOMIS_TOKEN"
+fi
+
 mkdir -p "$(dirname "$unit")"
 cat > "$unit" <<UNIT
 [Unit]
@@ -83,6 +93,7 @@ Environment=ATOMIS_PORT=$port
 Environment=ATOMIS_ALLOWED_ORIGINS=$origin
 Environment=ATOMIS_ROOT=$root
 Environment=PATH=$path
+$token_line
 
 [Install]
 WantedBy=default.target
@@ -116,5 +127,11 @@ else
 fi
 
 echo
-echo "Open $origin from any device on your tailnet."
+if [[ -n "${ATOMIS_TOKEN:-}" ]]; then
+	echo "Open this once on each device — the token is remembered and then"
+	echo "drops out of the address bar:"
+	echo "  $origin/?t=$ATOMIS_TOKEN"
+else
+	echo "Open $origin from any device on your tailnet."
+fi
 echo "Logs: journalctl --user -u atomis -f"

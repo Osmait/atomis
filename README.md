@@ -99,6 +99,20 @@ Everything else applies unchanged: whoever opens that URL runs code on this
 machine with your permissions, and the sandbox confines the code you run, not
 the server. Keep the tailnet to devices you own.
 
+For a second lock, set `ATOMIS_TOKEN` and every API call and socket has to
+carry it (`Authorization: Bearer …`, or `?t=…` for the sockets, which cannot
+send headers):
+
+```bash
+ATOMIS_TOKEN=$(openssl rand -hex 24) scripts/install-service.sh
+```
+
+The installer prints a `…/?t=<token>` link; open it once per device and the
+token is stored there and dropped from the address bar. This is worth doing
+only if your tailnet holds devices you would not hand a shell to — the Origin
+guard is not authentication, since the Origin it expects is this machine's own
+name and any client can send it.
+
 ### Always on
 
 `pnpm start:remote` lasts as long as the terminal. To have Atomis up whenever

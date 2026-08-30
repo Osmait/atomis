@@ -96,6 +96,7 @@ import {
 import { subscribeToPreferences } from "./state/storage.js";
 import { cssVariables, paletteOf, type AppTheme } from "./state/themes.js";
 import { fontStack } from "./state/fonts.js";
+import { apiFetch } from "./state/api.js";
 
 /** Longest gap between reconnection attempts. */
 const MAX_RETRY_MS = 10_000;
@@ -267,6 +268,21 @@ export function App(): React.JSX.Element {
 	>(undefined);
 	const versionRef = useRef(1);
 	const filesRef = useRef<ProjectFile[]>([]);
+
+	/**
+	 * The one way to change the file list: the ref keeps callbacks reading
+	 * the current value, the state makes the UI render it, and writing only
+	 * one of them is how they drift apart.
+	 */
+	const setProjectFiles = useCallback(
+		(next: ProjectFile[] | ((previous: ProjectFile[]) => ProjectFile[])) => {
+			const value =
+				typeof next === "function" ? next(filesRef.current) : next;
+			filesRef.current = value;
+			setFiles(value);
+		},
+		[],
+	);
 	const lastRunLanguageRef = useRef<Language | null>(null);
 	const settingsRef = useRef(settings);
 	const treeNavRef = useRef<TreeNavRow[]>([]);
@@ -280,7 +296,7 @@ export function App(): React.JSX.Element {
 	const runtime = useRuntimeEvents({
 		versionRef,
 		filesRef,
-		setFiles,
+		setProjectFiles,
 		monacoRef,
 		entryRef,
 		pinnedLogLocationRef,
@@ -404,7 +420,7 @@ export function App(): React.JSX.Element {
 		entryRef,
 		activeLanguageRef,
 		filesRef,
-		setFiles,
+		setProjectFiles,
 		lspClientsRef,
 		monacoRef,
 		openInLsp,
@@ -480,7 +496,7 @@ export function App(): React.JSX.Element {
 	// the socket/LSP effects rebuild themselves around it.
 	const requestSession = useCallback(
 		(workspace: string | undefined): Promise<Response> =>
-			fetch("/api/sessions", {
+			apiFetch("/api/sessions", {
 				method: "POST",
 				headers: { "content-type": "application/json" },
 				body: JSON.stringify({
@@ -519,8 +535,7 @@ export function App(): React.JSX.Element {
 						source: created.initialSource,
 					},
 				];
-				filesRef.current = projectFiles;
-				setFiles(projectFiles);
+				setProjectFiles(projectFiles);
 				setSession(created);
 				// The kernel decides whether the sandbox can be honoured;
 				// a stored preference never turns it on where it cannot run.
@@ -538,7 +553,7 @@ export function App(): React.JSX.Element {
 				setSwitching(false);
 			}
 		},
-		[requestSession, resetToEntry],
+		[requestSession, resetToEntry, setProjectFiles],
 	);
 
 	const bootedRef = useRef(false);
@@ -546,7 +561,7 @@ export function App(): React.JSX.Element {
 		if (bootedRef.current) return;
 		bootedRef.current = true;
 		void openSession(loadActiveWorkspace());
-	}, [openSession]);
+	}, [openSession, setProjectFiles]);
 
 	const sendSettings = useCallback(
 		(next: Settings): void => {
@@ -725,10 +740,15 @@ export function App(): React.JSX.Element {
 			monacoRef.current = monaco;
 			const model = editor.getModel();
 			if (!model) return;
-			filesRef.current = filesRef.current.map((file) =>
-				file.path === entryRef.current
-					? { ...file, source: model.getValue() }
-					: file,
+			// Monaco owns the buffer now; take its value as the truth for the
+			// entry file. This used to write the ref alone, leaving the state
+			// the editor renders from behind it.
+			setProjectFiles((previous) =>
+				previous.map((file) =>
+					file.path === entryRef.current
+						? { ...file, source: model.getValue() }
+						: file,
+				),
 			);
 			decorationsRef.current = editor.createDecorationsCollection();
 			errorLensDecorationsRef.current = editor.createDecorationsCollection();
@@ -845,6 +865,7 @@ export function App(): React.JSX.Element {
 			sendSettings,
 			session,
 			setPeek,
+			setProjectFiles,
 		],
 	);
 
@@ -1098,8 +1119,7 @@ export function App(): React.JSX.Element {
 			const nextFiles = filesRef.current.map((file) =>
 				file.path === path ? { ...file, source } : file,
 			);
-			filesRef.current = nextFiles;
-			setFiles(nextFiles);
+			setProjectFiles(nextFiles);
 			pinnedLogLocationRef.current = undefined;
 			logSourceDecorationsRef.current?.clear();
 			if (path === entryRef.current) saveEntrySource(source);
@@ -1119,7 +1139,7 @@ export function App(): React.JSX.Element {
 				source,
 			});
 		},
-		[activePathRef, sendRuntime, session, setStale],
+		[activePathRef, sendRuntime, session, setProjectFiles, setStale],
 	);
 
 	const loadDemoWorkspace = useCallback((): void => {

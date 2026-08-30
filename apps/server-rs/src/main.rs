@@ -59,12 +59,31 @@ fn origin_ok(state: &AppState, headers: &HeaderMap) -> bool {
     util::valid_origin(origin, state.port.load(Ordering::SeqCst))
 }
 
+/// The Origin guard says the request came from the page; this says it came
+/// from someone holding the secret. Both must pass, and when no token is
+/// configured this one is a no-op.
+fn token_ok(state: &AppState, headers: &HeaderMap, query_token: Option<&str>) -> bool {
+    util::token_ok(
+        state.access_token.as_deref(),
+        headers.get("authorization").and_then(|v| v.to_str().ok()),
+        query_token,
+    )
+}
+
+fn allowed(state: &AppState, headers: &HeaderMap) -> bool {
+    origin_ok(state, headers) && token_ok(state, headers, None)
+}
+
+fn allowed_read(state: &AppState, headers: &HeaderMap) -> bool {
+    origin_ok_read(state, headers) && token_ok(state, headers, None)
+}
+
 async fn create_session(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     body: Option<Json<serde_json::Value>>,
 ) -> Response {
-    if !origin_ok(&state, &headers) {
+    if !allowed(&state, &headers) {
         return (StatusCode::FORBIDDEN, Json(json!({ "error": "Origin is not allowed" })))
             .into_response();
     }
@@ -113,7 +132,7 @@ async fn list_workspaces(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
 ) -> Response {
-    if !origin_ok_read(&state, &headers) {
+    if !allowed_read(&state, &headers) {
         return StatusCode::FORBIDDEN.into_response();
     }
     Json(json!({ "workspaces": workspace::list().await })).into_response()
@@ -126,7 +145,7 @@ async fn create_workspace(
     headers: HeaderMap,
     body: Option<Json<serde_json::Value>>,
 ) -> Response {
-    if !origin_ok(&state, &headers) {
+    if !allowed(&state, &headers) {
         return StatusCode::FORBIDDEN.into_response();
     }
     let raw = body.map(|Json(value)| value).unwrap_or(json!({}));
@@ -188,7 +207,7 @@ async fn rename_workspace(
     headers: HeaderMap,
     Json(request): Json<RenameWorkspaceRequest>,
 ) -> Response {
-    if !origin_ok(&state, &headers) {
+    if !allowed(&state, &headers) {
         return StatusCode::FORBIDDEN.into_response();
     }
     match workspace::rename(&id, &request.name).await {
@@ -202,7 +221,7 @@ async fn delete_workspace(
     Path(id): Path<String>,
     headers: HeaderMap,
 ) -> Response {
-    if !origin_ok(&state, &headers) {
+    if !allowed(&state, &headers) {
         return StatusCode::FORBIDDEN.into_response();
     }
     match workspace::delete(&id).await {
@@ -219,7 +238,7 @@ struct PreferencesRequest {
 /// Settings shared by every device that opens this server, so the same
 /// Atomis on a laptop and on a tablet agrees with itself.
 async fn get_preferences(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
-    if !origin_ok_read(&state, &headers) {
+    if !allowed_read(&state, &headers) {
         return StatusCode::FORBIDDEN.into_response();
     }
     Json(json!({ "preferences": preferences::read().await })).into_response()
@@ -232,7 +251,7 @@ async fn put_preferences(
     headers: HeaderMap,
     body: Option<Json<serde_json::Value>>,
 ) -> Response {
-    if !origin_ok(&state, &headers) {
+    if !allowed(&state, &headers) {
         return StatusCode::FORBIDDEN.into_response();
     }
     let raw = body.map(|Json(value)| value).unwrap_or(json!({}));
@@ -273,6 +292,9 @@ struct WsQuery {
     session_id: String,
     #[serde(default)]
     token: String,
+    /// The server-wide access token, when one is configured.
+    #[serde(rename = "t")]
+    access: Option<String>,
     #[serde(default)]
     lang: Option<String>,
 }
@@ -283,7 +305,8 @@ async fn ws_runtime_route(
     Query(query): Query<WsQuery>,
     upgrade: WebSocketUpgrade,
 ) -> Response {
-    if !origin_ok(&state, &headers) {
+    if !origin_ok(&state, &headers) || !token_ok(&state, &headers, query.access.as_deref())
+    {
         return StatusCode::FORBIDDEN.into_response();
     }
     let Some(session) = state
@@ -302,7 +325,8 @@ async fn ws_lsp_route(
     Query(query): Query<WsQuery>,
     upgrade: WebSocketUpgrade,
 ) -> Response {
-    if !origin_ok(&state, &headers) {
+    if !origin_ok(&state, &headers) || !token_ok(&state, &headers, query.access.as_deref())
+    {
         return StatusCode::FORBIDDEN.into_response();
     }
     let Some(session) = state

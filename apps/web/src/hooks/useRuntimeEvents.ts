@@ -28,7 +28,7 @@ import {
 	type InlineValue,
 } from "../state/runtimeState.js";
 import { applyRemotePreferences } from "../state/storage.js";
-import type { LogSourceLocation, ProjectFile, TerminalEntry } from "../types.js";
+import type { LogSourceLocation, ProjectFile, ProjectFilesReader, TerminalEntry } from "../types.js";
 
 function markerSeverity(
 	monaco: Monaco,
@@ -44,8 +44,10 @@ function markerSeverity(
 
 interface RuntimeEventsOptions {
 	versionRef: React.RefObject<number>;
-	filesRef: React.RefObject<ProjectFile[]>;
-	setFiles: (files: ProjectFile[]) => void;
+	filesRef: ProjectFilesReader;
+	setProjectFiles: (
+		next: ProjectFile[] | ((previous: ProjectFile[]) => ProjectFile[]),
+	) => void;
 	monacoRef: React.RefObject<Monaco | undefined>;
 	entryRef: React.RefObject<string>;
 	pinnedLogLocationRef: React.RefObject<LogSourceLocation | undefined>;
@@ -65,7 +67,7 @@ export function useRuntimeEvents(options: RuntimeEventsOptions) {
 	const {
 		versionRef,
 		filesRef,
-		setFiles,
+		setProjectFiles,
 		monacoRef,
 		entryRef,
 		pinnedLogLocationRef,
@@ -120,8 +122,7 @@ export function useRuntimeEvents(options: RuntimeEventsOptions) {
 			if (projectEvent.type === "project.files") {
 				if (!acceptsVersion(versionRef.current, projectEvent.documentVersion))
 					return;
-				filesRef.current = projectEvent.files;
-				setFiles(projectEvent.files);
+				setProjectFiles(projectEvent.files);
 				return;
 			}
 			if (
@@ -257,7 +258,7 @@ export function useRuntimeEvents(options: RuntimeEventsOptions) {
 			logSourceDecorationsRef,
 			monacoRef,
 			pinnedLogLocationRef,
-			setFiles,
+			setProjectFiles,
 			setStatus,
 			versionRef,
 		],

@@ -1,3 +1,5 @@
+import { accessToken } from "./api.js";
+
 /**
  * Project path rules shared by file creation, folder creation and rename:
  * relative, backslash-free, no empty/`.`/`..` segments — mirroring the
@@ -26,6 +28,10 @@ export function websocketUrl(
 	url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
 	url.searchParams.set("sessionId", session.sessionId);
 	url.searchParams.set("token", session.authToken);
+	// A WebSocket handshake carries no custom headers, so the server-wide
+	// token rides in the query when there is one.
+	const access = accessToken();
+	if (access) url.searchParams.set("t", access);
 	for (const [key, value] of Object.entries(params))
 		url.searchParams.set(key, value);
 	return url.href;

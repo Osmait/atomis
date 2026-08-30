@@ -1,4 +1,5 @@
 import type { Language, WorkspaceMeta } from "@atomis/protocol";
+import { apiFetch } from "./api.js";
 import { readStoredItem, writeStoredItem } from "./storage.js";
 
 /**
@@ -21,7 +22,7 @@ async function request<T>(
 	path: string,
 	init: RequestInit = {},
 ): Promise<T> {
-	const response = await fetch(path, {
+	const response = await apiFetch(path, {
 		...init,
 		headers: { "content-type": "application/json", ...init.headers },
 	});

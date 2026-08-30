@@ -44,6 +44,35 @@ fn valid_origin_with(
     false
 }
 
+/// The shared secret every API call must carry, when one is configured.
+///
+/// Unset — the default, and how a loopback install runs — leaves the Origin
+/// guard as the only check, which is what it has always been. Set it and the
+/// guard stops being the whole story: the Origin of a request is not a
+/// secret (it is the machine's own name), so on a network where something
+/// other than your browser can reach the port, only a secret distinguishes
+/// them.
+pub fn configured_access_token() -> Option<String> {
+    std::env::var("ATOMIS_TOKEN")
+        .ok()
+        .map(|token| token.trim().to_string())
+        .filter(|token| !token.is_empty())
+}
+
+/// `Authorization: Bearer <token>`, or the token a WebSocket carried in its
+/// query string — a browser cannot set headers on a socket handshake.
+pub fn token_ok(
+    expected: Option<&str>,
+    authorization: Option<&str>,
+    query_token: Option<&str>,
+) -> bool {
+    let Some(expected) = expected else { return true };
+    let bearer = authorization.and_then(|value| value.strip_prefix("Bearer "));
+    bearer
+        .or(query_token)
+        .is_some_and(|presented| timing_safe_eq(presented, expected))
+}
+
 /// Comma-separated allowlist membership. Blank entries never match, so an
 /// empty variable or a stray comma cannot admit an empty `Origin` header.
 fn listed(allowlist: &str, origin: &str) -> bool {
@@ -255,6 +284,26 @@ mod tests {
         assert!(!valid_origin_with(Some(""), 4317, true, "https://a.ts.net,", ""));
         assert!(!valid_origin_with(Some("   "), 4317, true, " , ", ""));
         assert!(!valid_origin_with(Some("null"), 4317, true, "", ""));
+    }
+
+    #[test]
+    fn without_a_configured_token_everything_passes() {
+        assert!(token_ok(None, None, None));
+        assert!(token_ok(None, Some("Bearer whatever"), None));
+    }
+
+    #[test]
+    fn a_configured_token_is_required_and_compared_whole() {
+        let expected = Some("s3cret");
+        assert!(token_ok(expected, Some("Bearer s3cret"), None));
+        // A socket handshake cannot set headers, so the query carries it.
+        assert!(token_ok(expected, None, Some("s3cret")));
+        assert!(!token_ok(expected, None, None));
+        assert!(!token_ok(expected, Some("Bearer s3cre"), None));
+        assert!(!token_ok(expected, Some("Bearer s3crett"), None));
+        // The scheme is part of the contract; a bare value is not accepted.
+        assert!(!token_ok(expected, Some("s3cret"), None));
+        assert!(!token_ok(expected, None, Some("wrong")));
     }
 
     #[test]
