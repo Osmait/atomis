@@ -1,6 +1,6 @@
 import type { Language, WorkspaceScaffold } from "@atomis/protocol";
-import { VALUE_FMTS, type ValueFmt } from "../../lowlevel.js";
-import { WEB_LANGUAGE_PACKS } from "../../languages.js";
+import { VALUE_FMTS, type ValueFmt } from "../lib/lowlevel.js";
+import { WEB_LANGUAGE_PACKS } from "../../features/editor/languagePacks.js";
 import { readStoredItem, writeStoredItem } from "./storage.js";
 
 /**

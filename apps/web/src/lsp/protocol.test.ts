@@ -7,7 +7,7 @@ import {
 	normalizeHoverContents,
 	toMonacoPosition,
 	toMonacoRange,
-} from "./protocol.js";
+} from "../features/editor/lsp/protocol.js";
 
 describe("coordinate conversion", () => {
 	it("converts LSP 0-based to Monaco 1-based and back", () => {

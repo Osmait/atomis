@@ -57,7 +57,7 @@
 	"overrides": [
 		{
 			"files": [
-				"apps/web/src/main.tsx"
+				"apps/web/src/app/main.tsx"
 			],
 			"rules": {
 				"import/default": "off"
