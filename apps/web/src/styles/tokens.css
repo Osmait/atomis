@@ -1,0 +1,97 @@
+/*
+ * Mocha, as the value every property has before the app applies the saved
+ * theme. themes.ts owns the palettes and writes them onto this same element,
+ * so a theme is a data change and never a stylesheet change.
+ */
+:root {
+	color-scheme: dark;
+	font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+	background: #11111b;
+	color: #cdd6f4;
+	font-synthesis: none;
+	--base: #11111b;
+	--mantle: #181825;
+	--surface: #1e1e2e;
+	--surface0: #313244;
+	--surface0-dim: #26263a;
+	--surface1: #45475a;
+	--text: #cdd6f4;
+	--subtext: #a6adc8;
+	--overlay: #7f849c;
+	--overlay-dim: #6c7086;
+	--dim: #585b70;
+	--mauve: #cba6f7;
+	--mauve-dim: #2a2139;
+	--mauve-border: #4b3b63;
+	--red: #f38ba8;
+	--green: #a6e3a1;
+	--green-dim: #4a5a4c;
+	--yellow: #f9e2af;
+	--peach: #fab387;
+	--blue: #89b4fa;
+	--teal: #94e2d5;
+	--sky: #89dceb;
+	--card-shadow:
+		0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 20px 44px rgba(0, 0, 0, 0.55);
+	--card-radius: 13px;
+	--panel-editor: #1e1e2e;
+	--panel-side: #181825;
+	--panel-border: #11111b;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+	margin: 0;
+	width: 100%;
+	height: 100%;
+	overflow: hidden;
+}
+
+button,
+input {
+	font: inherit;
+	color: inherit;
+}
+
+button {
+	border: none;
+	background: transparent;
+	padding: 0;
+	cursor: pointer;
+	text-align: left;
+}
+
+button:disabled {
+	opacity: 0.4;
+	cursor: default;
+}
+
+button:focus-visible,
+input:focus-visible,
+[tabindex]:focus-visible {
+	outline: 1px solid var(--mauve);
+	outline-offset: 1px;
+}
+
+::selection {
+	background: var(--surface1);
+}
+
+::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+	background: var(--surface0);
+	border-radius: 4px;
+}
+
+::-webkit-scrollbar-track {
+	background: transparent;
+}

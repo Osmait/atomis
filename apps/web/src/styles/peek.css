@@ -1,0 +1,262 @@
+/* ── Peek panel (low-level inspector) ──────────────────── */
+
+.peek-overlay {
+	position: absolute;
+	z-index: 30;
+	pointer-events: auto;
+}
+
+.peek-panel {
+	background: var(--mantle);
+	border: 1px solid var(--surface1);
+	border-radius: 10px;
+	padding: 10px 13px;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	font-size: 12px;
+	color: var(--subtext);
+	box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5);
+	max-height: 340px;
+	overflow: auto;
+}
+
+.peek-header {
+	display: flex;
+	align-items: baseline;
+	gap: 9px;
+}
+
+.peek-header b {
+	color: var(--text);
+	font-weight: 600;
+}
+
+.peek-sub {
+	color: var(--overlay-dim);
+	text-transform: uppercase;
+	font-size: 10px;
+	letter-spacing: 0.08em;
+}
+
+.peek-actions {
+	margin-left: auto;
+	display: flex;
+	gap: 6px;
+}
+
+.peek-actions button {
+	border: 1px solid var(--surface1);
+	border-radius: 6px;
+	padding: 1px 7px;
+	color: var(--overlay);
+	font-size: 11px;
+}
+
+.peek-actions button:hover {
+	color: var(--text);
+	border-color: var(--overlay-dim);
+}
+
+.peek-bits {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 3px;
+}
+
+.peek-bit {
+	width: 26px;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 1px;
+	border: 1px solid var(--surface1);
+	border-radius: 6px;
+	padding: 3px 0 1px;
+	background: var(--surface);
+	color: var(--overlay);
+	cursor: pointer;
+}
+
+.peek-bit span {
+	font-size: 12px;
+	line-height: 1;
+}
+
+.peek-bit em {
+	font-style: normal;
+	font-size: 8px;
+	color: var(--dim);
+}
+
+.peek-bit.on {
+	background: var(--green-bg);
+	border-color: var(--green-border);
+	color: var(--green);
+}
+
+.peek-bit:hover {
+	border-color: var(--mauve-border);
+}
+
+.peek-bitop {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	border-top: 1px solid var(--surface0);
+	padding-top: 6px;
+}
+
+.peek-bitop-row {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+}
+
+.peek-bitop-op {
+	width: 22px;
+	text-align: right;
+	padding-right: 4px;
+	color: var(--overlay-dim);
+	font-size: 11px;
+}
+
+.peek-cell {
+	width: 17px;
+	text-align: center;
+	font-size: 11px;
+	border-radius: 4px;
+	padding: 1px 0;
+	background: var(--surface);
+	color: var(--overlay-dim);
+}
+
+.peek-cell.on {
+	color: var(--green);
+	background: var(--green-bg);
+}
+
+.peek-bitop-row.result .peek-cell {
+	color: var(--mauve);
+	background: var(--mauve-dim);
+}
+
+.peek-bytes {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	border-top: 1px solid var(--surface0);
+	padding-top: 6px;
+}
+
+.peek-bytes-label {
+	font-size: 10px;
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	color: var(--overlay-dim);
+}
+
+.peek-bytes-row {
+	display: flex;
+	gap: 4px;
+	flex-wrap: wrap;
+}
+
+.peek-byte {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 1px;
+	border: 1px solid var(--surface1);
+	border-radius: 6px;
+	padding: 3px 7px 2px;
+	background: var(--surface);
+}
+
+.peek-byte b {
+	color: var(--sky);
+	font-weight: 500;
+	font-size: 12px;
+}
+
+.peek-byte em {
+	font-style: normal;
+	font-size: 9px;
+	color: var(--dim);
+}
+
+.peek-fields {
+	display: flex;
+	flex-direction: column;
+	border-top: 1px solid var(--surface0);
+	padding-top: 6px;
+}
+
+.peek-field-row {
+	display: grid;
+	grid-template-columns: 1.2fr 1.4fr 0.8fr 0.9fr 1.2fr;
+	gap: 10px;
+	padding: 2px 0;
+	font-size: 12px;
+}
+
+.peek-field-head {
+	font-size: 10px;
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	color: var(--overlay-dim);
+}
+
+.peek-field-name {
+	color: var(--text);
+}
+
+.peek-field-type {
+	color: var(--overlay);
+}
+
+.peek-field-value {
+	color: var(--green);
+}
+
+.peek-rows {
+	display: flex;
+	flex-direction: column;
+	border-top: 1px solid var(--surface0);
+	padding-top: 6px;
+}
+
+.peek-kv {
+	display: flex;
+	justify-content: space-between;
+	gap: 18px;
+	padding: 3px 0;
+}
+
+.peek-kv span {
+	color: var(--overlay-dim);
+}
+
+.peek-kv b {
+	color: var(--text);
+	font-weight: 500;
+	white-space: nowrap;
+}
+
+.peek-note {
+	font-size: 11px;
+	color: var(--dim);
+}
+
+/* ── Lucide mask icons ─────────────────────────────────── */
+
+.lucide {
+	display: inline-flex;
+	flex-shrink: 0;
+}
+
+.lucide svg {
+	width: 100%;
+	height: 100%;
+	display: block;
+}

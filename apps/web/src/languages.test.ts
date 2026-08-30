@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { languageForPath, monacoLanguageFor } from "./languages.js";
+import { languageForPath, monacoLanguageFor } from "./features/editor/languagePacks.js";
 
 describe("languageForPath", () => {
 	it("routes by extension", () => {

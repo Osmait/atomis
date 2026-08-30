@@ -13,6 +13,8 @@ pub const MAX_PROJECT_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_RUNTIME_MESSAGE_BYTES: usize = MAX_SOURCE_BYTES + 64 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export, export_to = "../../../packages/protocol/src/generated/"))]
 #[serde(rename_all = "lowercase")]
 pub enum Language {
     Zig,
@@ -53,6 +55,8 @@ impl Language {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export, export_to = "../../../packages/protocol/src/generated/"))]
 #[serde(rename_all = "snake_case")]
 pub enum RunState {
     Idle,
@@ -69,33 +73,45 @@ pub enum RunState {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export, export_to = "../../../packages/protocol/src/generated/"))]
 #[serde(rename_all = "camelCase")]
 pub struct SourceRange {
     pub start_line: u32,
     pub start_column: u32,
     pub end_line: u32,
     pub end_column: u32,
+    #[cfg_attr(test, ts(type = "number"))]
     pub start_byte: u64,
+    #[cfg_attr(test, ts(type = "number"))]
     pub end_byte: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export, export_to = "../../../packages/protocol/src/generated/"))]
 #[serde(rename_all = "camelCase")]
 pub struct ProbeDescriptor {
     pub probe_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub path: Option<String>,
     pub name: String,
     pub supported: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub reason: Option<String>,
     pub original_range: SourceRange,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    #[cfg_attr(test, ts(type = "number"))]
     pub insertion_byte: Option<u64>,
     pub mode: ProbeMode,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export, export_to = "../../../packages/protocol/src/generated/"))]
 #[serde(rename_all = "lowercase")]
 pub enum ProbeMode {
     Auto,
@@ -103,6 +119,8 @@ pub enum ProbeMode {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export, export_to = "../../../packages/protocol/src/generated/"))]
 #[serde(rename_all = "camelCase")]
 pub struct TestCase {
     pub test_id: String,
@@ -113,6 +131,8 @@ pub struct TestCase {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export, export_to = "../../../packages/protocol/src/generated/"))]
 #[serde(rename_all = "snake_case")]
 pub enum TestStatus {
     Passed,
@@ -123,6 +143,8 @@ pub enum TestStatus {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export, export_to = "../../../packages/protocol/src/generated/"))]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
     Error,
@@ -132,25 +154,35 @@ pub enum Severity {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export, export_to = "../../../packages/protocol/src/generated/"))]
 #[serde(rename_all = "camelCase")]
 pub struct AppDiagnostic {
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub path: Option<String>,
     pub severity: Severity,
     pub line: u32,
     pub column: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub end_line: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub end_column: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    #[cfg_attr(test, ts(type = "string | number"))]
     pub code: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub source: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export, export_to = "../../../packages/protocol/src/generated/"))]
 pub struct ProjectFile {
     pub path: String,
     pub uri: String,
@@ -158,6 +190,8 @@ pub struct ProjectFile {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export, export_to = "../../../packages/protocol/src/generated/"))]
 #[serde(rename_all = "camelCase")]
 pub struct ToolchainVersions {
     pub run: String,
@@ -165,6 +199,8 @@ pub struct ToolchainVersions {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export, export_to = "../../../packages/protocol/src/generated/"))]
 #[serde(rename_all = "camelCase")]
 pub struct CreateSessionResponse {
     pub session_id: String,
@@ -176,21 +212,29 @@ pub struct CreateSessionResponse {
     pub rustc_version: String,
     pub cargo_version: String,
     pub rust_analyzer_version: String,
+    // Deliberately untyped on this side: the doctor fills it per language.
+    #[cfg_attr(test, ts(type = "Partial<Record<string, { run: string, lsp: string }>>"))]
     pub toolchains: serde_json::Map<String, serde_json::Value>,
     pub initial_source: String,
     pub files: Vec<ProjectFile>,
+    #[cfg_attr(test, ts(type = "Partial<Record<string, string>>"))]
     pub degraded: serde_json::Map<String, serde_json::Value>,
     /// What this kernel can enforce: "files+network", "files" or
     /// "unsupported".
+    /// One of "files+network", "files" or "unsupported".
+    #[cfg_attr(test, ts(type = "\"files+network\" | \"files\" | \"unsupported\""))]
     pub sandbox_support: String,
     /// Whether new sessions start sandboxed (true wherever it is available).
     pub sandbox: bool,
     /// The persistent workspace this session is attached to, if any.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub workspace: Option<crate::workspace::WorkspaceMeta>,
+    #[cfg_attr(test, ts(optional))]
+    pub workspace: Option<WorkspaceMeta>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export, export_to = "../../../packages/protocol/src/generated/"))]
 #[serde(rename_all = "lowercase")]
 pub enum WorkspaceScaffold {
     /// Every supported language's example files (the original workspace).
@@ -201,6 +245,8 @@ pub enum WorkspaceScaffold {
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export, export_to = "../../../packages/protocol/src/generated/"))]
 #[serde(deny_unknown_fields)]
 pub struct CreateSessionRequest {
     pub language: Option<Language>,
@@ -210,6 +256,8 @@ pub struct CreateSessionRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export, export_to = "../../../packages/protocol/src/generated/"))]
 #[serde(rename_all = "camelCase")]
 pub struct ProbeFieldLayout {
     pub name: String,
@@ -220,6 +268,8 @@ pub struct ProbeFieldLayout {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export, export_to = "../../../packages/protocol/src/generated/"))]
 #[serde(rename_all = "camelCase")]
 pub struct LoopInfo {
     pub line: u32,
@@ -229,18 +279,24 @@ pub struct LoopInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export, export_to = "../../../packages/protocol/src/generated/"))]
 #[serde(rename_all = "camelCase")]
 pub struct LogSourceLocation {
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub path: Option<String>,
     pub line: u32,
     pub column: u32,
     pub execution_index: u32,
     #[serde(rename = "loop", skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub loop_info: Option<LoopInfo>,
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export, export_to = "../../../packages/protocol/src/generated/"))]
 #[serde(rename_all = "camelCase")]
 pub struct RunResult {
     pub instrumentation_ms: f64,
@@ -251,27 +307,37 @@ pub struct RunResult {
     pub timed_out: bool,
     pub cancelled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub reason: Option<String>,
 }
 
 // ── Client → server messages (zod parity: strict, validated) ──
 
 #[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export, export_to = "../../../packages/protocol/src/generated/"))]
 #[serde(tag = "type")]
 pub enum RuntimeClientMessage {
     #[serde(rename = "document.update")]
     DocumentUpdate {
         #[serde(rename = "sessionId")]
         session_id: String,
+        #[cfg_attr(test, ts(type = "number"))]
         version: u64,
         #[serde(default = "default_entry_path")]
         path: String,
         source: String,
+        /// The workspace revision this edit was built on. Absent from a
+        /// scratch session, and from a client that has not been told one.
+        #[serde(default, rename = "baseRevision")]
+        #[cfg_attr(test, ts(optional, type = "number"))]
+        base_revision: Option<u64>,
     },
     #[serde(rename = "file.create")]
     FileCreate {
         #[serde(rename = "sessionId")]
         session_id: String,
+        #[cfg_attr(test, ts(type = "number"))]
         version: u64,
         path: String,
         source: String,
@@ -280,6 +346,7 @@ pub enum RuntimeClientMessage {
     FileRename {
         #[serde(rename = "sessionId")]
         session_id: String,
+        #[cfg_attr(test, ts(type = "number"))]
         version: u64,
         path: String,
         #[serde(rename = "newPath")]
@@ -289,6 +356,7 @@ pub enum RuntimeClientMessage {
     FileDelete {
         #[serde(rename = "sessionId")]
         session_id: String,
+        #[cfg_attr(test, ts(type = "number"))]
         version: u64,
         path: String,
     },
@@ -296,6 +364,7 @@ pub enum RuntimeClientMessage {
     RunRequest {
         #[serde(rename = "sessionId")]
         session_id: String,
+        #[cfg_attr(test, ts(type = "number"))]
         version: u64,
         reason: RunReason,
         language: Option<Language>,
@@ -314,8 +383,10 @@ pub enum RuntimeClientMessage {
         #[serde(rename = "autoInspect")]
         auto_inspect: bool,
         #[serde(rename = "debounceMs")]
+        #[cfg_attr(test, ts(type = "number"))]
         debounce_ms: u64,
         #[serde(rename = "timeoutMs")]
+        #[cfg_attr(test, ts(type = "number"))]
         timeout_ms: u64,
         #[serde(rename = "manualProbeIds")]
         manual_probe_ids: Vec<String>,
@@ -344,6 +415,8 @@ pub enum RuntimeClientMessage {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export, export_to = "../../../packages/protocol/src/generated/"))]
 #[serde(rename_all = "snake_case")]
 pub enum DepsState {
     Idle,
@@ -357,6 +430,8 @@ fn default_entry_path() -> String {
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export, export_to = "../../../packages/protocol/src/generated/"))]
 #[serde(rename_all = "lowercase")]
 pub enum RunReason {
     Manual,
@@ -487,20 +562,83 @@ pub fn valid_project_path(value: &str) -> Result<(), String> {
     }
 }
 
+/// A persistent workspace as the UI sees it. Declared here rather than in
+/// the module that manages workspaces: this is a shape on the wire, and the
+/// wire module is the one thing nothing else may depend on.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export, export_to = "../../../packages/protocol/src/generated/"))]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceMeta {
+    pub id: String,
+    pub name: String,
+    pub language: Language,
+    #[cfg_attr(test, ts(type = "number"))]
+    pub created_at: u64,
+    #[cfg_attr(test, ts(type = "number"))]
+    pub updated_at: u64,
+}
+
+/// One entry of a workspace's dependency manifest.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export, export_to = "../../../packages/protocol/src/generated/"))]
+#[serde(rename_all = "camelCase")]
+pub struct Dependency {
+    pub name: String,
+    /// Version as declared; empty when the manifest does not pin one.
+    pub version: String,
+}
+
+/// The UI settings shared across devices, and a patch against them where a
+/// `None` deletes the key.
+pub type Preferences = std::collections::BTreeMap<String, String>;
+pub type PreferencesPatch = std::collections::BTreeMap<String, Option<String>>;
+
 // ── Server → client events ──
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export, export_to = "../../../packages/protocol/src/generated/"))]
 #[serde(tag = "type")]
 pub enum ServerEvent {
     #[serde(rename = "run.state", rename_all = "camelCase")]
     RunStateEvent {
+        #[cfg_attr(test, ts(type = "number"))]
         document_version: u64,
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
         run_id: Option<String>,
         state: RunState,
     },
+    /// How many sessions have this persistent workspace open, this one
+    /// included. Sent only to workspace-backed sessions.
+    #[serde(rename = "workspace.peers", rename_all = "camelCase")]
+    WorkspacePeers { count: u32 },
+    /// Another session sharing this workspace changed a file.
+    #[serde(rename = "document.changed", rename_all = "camelCase")]
+    DocumentChanged {
+        path: String,
+        source: String,
+        #[cfg_attr(test, ts(type = "number"))]
+        revision: u64,
+    },
+    /// A write was refused because the workspace moved on underneath it.
+    #[serde(rename = "document.conflict", rename_all = "camelCase")]
+    DocumentConflict {
+        path: String,
+        #[cfg_attr(test, ts(type = "number"))]
+        revision: u64,
+    },
+    /// A setting changed on some other device sharing this server.
+    #[serde(rename = "preferences.changed", rename_all = "camelCase")]
+    PreferencesChanged {
+        /// Only the keys that changed; a null value means the key was removed.
+        preferences: PreferencesPatch,
+    },
     #[serde(rename = "project.files", rename_all = "camelCase")]
     ProjectFiles {
+        #[cfg_attr(test, ts(type = "number"))]
         document_version: u64,
         files: Vec<ProjectFile>,
     },
@@ -510,47 +648,59 @@ pub enum ServerEvent {
         language: Language,
         /// None when the language has no package manager Atomis drives.
         supported: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
         manifest: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
         input_hint: Option<String>,
         /// Installing runs code written by the package author (npm).
         runs_untrusted_code: bool,
-        dependencies: Vec<crate::deps::Dependency>,
+        dependencies: Vec<Dependency>,
     },
     /// Progress of an install or removal, with its streamed output.
     #[serde(rename = "deps.state", rename_all = "camelCase")]
     DepsState {
         state: DepsState,
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
         name: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
         error: Option<String>,
     },
     #[serde(rename = "deps.output", rename_all = "camelCase")]
     DepsOutput { stream: Stream, chunk: String },
     #[serde(rename = "probe.catalog", rename_all = "camelCase")]
     ProbeCatalog {
+        #[cfg_attr(test, ts(type = "number"))]
         document_version: u64,
         probes: Vec<ProbeDescriptor>,
     },
     #[serde(rename = "test.catalog", rename_all = "camelCase")]
     TestCatalog {
+        #[cfg_attr(test, ts(type = "number"))]
         document_version: u64,
         tests: Vec<TestCase>,
     },
     #[serde(rename = "test.result", rename_all = "camelCase")]
     TestResult {
+        #[cfg_attr(test, ts(type = "number"))]
         document_version: u64,
         run_id: String,
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
         test_id: Option<String>,
         name: String,
         status: TestStatus,
         duration_ms: f64,
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
         message: Option<String>,
     },
     #[serde(rename = "test.summary", rename_all = "camelCase")]
     TestSummary {
+        #[cfg_attr(test, ts(type = "number"))]
         document_version: u64,
         run_id: String,
         passed: u32,
@@ -561,13 +711,18 @@ pub enum ServerEvent {
     },
     #[serde(rename = "probe_value", rename_all = "camelCase")]
     ProbeValue {
+        /// Always 1; the client narrows on it.
+        #[cfg_attr(test, ts(type = "1"))]
         protocol_version: u8,
+        #[cfg_attr(test, ts(type = "\"probe_value\""))]
         kind: &'static str,
         session_id: String,
         run_id: String,
+        #[cfg_attr(test, ts(type = "number"))]
         document_version: u64,
         probe_id: String,
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
         path: Option<String>,
         name: String,
         line: u32,
@@ -575,36 +730,48 @@ pub enum ServerEvent {
         type_name: String,
         preview: String,
         truncated: bool,
+        #[cfg_attr(test, ts(type = "number"))]
         sequence: u64,
+        #[cfg_attr(test, ts(type = "number"))]
         timestamp: u64,
         count: u32,
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
         bits: Option<u32>,
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
+        #[cfg_attr(test, ts(type = "number"))]
         size_bytes: Option<u64>,
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
+        #[cfg_attr(test, ts(type = "number"))]
         align_bytes: Option<u64>,
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
         fields: Option<Vec<ProbeFieldLayout>>,
     },
     #[serde(rename = "output", rename_all = "camelCase")]
     Output {
+        #[cfg_attr(test, ts(type = "number"))]
         document_version: u64,
         run_id: String,
         stream: Stream,
         category: OutputCategory,
         chunk: String,
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
         source_location: Option<LogSourceLocation>,
     },
     #[serde(rename = "diagnostics", rename_all = "camelCase")]
     Diagnostics {
+        #[cfg_attr(test, ts(type = "number"))]
         document_version: u64,
         owner: String,
         diagnostics: Vec<AppDiagnostic>,
     },
     #[serde(rename = "run.finished", rename_all = "camelCase")]
     RunFinished {
+        #[cfg_attr(test, ts(type = "number"))]
         document_version: u64,
         run_id: String,
         result: RunResult,
@@ -614,11 +781,14 @@ pub enum ServerEvent {
         recoverable: bool,
         message: String,
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
         details: Option<String>,
     },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export, export_to = "../../../packages/protocol/src/generated/"))]
 #[serde(rename_all = "lowercase")]
 pub enum Stream {
     Stdout,
@@ -626,6 +796,8 @@ pub enum Stream {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export, export_to = "../../../packages/protocol/src/generated/"))]
 #[serde(rename_all = "lowercase")]
 pub enum OutputCategory {
     Program,

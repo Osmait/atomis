@@ -1,0 +1,362 @@
+/* ── Terminal card ─────────────────────────────────────── */
+
+.side-panel {
+	position: relative;
+	background: var(--panel-side);
+	border-left: 1px solid var(--panel-border);
+	box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.04);
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	width: 340px;
+	max-width: 40%;
+	min-width: 260px;
+	flex-shrink: 1;
+}
+
+.dock-bottom .side-panel {
+	width: auto;
+	max-width: none;
+	min-width: 0;
+	height: min(260px, 38%);
+	min-height: 148px;
+	border-left: none;
+	border-top: 1px solid var(--panel-border);
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.term-max .side-panel {
+	flex: 1;
+	width: auto;
+	max-width: none;
+	height: auto;
+	min-height: 0;
+	min-width: 0;
+}
+
+.terminal-header {
+	gap: 10px;
+	padding: 7px 10px 5px 14px;
+	border-bottom: none;
+	overflow: visible;
+}
+
+
+
+
+
+
+
+
+.panel-content {
+	flex: 1;
+	overflow: auto;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+}
+
+.output-list {
+	flex: 1;
+	padding: 12px 14px;
+	display: flex;
+	flex-direction: column;
+	gap: 5px;
+	font-size: 12.5px;
+	min-height: 0;
+}
+
+.terminal-command {
+	color: var(--green);
+}
+
+.terminal-command b {
+	color: var(--green);
+}
+
+.output-entry {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+	position: relative;
+	border-radius: 6px;
+	padding: 0 4px;
+	margin: 0 -4px;
+}
+
+.output-entry.has-source {
+	cursor: pointer;
+}
+
+.output-entry.has-source:hover {
+	background: var(--surface0-dim);
+}
+
+.output-entry.fold-child {
+	padding-left: 13px;
+	border-left: 1px solid var(--surface0);
+	margin-left: 4px;
+	border-radius: 0 6px 6px 0;
+}
+
+.output-entry time {
+	margin-left: auto;
+	color: var(--dim);
+	font-size: 11px;
+	flex-shrink: 0;
+}
+
+.output-chevron {
+	color: var(--dim);
+	flex-shrink: 0;
+}
+
+.output-entry pre {
+	margin: 0;
+	white-space: pre-wrap;
+	word-break: break-word;
+	font-family: inherit;
+	min-width: 0;
+}
+
+.output-entry pre.program {
+	color: var(--text);
+}
+
+.output-entry pre.error {
+	color: var(--red);
+}
+
+.log-origin-tooltip {
+	display: none;
+	position: absolute;
+	left: 12px;
+	bottom: calc(100% + 2px);
+	background: var(--surface);
+	border: 1px solid var(--surface1);
+	border-radius: 7px;
+	padding: 3px 9px;
+	font-size: 11px;
+	color: var(--subtext);
+	white-space: nowrap;
+	z-index: 30;
+	pointer-events: none;
+}
+
+.output-entry.has-source:hover .log-origin-tooltip {
+	display: block;
+}
+
+.log-origin-tooltip b {
+	color: var(--yellow);
+}
+
+.fold-group {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.fold-row {
+	display: flex;
+	justify-content: space-between;
+	gap: 16px;
+	background: var(--surface);
+	border: 1px solid var(--surface0);
+	border-radius: 8px;
+	padding: 5px 9px;
+	color: var(--overlay-dim);
+	font-weight: 500;
+	width: 100%;
+}
+
+.fold-row:hover {
+	color: var(--subtext);
+	border-color: var(--surface1);
+}
+
+.fold-row b {
+	color: var(--dim);
+	font-weight: 400;
+	font-size: 11px;
+	flex-shrink: 0;
+}
+
+.run-stage {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	color: var(--yellow);
+}
+
+.empty-state {
+	color: var(--dim);
+	margin: 4px 0;
+}
+
+/* ── Test cases card ───────────────────────────────────── */
+
+
+
+
+
+
+.case-row {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	padding: 7px 12px;
+	color: var(--subtext);
+	width: 100%;
+}
+
+.case-row:hover {
+	background: var(--surface0-dim);
+	color: var(--text);
+}
+
+.case-mark {
+	flex-shrink: 0;
+	color: var(--dim);
+}
+
+.case-mark.ok {
+	color: var(--green);
+}
+
+.case-mark.err {
+	color: var(--red);
+}
+
+.case-name {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.case-meta {
+	margin-left: auto;
+	color: var(--dim);
+	flex-shrink: 0;
+	font-size: 11px;
+}
+
+.case-message {
+	margin: 0 12px 8px 33px;
+	padding: 6px 9px;
+	border-left: 2px solid var(--red);
+	background: color-mix(in srgb, var(--red) 7%, transparent);
+	border-radius: 0 7px 7px 0;
+	color: var(--red);
+	font-size: 11.5px;
+	white-space: pre-wrap;
+	word-break: break-word;
+	font-family: inherit;
+	max-height: 120px;
+	overflow: auto;
+}
+
+.case-row.unmatched {
+	cursor: default;
+}
+
+
+/* ── History + prompt ──────────────────────────────────── */
+
+
+.history-row {
+	display: flex;
+	justify-content: space-between;
+	color: var(--overlay-dim);
+}
+
+.history-row .ok {
+	color: var(--green);
+}
+
+.history-row .err {
+	color: var(--red);
+}
+
+
+
+.prompt-glyph {
+	color: var(--green);
+}
+
+.prompt-enter {
+	margin-left: auto;
+	font-size: 11px;
+}
+
+/* ── Problems + runtime tabs ───────────────────────────── */
+
+.problems-list {
+	list-style: none;
+	margin: 0;
+	padding: 10px;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.problem button {
+	display: grid;
+	grid-template-columns: 16px 1fr;
+	gap: 2px 8px;
+	width: 100%;
+	padding: 7px 9px;
+	border-radius: 8px;
+	color: var(--subtext);
+}
+
+.problem button:hover {
+	background: var(--surface0-dim);
+}
+
+.problem i {
+	font-style: normal;
+	color: var(--red);
+}
+
+.problem-warning i {
+	color: var(--yellow);
+}
+
+.problem-information i,
+.problem-hint i {
+	color: var(--blue);
+}
+
+.problem span {
+	color: var(--text);
+	word-break: break-word;
+}
+
+.problem small {
+	grid-column: 2;
+	color: var(--dim);
+	font-size: 11px;
+}
+
+.runtime-grid {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	gap: 8px 16px;
+	padding: 14px;
+	font-size: 12px;
+	color: var(--overlay);
+	align-content: start;
+}
+
+.runtime-grid b {
+	color: var(--text);
+	font-weight: 500;
+	word-break: break-word;
+}
+
+.runtime-grid .capabilities {
+	font-size: 11px;
+	color: var(--subtext);
+}

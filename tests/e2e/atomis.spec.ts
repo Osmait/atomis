@@ -1,10 +1,39 @@
 import { expect, test } from "@playwright/test";
+import { resetPreferences } from "./reset.js";
+
+test.beforeEach(async ({ request, baseURL }) => {
+	await resetPreferences(request, baseURL);
+});
+
+/** The tabs the settings dialog groups its behaviour toggles into. */
+const SETTINGS_TABS = ["Run", "Editor", "Appearance"] as const;
+
+/**
+ * Finds a behaviour toggle in an already-open dialog, selecting whichever
+ * tab holds it. Searching rather than hard-coding the tab means moving a
+ * toggle between tabs does not break every test that flips it.
+ */
+async function findToggle(
+	page: import("@playwright/test").Page,
+	label: string,
+) {
+	// Match the label element, not the whole button: hints mention other
+	// toggles by name ("sandbox off — …") and would match too.
+	const toggle = page.locator(".settings-toggle").filter({
+		has: page.getByText(label, { exact: true }),
+	});
+	for (const tab of SETTINGS_TABS) {
+		await page.locator(".settings-tab", { hasText: tab }).click();
+		if ((await toggle.count()) > 0) return toggle;
+	}
+	throw new Error(`No settings toggle labelled ${label} on any tab`);
+}
 
 async function vimToggleOn(
 	page: import("@playwright/test").Page,
 ): Promise<boolean> {
-	return await page
-		.locator(".settings-toggle", { hasText: "Vim Mode" })
+	const toggle = await findToggle(page, "Vim Mode");
+	return await toggle
 		.locator(".switch")
 		.evaluate((element) => element.classList.contains("on"));
 }
@@ -16,11 +45,7 @@ async function setToggle(
 	on: boolean,
 ): Promise<void> {
 	await page.locator(".chrome-icon").click();
-	// Match the label element, not the whole button: hints mention other
-	// toggles by name ("sandbox off — …") and would match too.
-	const toggle = page.locator(".settings-toggle").filter({
-		has: page.getByText(label, { exact: true }),
-	});
+	const toggle = await findToggle(page, label);
 	await expect(toggle).toBeVisible();
 	const isOn = await toggle
 		.locator(".switch")
@@ -130,6 +155,23 @@ pub fn main() void {
 	await expect(
 		page.locator(".inline-value").filter({ hasText: "{ 50, 3, 53 }" }),
 	).toBeVisible();
+});
+
+test("a run with nothing to inspect still looks current", async ({ page }) => {
+	await openClean(page);
+	await expect(page.locator(".state-succeeded")).toBeVisible();
+
+	// No declarations to inspect, so no probe value ever arrives. Staleness
+	// used to lift only when one did, which left a program whose only
+	// feedback is a log struck through for good — indistinguishable from
+	// code that is still broken.
+	await replaceEditor(
+		page,
+		'const std = @import("std");\n\npub fn main() void {\n    std.debug.print("hello\\n", .{});\n}\n',
+	);
+	await expect(page.locator(".state-succeeded")).toBeVisible();
+	await expect(page.locator(".inline-log")).toHaveCount(1);
+	await expect(page.locator(".inline-log.stale")).toHaveCount(0);
 });
 
 test("project tree supports imports, embedFile, and runtime input files", async ({
@@ -1576,7 +1618,13 @@ test("persistent workspaces keep their files across reloads", async ({
 	await expect(page.locator(".branch-status")).toContainText(name);
 	await expect(page.getByLabel("persisted.zig")).toBeVisible();
 	await page.getByLabel("persisted.zig").click();
-	await expect(page.locator(".view-lines")).toContainText("const kept = 41;");
+	// ZLS paints an inlay hint into this line once it has analysed the file
+	// ("const kept: comptime_int = 41;"), and whether it has by now depends on
+	// how warm the server is. Asserting across the gap does not work either —
+	// Monaco renders the hint with its own spacing — so check the two ends
+	// the file actually owns. What is under test is that it survived.
+	await expect(page.locator(".view-lines")).toContainText("const kept");
+	await expect(page.locator(".view-lines")).toContainText("41;");
 
 	// Switching is an in-place swap, not a page reload: a marker planted on
 	// window must survive it, and the runtime must still be live afterwards.

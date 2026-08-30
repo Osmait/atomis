@@ -1,0 +1,91 @@
+{
+  "takenAt": "2026-08-30T23:32:40.315Z",
+  "commit": "5b7c594",
+  "totals": {
+    "files": 197,
+    "lines": 38849,
+    "productionLines": 32276,
+    "testLines": 6573,
+    "filesOver500Lines": 12
+  },
+  "areas": {
+    "server (rust)": {
+      "files": 40,
+      "lines": 12508,
+      "productionLines": 11288,
+      "testLines": 1220
+    },
+    "web (react)": {
+      "files": 108,
+      "lines": 17651,
+      "productionLines": 14933,
+      "testLines": 2718
+    },
+    "protocol": {
+      "files": 2,
+      "lines": 727,
+      "productionLines": 727,
+      "testLines": 0
+    },
+    "instrumenters": {
+      "files": 23,
+      "lines": 4780,
+      "productionLines": 4125,
+      "testLines": 655
+    },
+    "e2e": {
+      "files": 3,
+      "lines": 2013,
+      "productionLines": 33,
+      "testLines": 1980
+    },
+    "scripts": {
+      "files": 10,
+      "lines": 846,
+      "productionLines": 846,
+      "testLines": 0
+    }
+  },
+  "largest": [
+    {
+      "path": "apps/web/src/app/App.tsx",
+      "lines": 1249
+    },
+    {
+      "path": "apps/server-rs/src/protocol.rs",
+      "lines": 952
+    },
+    {
+      "path": "apps/server-rs/src/exec/sandbox.rs",
+      "lines": 921
+    },
+    {
+      "path": "apps/server-rs/src/languages/cfamily/run.rs",
+      "lines": 790
+    },
+    {
+      "path": "apps/server-rs/src/domain/session.rs",
+      "lines": 713
+    },
+    {
+      "path": "apps/server-rs/src/languages/rust/run.rs",
+      "lines": 682
+    },
+    {
+      "path": "zig/instrumenter/src/AstAdapter.zig",
+      "lines": 673
+    },
+    {
+      "path": "apps/server-rs/src/ws/runtime.rs",
+      "lines": 647
+    },
+    {
+      "path": "packages/protocol/src/index.ts",
+      "lines": 640
+    },
+    {
+      "path": "apps/web/src/features/editor/lsp/LspClient.ts",
+      "lines": 627
+    }
+  ]
+}

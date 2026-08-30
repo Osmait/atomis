@@ -135,17 +135,17 @@ export interface CreateSessionResponse {
 	documentUri: string;
 	zigVersion: string;
 	zlsVersion: string;
-	rustcVersion?: string;
-	cargoVersion?: string;
-	rustAnalyzerVersion?: string;
-	toolchains?: Partial<Record<Language, { run: string; lsp: string }>>;
+	rustcVersion: string;
+	cargoVersion: string;
+	rustAnalyzerVersion: string;
+	toolchains: Partial<Record<Language, { run: string; lsp: string }>>;
 	initialSource: string;
 	files: ProjectFile[];
 	degraded: Partial<Record<string, string>>;
 	/** What the kernel can enforce for this session. */
-	sandboxSupport?: SandboxSupport;
+	sandboxSupport: SandboxSupport;
 	/** Whether the session starts sandboxed. */
-	sandbox?: boolean;
+	sandbox: boolean;
 	/** Set when the session is attached to a persistent workspace. */
 	workspace?: WorkspaceMeta;
 }
@@ -293,6 +293,8 @@ export const runtimeClientMessageSchema = z.discriminatedUnion("type", [
 			version: z.number().int().positive(),
 			path: projectPathSchema.default("main.zig"),
 			source: z.string().max(MAX_SOURCE_BYTES),
+			/** The shared workspace revision this edit was built on. */
+			baseRevision: z.number().int().nonnegative().optional(),
 		})
 		.strict(),
 	z
@@ -370,6 +372,20 @@ export type RuntimeServerEvent =
 			error?: string;
 	  }
 	| { type: "deps.output"; stream: "stdout" | "stderr"; chunk: string }
+	/** How many sessions have this persistent workspace open, this one too. */
+	| { type: "workspace.peers"; count: number }
+	/** Another session sharing this workspace changed a file. */
+	| { type: "document.changed"; path: string; source: string; revision: number }
+	/** A write was refused: the workspace moved on underneath it. */
+	| { type: "document.conflict"; path: string; revision: number }
+	/**
+	 * A setting changed on another device sharing this server. Carries only
+	 * the keys that moved; a null value means the key was removed.
+	 */
+	| {
+			type: "preferences.changed";
+			preferences: Record<string, string | null>;
+	  }
 	| {
 			type: "run.state";
 			documentVersion: number;

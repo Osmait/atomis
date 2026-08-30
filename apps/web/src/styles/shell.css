@@ -1,0 +1,159 @@
+/* ── Shell ─────────────────────────────────────────────── */
+
+.app-shell {
+	display: flex;
+	flex-direction: column;
+	gap: 0;
+	height: 100%;
+	padding: 0;
+	background: var(--panel-border);
+	font-size: 13px;
+	transition:
+		background 0.18s ease,
+		opacity 140ms ease,
+		filter 140ms ease;
+}
+
+.app-shell.zen {
+	background: var(--panel-side);
+	padding: 40px 0 0;
+}
+
+.zen .global-status {
+	display: none;
+}
+
+/* ── Editor chrome (tabs + run, first row of the editor card) ── */
+
+.editor-chrome {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 7px 10px;
+	border-bottom: 1px solid var(--surface0);
+	flex-shrink: 0;
+	min-width: 0;
+}
+
+
+
+
+.tab-pill {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	min-width: 0;
+	overflow-x: auto;
+	scrollbar-width: none;
+}
+
+.tab-pill::-webkit-scrollbar {
+	display: none;
+}
+
+.buffer-tab {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	padding: 3px 10px;
+	border-radius: 7px;
+	cursor: pointer;
+	color: var(--overlay);
+	white-space: nowrap;
+	user-select: none;
+}
+
+.buffer-tab.active {
+	color: var(--text);
+	background: var(--surface0);
+}
+
+.buffer-tab:not(.active) .file-glyph {
+	opacity: 0.55;
+}
+
+.tab-close {
+	color: var(--dim);
+	padding: 0 1px;
+}
+
+.tab-close:hover {
+	color: var(--red);
+}
+
+.stale-dot {
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--yellow);
+	display: inline-block;
+}
+
+.tab-add {
+	padding: 3px 9px;
+	color: var(--dim);
+}
+
+.tab-add:hover {
+	color: var(--text);
+}
+
+.chrome-right {
+	margin-left: auto;
+	display: flex;
+	gap: 10px;
+	align-items: center;
+	flex-shrink: 0;
+}
+
+.run-button {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 24px;
+	background: var(--mauve);
+	color: var(--base);
+	border-radius: 4px;
+	font-weight: 600;
+}
+
+.run-button:hover:not(:disabled) {
+	background: var(--mauve-bright);
+}
+
+.run-button.running {
+	background: var(--mauve-dim);
+	color: var(--mauve);
+	box-shadow: inset 0 0 0 1px var(--mauve-border);
+}
+
+
+.spin {
+	display: inline-block;
+	animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+.auto-chip {
+	border: 1px solid var(--surface0);
+	background: var(--surface);
+	color: var(--overlay);
+	border-radius: 8px;
+	padding: 4px 10px;
+}
+
+.auto-chip.on {
+	border-color: var(--mauve-border);
+	background: var(--mauve-dim);
+	color: var(--mauve);
+}
+
+.auto-chip:hover:not(:disabled) {
+	border-color: var(--surface1);
+}

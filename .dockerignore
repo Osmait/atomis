@@ -1,0 +1,10 @@
+node_modules
+**/node_modules
+**/target
+**/dist
+zig-out
+.zig-cache
+.git
+test-results
+playwright-report
+apps/desktop/src-tauri/target

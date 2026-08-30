@@ -1,0 +1,113 @@
+{
+  "takenAt": "2026-08-30T23:00:21.460Z",
+  "commit": "",
+  "runs": 7,
+  "server": {
+    "startupMs": 4.5,
+    "rssMbIdle": 7.1,
+    "rssMbAfterWork": 15.2
+  },
+  "api": {
+    "GET /api/health": {
+      "p50": 0.3,
+      "p95": 0.8,
+      "status": 200
+    },
+    "GET /api/preferences": {
+      "p50": 0.3,
+      "p95": 0.6,
+      "status": 200
+    },
+    "GET /api/workspaces": {
+      "p50": 0.3,
+      "p95": 0.6,
+      "status": 200
+    },
+    "PUT /api/preferences": {
+      "p50": 0.4,
+      "p95": 0.6,
+      "status": 200
+    }
+  },
+  "bundle": {
+    "jsKb": 4043.5,
+    "jsGzipKb": 1077.3,
+    "cssKb": 205.1,
+    "cssGzipKb": 47.3,
+    "jsFiles": 6
+  },
+  "firstLoad": {
+    "fcpMs": 228,
+    "transferredKb": 954.1,
+    "decodedKb": 4100,
+    "requests": 14
+  },
+  "browser": {
+    "zig": {
+      "entry": "src/main.zig",
+      "editorReadyMs": 354,
+      "firstRunReadyMs": 2147,
+      "warmRunMs": 132,
+      "warmRunP95Ms": 133,
+      "keystrokeToValueMs": 831,
+      "serverInstrumentMs": 9.2,
+      "serverCompileMs": 63.7,
+      "serverExecuteMs": 1.6
+    },
+    "ts": {
+      "entry": "src/main.ts",
+      "editorReadyMs": 286,
+      "firstRunReadyMs": 565,
+      "warmRunMs": 366,
+      "warmRunP95Ms": 383,
+      "keystrokeToValueMs": 748,
+      "serverInstrumentMs": 112.1,
+      "serverCompileMs": 68.2,
+      "serverExecuteMs": 48.7
+    },
+    "py": {
+      "entry": "src/main.py",
+      "editorReadyMs": 286,
+      "firstRunReadyMs": 359,
+      "warmRunMs": 199,
+      "warmRunP95Ms": 215,
+      "keystrokeToValueMs": 581,
+      "serverInstrumentMs": 20.9,
+      "serverCompileMs": 0,
+      "serverExecuteMs": 18.2
+    },
+    "go": {
+      "entry": "src/main.go",
+      "editorReadyMs": 296,
+      "firstRunReadyMs": 3615,
+      "warmRunMs": 183,
+      "warmRunP95Ms": 183,
+      "keystrokeToValueMs": 645,
+      "serverInstrumentMs": 2.1,
+      "serverCompileMs": 33.1,
+      "serverExecuteMs": 2
+    },
+    "rust": {
+      "entry": "src/main.rs",
+      "editorReadyMs": 182,
+      "firstRunReadyMs": 384,
+      "warmRunMs": 133,
+      "warmRunP95Ms": 147,
+      "keystrokeToValueMs": 579,
+      "serverInstrumentMs": 1.8,
+      "serverCompileMs": 74.2,
+      "serverExecuteMs": 1.5
+    },
+    "cpp": {
+      "entry": "src/main.cpp",
+      "editorReadyMs": 281,
+      "firstRunReadyMs": 1059,
+      "warmRunMs": 600,
+      "warmRunP95Ms": 616,
+      "keystrokeToValueMs": 987,
+      "serverInstrumentMs": 42.6,
+      "serverCompileMs": 157.3,
+      "serverExecuteMs": 2.3
+    }
+  }
+}

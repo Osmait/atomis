@@ -1,0 +1,412 @@
+/* ── Editor chrome extras ──────────────────────────────── */
+
+.auto-text {
+	font-size: 11.5px;
+	padding: 4px 7px;
+	color: var(--dim);
+	text-decoration: line-through;
+}
+
+.auto-text.on {
+	color: var(--mauve);
+	text-decoration: none;
+}
+
+.chrome-icon {
+	display: flex;
+	align-items: center;
+	padding: 5px 6px;
+	color: var(--overlay);
+}
+
+.chrome-icon:hover {
+	color: var(--text);
+}
+
+/* ── Terminal header: dot + menu ───────────────────────── */
+
+.run-dot {
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	flex-shrink: 0;
+	display: inline-block;
+	background: var(--dim);
+}
+
+.run-dot.busy {
+	background: var(--yellow);
+}
+
+.run-dot.ok {
+	background: var(--green);
+}
+
+.run-dot.err {
+	background: var(--red);
+}
+
+.term-view-label {
+	color: var(--subtext);
+	font-size: 12px;
+}
+
+.term-menu-wrap {
+	margin-left: auto;
+	position: relative;
+	flex-shrink: 0;
+}
+
+.term-menu-btn {
+	display: flex;
+	align-items: center;
+	padding: 3px 6px;
+	border-radius: 4px;
+	color: var(--overlay);
+}
+
+.term-menu-btn:hover,
+.term-menu-btn.open {
+	color: var(--text);
+	background: var(--surface0);
+}
+
+/*
+ * Positioned against the viewport, not the panel: the panel clips its
+ * overflow and the button sits on its top edge, so anchoring the menu
+ * inside it put the menu outside the panel and out of sight. The
+ * coordinates come from the button, in Terminal.tsx.
+ */
+.term-menu {
+	position: fixed;
+	z-index: 30;
+	max-height: calc(100vh - 16px);
+	overflow-y: auto;
+	width: 210px;
+	display: flex;
+	flex-direction: column;
+	padding: 5px;
+	background: var(--surface);
+	border: 1px solid var(--surface1);
+	box-shadow: 0 18px 40px rgba(0, 0, 0, 0.6);
+	font-size: 12px;
+}
+
+.term-menu button {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	padding: 6px 8px;
+	border-radius: 4px;
+	color: var(--subtext);
+	text-align: left;
+}
+
+.term-menu button:hover {
+	background: var(--surface0);
+	color: var(--text);
+}
+
+.term-menu button.on {
+	color: var(--text);
+}
+
+.term-menu button.on .lucide {
+	color: var(--mauve);
+}
+
+.term-menu button b {
+	margin-left: auto;
+	color: var(--dim);
+	font-weight: 400;
+	font-size: 11px;
+}
+
+.term-menu-sep {
+	height: 1px;
+	background: var(--surface0);
+	margin: 4px 2px;
+}
+
+.output-list.dimmed {
+	opacity: 0.55;
+}
+
+/* ── Tests bar + drawer ────────────────────────────────── */
+
+.test-bar {
+	flex-shrink: 0;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 9px 14px;
+	background: var(--panel-editor);
+	border-top: 1px solid var(--surface0);
+	box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.35);
+	color: var(--overlay);
+	text-align: left;
+}
+
+.test-bar-label {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	font-size: 12px;
+	color: var(--text);
+	flex-shrink: 0;
+}
+
+.case-bars {
+	display: flex;
+	gap: 3px;
+	flex: 1;
+	max-width: 70px;
+	min-width: 0;
+}
+
+.case-bar {
+	flex: 1;
+	height: 4px;
+	border-radius: 2px;
+	background: var(--dim);
+}
+
+.case-bar.ok {
+	background: var(--green);
+}
+
+.case-bar.err {
+	background: var(--red);
+}
+
+.test-score {
+	font-size: 11.5px;
+	font-weight: 500;
+	color: var(--overlay);
+	flex-shrink: 0;
+}
+
+.test-score.ok {
+	color: var(--green);
+}
+
+.test-score.err {
+	color: var(--red);
+}
+
+.test-bar-kbd {
+	margin-left: auto;
+	font-size: 11px;
+	color: var(--overlay-dim);
+	flex-shrink: 0;
+}
+
+.tests-drawer {
+	position: absolute;
+	left: 0;
+	right: 0;
+	top: 64px;
+	bottom: 0;
+	z-index: 25;
+	min-height: 0;
+	background: var(--panel-editor);
+	border-top: 1px solid var(--surface1);
+	box-shadow: 0 -14px 34px rgba(0, 0, 0, 0.5);
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+}
+
+.drawer-handle {
+	display: flex;
+	justify-content: center;
+	padding: 7px 0 2px;
+	flex-shrink: 0;
+}
+
+.drawer-handle span {
+	width: 42px;
+	height: 4px;
+	border-radius: 3px;
+	background: var(--surface1);
+	display: block;
+}
+
+.drawer-head {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 6px 14px 11px;
+	flex-shrink: 0;
+	min-width: 0;
+}
+
+.drawer-score {
+	font-size: 22px;
+	font-weight: 700;
+	line-height: 1;
+	flex-shrink: 0;
+	color: var(--overlay);
+}
+
+.drawer-score.ok {
+	color: var(--green);
+}
+
+.drawer-score.err {
+	color: var(--red);
+}
+
+.drawer-sub-wrap {
+	display: flex;
+	flex-direction: column;
+	gap: 5px;
+	flex: 1;
+	min-width: 0;
+}
+
+.drawer-sub {
+	font-size: 11px;
+	color: var(--overlay);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.drawer-tabs {
+	display: flex;
+	gap: 3px;
+	flex-shrink: 0;
+	background: var(--panel-border);
+	border-radius: 4px;
+	padding: 3px;
+	box-shadow: inset 0 0 0 1px var(--surface0-dim);
+}
+
+.drawer-tabs button {
+	font-size: 11px;
+	padding: 3px 9px;
+	border-radius: 4px;
+	color: var(--overlay);
+}
+
+.drawer-tabs button.active {
+	color: var(--text);
+	background: var(--mauve-dim);
+}
+
+.drawer-close {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	font-size: 11px;
+	color: var(--overlay-dim);
+	flex-shrink: 0;
+}
+
+.drawer-close:hover {
+	color: var(--text);
+}
+
+.drawer-list {
+	flex: 1;
+	padding: 0 8px 8px;
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+	overflow: auto;
+	min-height: 0;
+}
+
+.drawer-list.history-list {
+	padding: 0 12px 10px;
+	gap: 4px;
+	font-size: 12px;
+}
+
+.history-list .history-row {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	padding: 6px 2px;
+	border-bottom: 1px solid var(--surface0-dim);
+}
+
+.history-list .history-row .lucide {
+	color: var(--green);
+}
+
+.history-list .history-row:has(.err) .lucide {
+	color: var(--red);
+}
+
+.history-ms {
+	margin-left: auto;
+	color: var(--overlay-dim);
+}
+
+.case-item {
+	flex: 0 0 auto;
+	border-radius: 4px;
+	overflow: hidden;
+}
+
+.case-item.failed {
+	background: var(--red-dim);
+	box-shadow: inset 0 0 0 1px var(--red-border);
+}
+
+.case-item.unmatched {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 7px 12px;
+	color: var(--subtext);
+}
+
+.case-text {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+
+.case-where {
+	font-size: 10.5px;
+	color: var(--overlay-dim);
+}
+
+.case-detail {
+	padding: 0 10px 10px 35px;
+	display: flex;
+	flex-direction: column;
+	gap: 5px;
+	font-size: 11px;
+}
+
+.case-actions {
+	display: flex;
+	gap: 8px;
+	padding-top: 2px;
+}
+
+.case-actions button {
+	border: 1px solid var(--surface1);
+	border-radius: 4px;
+	padding: 2px 8px;
+	color: var(--subtext);
+}
+
+.case-actions button:hover {
+	color: var(--text);
+	border-color: var(--overlay-dim);
+}
+
+.cases-hint {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 8px 10px;
+	color: var(--overlay-dim);
+	font-size: 11.5px;
+}

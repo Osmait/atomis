@@ -3,7 +3,7 @@
 # Atomis
 
 
-A loopback-only **Zig, Rust, Go, TypeScript/JavaScript, Python, C and C++** playground inspired by RunJS: Monaco + real language servers (ZLS / rust-analyzer), cancellable native compilation/execution, per-test results, and inline local values produced by AST instrumentation without changing visible code.
+A local-first **Zig, Rust, Go, TypeScript/JavaScript, Python, C and C++** playground inspired by RunJS: Monaco + real language servers (ZLS / rust-analyzer), cancellable native compilation/execution, per-test results, and inline local values produced by AST instrumentation without changing visible code.
 
 > **Sandboxed where the kernel allows it.** On Linux with Landlock (6.7+ for the network rules), every process a session spawns is confined to its own workspace with no TCP — toggle it in Settings → Sandbox, check `pnpm run doctor` for the level your kernel enforces. Everywhere else, and with the toggle off, code runs locally with your permissions: pause Auto Run before pasting untrusted code.
 
@@ -13,7 +13,7 @@ A loopback-only **Zig, Rust, Go, TypeScript/JavaScript, Python, C and C++** play
 - Node.js 22 (23/24 accepted for development)
 - Zig 0.16.x on `PATH`
 - ZLS 0.16.x on `PATH`
-- Optional, enables Rust sessions: Rust 1.75+ (`rustc`/`cargo`) and `rust-analyzer` on `PATH`
+- Rust 1.85+ (`rustc`/`cargo`) to build the server; the same toolchain enables Rust sessions, with `rust-analyzer` on `PATH` for editor features
 - Optional, enables Go sessions: Go 1.22+ and `gopls` on `PATH`
 - TS/JS sessions use the required Node itself (22.18+ for type stripping); `typescript-language-server` on `PATH` is optional for editor features
 - Optional, enables Python sessions: Python 3.9+ on `PATH`; `pyright-langserver` is optional for editor features
@@ -69,6 +69,133 @@ pnpm typecheck
 pnpm lint    # oxlint (strict, no any/unknown) + cargo clippy -D warnings
 ```
 
+## Remote access (Tailscale)
+
+Atomis always listens on `127.0.0.1` — there is no option to bind a public
+interface, and the Origin guard is the server's entire access control, so a
+port on the LAN would be an open shell. To reach it from another device, put
+`tailscale serve` in front: tailscaled terminates the remote connection and
+proxies it to the loopback listener, so only your own tailnet devices can get
+through and the port stays invisible to the network.
+
+```bash
+pnpm build
+pnpm start:remote
+```
+
+`scripts/serve-tailscale.mjs` reads this machine's MagicDNS name, publishes
+`https://<machine>.<tailnet>.ts.net` with `tailscale serve`, and starts the
+server with that origin in `ATOMIS_ALLOWED_ORIGINS` — the one env var that
+widens the Origin guard, and the only one honoured in production. It tears the
+`serve` down again on exit. Prerequisites it checks for you: HTTPS Certificates
+enabled for the tailnet (admin console → DNS) and permission to run
+`tailscale serve` (`sudo tailscale set --operator=$USER`, once).
+
+HTTPS is not optional here. `navigator.clipboard` needs a secure context, so
+over plain HTTP the editor's copy and paste fail — which on a tablet, with no
+keyboard shortcuts, is most of the editing.
+
+Everything else applies unchanged: whoever opens that URL runs code on this
+machine with your permissions, and the sandbox confines the code you run, not
+the server. Keep the tailnet to devices you own.
+
+For a second lock, set `ATOMIS_TOKEN` and every API call and socket has to
+carry it (`Authorization: Bearer …`, or `?t=…` for the sockets, which cannot
+send headers):
+
+```bash
+ATOMIS_TOKEN=$(openssl rand -hex 24) scripts/install-service.sh
+```
+
+The installer prints a `…/?t=<token>` link; open it once per device and the
+token is stored there and dropped from the address bar. This is worth doing
+only if your tailnet holds devices you would not hand a shell to — the Origin
+guard is not authentication, since the Origin it expects is this machine's own
+name and any client can send it.
+
+### Always on
+
+`pnpm start:remote` lasts as long as the terminal. To have Atomis up whenever
+the machine is:
+
+```bash
+pnpm build
+scripts/install-service.sh     # --uninstall to undo
+```
+
+It installs a systemd **user** service (no root) and enables lingering, so the
+service starts at boot rather than at login. The unit gets an explicit `PATH`
+resolved at install time: a unit starts from an empty environment, and the
+login shell's `PATH` would not survive a reboot anyway — fnm points `node` at
+`/run/user/<uid>/fnm_multishells/<pid>-<ts>`, a directory owned by one shell,
+so the installer records the symlink target instead. Toolchains missing at
+install time are reported and simply stay disabled.
+
+The `tailscale serve` half is set up once and lives in tailscaled's own state,
+which is restored on boot, so the service never touches it. That step is the
+one that needs HTTPS certificates on the tailnet, and root unless you have run
+`sudo tailscale set --operator=$USER`; the installer tells you which is
+missing and is safe to re-run.
+
+```bash
+systemctl --user status atomis
+journalctl --user -u atomis -f
+```
+
+## Running it somewhere else
+
+### Docker
+
+The image carries the toolchains, which is the tedious half of running this
+yourself.
+
+```bash
+docker build -t atomis .
+docker run --rm -p 4317:4317 \
+  -e ATOMIS_TOKEN="$(openssl rand -hex 24)" \
+  -e ATOMIS_ALLOWED_ORIGINS="http://localhost:4317" \
+  -v atomis-data:/data \
+  atomis
+```
+
+`ATOMIS_ALLOWED_ORIGINS` is not optional decoration: it must list the address
+people actually type — scheme and port included, comma-separated for several.
+Anything you leave out gets the page and then a 403 on every write, which
+looks like a broken app rather than a missing setting. The server warns about
+this at startup.
+
+`/data` holds the workspaces, the shared settings and the compiler cache —
+mount it or they go with the container. The image listens on `0.0.0.0` inside
+the container, which is why the token is not optional; see below.
+
+The Landlock sandbox needs Linux 6.7+ on the *host* and a seccomp profile that
+allows the `landlock_*` syscalls. Without it your sessions still run,
+unconfined within the container. `pnpm run doctor` — or the doctor panel —
+says which you actually have.
+
+### Directly
+
+```bash
+pnpm build
+ATOMIS_TOKEN=$(openssl rand -hex 24) ATOMIS_HOST=0.0.0.0 \
+  ATOMIS_ALLOWED_ORIGINS=https://atomis.example.com pnpm start
+```
+
+### Before you expose it
+
+**Anything that can reach the port can run code as the user running the
+server.** That is what Atomis is for, and it is why the defaults are what they
+are:
+
+- it listens on `127.0.0.1` unless you say otherwise;
+- `ATOMIS_HOST` beyond loopback **requires** `ATOMIS_TOKEN`, and the server
+  refuses to start without it rather than warning about it;
+- the token is required on every API call and both WebSockets. Open
+  `https://your-host/?t=<token>` once per device and it is remembered there.
+
+The sandbox confines the code you run, not the server. A token decides who may
+run code, not what that code may do. [SECURITY.md](SECURITY.md) has the rest.
+
 ## CI/CD
 
 GitHub Actions (patterns borrowed from GitButler and Clash Verge Rev):
@@ -91,7 +218,10 @@ Bundles land in `apps/desktop/src-tauri/target/release/bundle/`. The backend rew
 
 ## Usage
 
-The UI is a Catppuccin workspace of joined panels (native-window style): a file-tree sidebar, the editor (tabs, auto, settings gear and an icon Run button in its chrome row) and a dockable terminal, with a status bar (mode chip, run state, path, timings, cursor). The settings modal (gear or **⌘,**) holds the behaviour toggles (including **Inline logs** — Console Ninja-style: each print/log statement shows its latest output as ghost text beside the line, with a ×count for loops and hover for history, in every language), the inline-value format, the theme (Mocha / Macchiato / Crust) and typography (JetBrains Mono / IBM Plex Mono / SF Mono, sizes 12–15) — all persisted.
+The UI is a Catppuccin workspace of joined panels (native-window style): a file-tree sidebar, the editor (tabs, auto, settings gear and an icon Run button in its chrome row) and a dockable terminal, with a status bar (mode chip, run state, path, timings, cursor). The settings modal (gear or **⌘,**) is split into **Run / Editor / Appearance / Keyboard** tabs and holds the behaviour toggles (including **Inline logs** — Console Ninja-style: each print/log statement shows its latest output as ghost text beside the line, with a ×count for loops and hover for history, in every language), the inline-value format, **14 themes** — Catppuccin (Mocha, Macchiato, Frappé, Crust), Tokyo Night, Gruvbox, Nord, Dracula, Everforest, Rosé Pine, Kanagawa, One Dark and two light ones (Latte, Solarized) — and typography — **23 monospace families** and sizes 10–24. Two faces ship with the app (JetBrains Mono, IBM Plex Mono); the rest are whatever the device already has, and the dialog measures which ones those are and greys out the others, so the list tells you the truth per device. A missing family stays selectable, since preferences are shared and it may exist on your other machine. These are kept **by the server**, not by the browser, so reaching the same Atomis from a laptop and from a tablet gives you one set of settings rather than two; they land in `$XDG_DATA_HOME/atomis/preferences.json`, and each device sends only the keys it changed, so two devices never overwrite each other. Panel layout (dock side, which panels are open, zen mode) deliberately stays per browser — a tablet and a 27" monitor want different things. A change on one device reaches the others **live** over the runtime WebSocket, so flipping the theme on a tablet repaints the desktop without a reload. Settings a browser already had are carried up the first time it connects, and a server that cannot be reached simply falls back to local storage.
+
+
+A theme is data, not CSS: each one is a full palette in `apps/web/src/state/themes.ts`, and both the window's custom properties and the Monaco editor theme are generated from it — so hovering a theme in the Appearance tab repaints the whole window live (with a code-sample preview above the grid) and clicking commits it. Adding a theme means adding one entry.
 
 **Dependencies** live in the terminal's `Dependencies` tab: type a package, press install, and Atomis runs your language's own tool (`cargo add`, `go get`, `npm install`) and shows its output. Installing is the **only** step allowed to reach the network, and only outbound HTTPS from inside the sandbox — builds and your code stay offline. Packages land in the workspace, never in your global caches, so a persistent workspace keeps them and a scratch session discards them with everything else. All five languages with a package manager are covered — Rust (`cargo add`), Go (`go get`), TypeScript (`npm install`), Python (`uv add`, into the workspace's own `.venv`) and Zig (`zig fetch --save`, where you paste a package URL and `build.zig` wires the import for you). C and C++ have no standard manager and stay manual.
 
@@ -101,7 +231,7 @@ Work lives in **workspaces**. A *scratch session* (the default) is temporary —
 
 New sessions start **minimal**: just the entry file of your last-used language. The tree's ⋯ menu offers **Load demo workspace** — the entry file of every language whose toolchain is present, with example tests — and **Clear workspace** to go back to a single fresh file. Every workspace is **multilingual by extension** either way: create `main.rs`, `main.py`, … and they run (`main.zig`, `main.rs`, `main.go`, `main.ts`, `main.py`, `main.c`, `main.cpp` and their test files), and the file you are editing decides everything — Run (and Auto Run after an edit) executes that file's language pipeline, ZLS and rust-analyzer run side by side routed by extension, and assets like `input.txt` are shared between both. The status bar and terminal prompt reflect the active file's language, and the last language you touched is remembered for the next session. Rust runs use `cargo build`/`cargo run` with structured `--message-format=json` diagnostics, `#[test]` functions in the tests panel, and the same inline probe values and log-source tracing via `rustlive-instrument`.
 
-Keyboard navigation is vim-flavoured app-wide: a configurable **leader key** (Space by default; `,` or `\` in Settings → Keyboard) works from vim Normal mode in the editor and anywhere outside it — **leader+e** focuses the file tree and closes it when already focused (j/k move, Enter opens, h/l fold/unfold, Esc back), **leader+t** does the same for the terminal (j/k/d/u scroll, G bottom), **leader+h / leader+l** move focus across panels (tree ← editor → terminal), **leader+o** closes every tab but the active one, and **Shift+H / Shift+L** cycle through the open tabs. The status-bar mode chip shows LEADER/TREE/TERMINAL while navigating. Files and folders are created and renamed inline in the tree (VS Code style — type the name, Enter confirms, Esc cancels), from the ⋯ menu, the right-click context menu, or a folder's hover ＋.
+Keyboard navigation is vim-flavoured app-wide: a configurable **leader key** — Space by default, and Settings → Keyboard records **any key you press** (`,` `\` presets, or a letter, `;`, `ñ`, a function or arrow key). Modifiers on their own and Esc are refused, since one can never reach the handler and the other is what cancels the recording; a key the browser reserves (F5, F11) only works in the desktop app. It works from vim Normal mode in the editor and anywhere outside it — **leader+e** focuses the file tree and closes it when already focused (j/k move, Enter opens, h/l fold/unfold, Esc back), **leader+t** does the same for the terminal (j/k/d/u scroll, G bottom), **leader+h / leader+l** move focus across panels (tree ← editor → terminal), **leader+o** closes every tab but the active one, and **Shift+H / Shift+L** cycle through the open tabs. The status-bar mode chip shows LEADER/TREE/TERMINAL while navigating. Files and folders are created and renamed inline in the tree (VS Code style — type the name, Enter confirms, Esc cancels), from the ⋯ menu, the right-click context menu, or a folder's hover ＋.
 
 Keyboard: **Ctrl/Cmd+Enter** run · **Ctrl/Cmd+S** format the document (ZLS / rust-analyzer) and return Vim to Normal mode · **Ctrl/Cmd+B** toggle tree · **Ctrl/Cmd+J** toggle terminal · **Ctrl/Cmd+K** command palette (open, or ⌘↵ open-and-run, or create a file by typing a new name) · **Ctrl/Cmd+T** tests drawer · **Ctrl/Cmd+,** settings · **Ctrl/Cmd+1–5** inline-value format (dec/hex/bin/oct/chr) · **Ctrl/Cmd+.** zen mode. Layout (dock side, tree, zen) persists in the browser.
 
@@ -131,3 +261,7 @@ File, folder and language icons come from [material-icon-theme](https://github.c
 - [Limitations/security](docs/limitations.md)
 - [Roadmap](docs/roadmap.md)
 - [Implementation decisions](docs/implementation-plan.md)
+
+## License
+
+MIT — see [LICENSE](LICENSE). Contributions are welcome; [CONTRIBUTING.md](CONTRIBUTING.md) covers the toolchains and what CI checks.
