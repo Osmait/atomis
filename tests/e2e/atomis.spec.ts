@@ -1,10 +1,60 @@
 import { expect, test } from "@playwright/test";
 
+/**
+ * Settings live on the server now, so `localStorage.clear()` is no longer a
+ * clean slate: the shared store would hydrate the previous test's choices —
+ * or a real session's, when the suite runs on a developer's machine — back
+ * into the next one. Emptying it here keeps every test independent.
+ */
+test.beforeEach(async ({ request, baseURL }) => {
+	// The dev server answers on 5173 before the API behind it is listening,
+	// so the first test can arrive to a proxy error. Nothing is stored yet
+	// in that case, which is exactly the state this is trying to reach.
+	const response = await request.get("/api/preferences").catch(() => undefined);
+	if (!response?.ok()) return;
+	const stored = (await response.json().catch(() => ({}))) as {
+		preferences?: Record<string, string>;
+	};
+	const keys = Object.keys(stored.preferences ?? {});
+	if (keys.length === 0) return;
+	await request.put("/api/preferences", {
+		// The guard only ever accepts the UI's own origin.
+		headers: { origin: baseURL ?? "http://127.0.0.1:5173" },
+		data: {
+			preferences: Object.fromEntries(keys.map((key) => [key, null])),
+		},
+	});
+});
+
+/** The tabs the settings dialog groups its behaviour toggles into. */
+const SETTINGS_TABS = ["Run", "Editor", "Appearance"] as const;
+
+/**
+ * Finds a behaviour toggle in an already-open dialog, selecting whichever
+ * tab holds it. Searching rather than hard-coding the tab means moving a
+ * toggle between tabs does not break every test that flips it.
+ */
+async function findToggle(
+	page: import("@playwright/test").Page,
+	label: string,
+) {
+	// Match the label element, not the whole button: hints mention other
+	// toggles by name ("sandbox off — …") and would match too.
+	const toggle = page.locator(".settings-toggle").filter({
+		has: page.getByText(label, { exact: true }),
+	});
+	for (const tab of SETTINGS_TABS) {
+		await page.locator(".settings-tab", { hasText: tab }).click();
+		if ((await toggle.count()) > 0) return toggle;
+	}
+	throw new Error(`No settings toggle labelled ${label} on any tab`);
+}
+
 async function vimToggleOn(
 	page: import("@playwright/test").Page,
 ): Promise<boolean> {
-	return await page
-		.locator(".settings-toggle", { hasText: "Vim Mode" })
+	const toggle = await findToggle(page, "Vim Mode");
+	return await toggle
 		.locator(".switch")
 		.evaluate((element) => element.classList.contains("on"));
 }
@@ -16,11 +66,7 @@ async function setToggle(
 	on: boolean,
 ): Promise<void> {
 	await page.locator(".chrome-icon").click();
-	// Match the label element, not the whole button: hints mention other
-	// toggles by name ("sandbox off — …") and would match too.
-	const toggle = page.locator(".settings-toggle").filter({
-		has: page.getByText(label, { exact: true }),
-	});
+	const toggle = await findToggle(page, label);
 	await expect(toggle).toBeVisible();
 	const isOn = await toggle
 		.locator(".switch")
