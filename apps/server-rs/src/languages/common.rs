@@ -343,6 +343,23 @@ pub fn classify_execution(
     None
 }
 
+/// Why a compile-phase process failed, shared by every compiled runner.
+///
+/// A timeout must say so: `exit_code: None` with no limit used to fall into
+/// "compiler error", so a first cold build that outlived its budget showed
+/// an empty diagnostics panel instead of the one word that explained it.
+/// The caller also copies `timed_out` into its metrics — only the execution
+/// phase used to, and the UI trusted it.
+pub fn compile_failure_reason(compile: &ProcessResult) -> String {
+    if let Some(limit) = compile.limit {
+        format!("{limit} output limit exceeded")
+    } else if compile.timed_out {
+        "compilation timed out".to_string()
+    } else {
+        "compiler error".to_string()
+    }
+}
+
 pub fn truncate_chars(text: &str, max: usize) -> String {
     text.chars().take(max).collect()
 }

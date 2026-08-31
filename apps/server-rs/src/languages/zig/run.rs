@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 
 use tokio_util::sync::CancellationToken;
 
-use crate::languages::common::{report_aborted_tests, truncate_chars};
+use crate::languages::common::{compile_failure_reason, report_aborted_tests, truncate_chars};
 use crate::languages::markers::MarkerParser;
 use crate::languages::ndjson::{ProbeReader, RawTestEvent, RawTestStatus, TestReader};
 use crate::languages::packs;
@@ -253,10 +253,21 @@ pub async fn run(
         });
         metrics.exit_code = compile.exit_code;
         metrics.signal = compile.signal.clone();
-        metrics.reason = Some(match compile.limit {
-            Some(limit) => format!("{limit} output limit exceeded"),
-            None => "compiler error".to_string(),
-        });
+        metrics.timed_out = compile.timed_out;
+        // `zig build` has no offline switch: it fetches missing packages
+        // itself, and with the network sandboxed away that dies as an
+        // opaque build failure. Name the problem and the way out.
+        let stderr_lower = compile.stderr.to_lowercase();
+        metrics.reason = Some(
+            if stderr_lower.contains("unable to fetch")
+                || stderr_lower.contains("failed to fetch")
+                || (stderr_lower.contains("fetch") && stderr_lower.contains("connect"))
+            {
+                "dependency sources are not in the local cache — add the package again from the Dependencies panel to fetch them".to_string()
+            } else {
+                compile_failure_reason(&compile)
+            },
+        );
         return RunnerOutcome {
             result: metrics,
             terminal_state: TerminalState::CompileError,

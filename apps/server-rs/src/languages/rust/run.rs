@@ -18,7 +18,7 @@ use crate::domain::session::{Session, SessionSettings, Snapshot};
 use crate::exec::supervisor::{self, ProcessLimits, RunOptions, StreamCallbacks};
 
 use crate::languages::common::{
-    classify_execution, dedupe_diagnostics, execute_program, instrument_files, truncate_chars,
+    classify_execution, compile_failure_reason, dedupe_diagnostics, execute_program, instrument_files, truncate_chars,
     ExecuteConfig, InstrumentConfig,
 };
 use crate::languages::runtime::{cancelled_outcome, reset_generated, Events, RunnerEvent, RunnerOutcome, TerminalState};
@@ -413,10 +413,8 @@ pub async fn run(
         }
         metrics.exit_code = compile.exit_code;
         metrics.signal = compile.signal.clone();
-        metrics.reason = Some(match compile.limit {
-            Some(limit) => format!("{limit} output limit exceeded"),
-            None => "compiler error".to_string(),
-        });
+        metrics.timed_out = compile.timed_out;
+        metrics.reason = Some(compile_failure_reason(&compile));
         return RunnerOutcome {
             result: metrics,
             terminal_state: TerminalState::CompileError,
@@ -572,6 +570,11 @@ async fn run_tests(
         let arrivals = &arrivals;
         let full = &mut full_stdout;
         let mut buffer = String::new();
+        // Real `test name ... ok` lines all precede the first failure-detail
+        // block; a block REPLAYS captured stdout, and a test that printed
+        // such a line itself (a spawned thread escapes libtest's capture)
+        // must not mint phantom results.
+        let mut in_failure_details = false;
         supervisor::run(
             &executable,
             &["--test-threads=1".into()],
@@ -592,7 +595,14 @@ async fn run_tests(
                         buffer.push_str(chunk);
                         while let Some(newline) = buffer.find('\n') {
                             let line: String = buffer.drain(..=newline).collect();
-                            if let Some(parsed) = parse_libtest_line(line.trim_end_matches('\n')) {
+                            let line = line.trim_end_matches('\n');
+                            if line.starts_with("---- ") && line.ends_with(" ----") {
+                                in_failure_details = true;
+                            }
+                            if in_failure_details {
+                                continue;
+                            }
+                            if let Some(parsed) = parse_libtest_line(line) {
                                 arrivals.lock().expect("arrivals").push((
                                     parsed.name,
                                     parsed.status,

@@ -81,14 +81,19 @@ struct TapResult {
 
 fn parse_tap_output(stdout: &str) -> Vec<TapResult> {
     static RESULT: OnceLock<Regex> = OnceLock::new();
+    // The indent matters: node nests `describe`/`it` subtests four spaces
+    // deeper per level, and reading only column 0 left every inner test
+    // without a result while its suite's aggregate row pretended to be one.
     let result_re = RESULT.get_or_init(|| {
-        Regex::new(r"^(not )?ok \d+ - (.*?)(?: # (SKIP|TODO).*)?$").expect("static")
+        Regex::new(r"^(\s*)(not )?ok \d+ - (.*?)(?: # (SKIP|TODO).*)?$").expect("static")
     });
     static DURATION: OnceLock<Regex> = OnceLock::new();
     let duration_re =
         DURATION.get_or_init(|| Regex::new(r"^\s*duration_ms:\s*([\d.]+)").expect("static"));
     static ERROR_HEAD: OnceLock<Regex> = OnceLock::new();
     let error_re = ERROR_HEAD.get_or_init(|| Regex::new(r"^\s*error: \|-?$").expect("static"));
+    static KIND: OnceLock<Regex> = OnceLock::new();
+    let kind_re = KIND.get_or_init(|| Regex::new(r"^\s*type:\s*'([a-z]+)'").expect("static"));
 
     let lines: Vec<&str> = stdout.split('\n').collect();
     let mut results = Vec::new();
@@ -96,23 +101,31 @@ fn parse_tap_output(stdout: &str) -> Vec<TapResult> {
         let Some(capture) = result_re.captures(line) else {
             continue;
         };
-        let name = capture.get(2).map(|m| m.as_str()).unwrap_or("").to_string();
-        let status = if capture.get(3).is_some() {
+        let row_indent = capture.get(1).map(|m| m.as_str().len()).unwrap_or(0);
+        let name = capture.get(3).map(|m| m.as_str()).unwrap_or("").to_string();
+        let status = if capture.get(4).is_some() {
             TestStatus::Skipped
-        } else if capture.get(1).is_some() {
+        } else if capture.get(2).is_some() {
             TestStatus::Failed
         } else {
             TestStatus::Passed
         };
         let mut duration_ms = 0.0;
         let mut message: Option<String> = None;
+        // A `describe` block reports its own aggregate row (type: 'suite');
+        // its children are the results, the aggregate is bookkeeping.
+        let mut is_suite = false;
         for cursor in index + 1..lines.len() {
             let inner = lines[cursor];
-            if !inner.starts_with("  ") {
+            let inner_indent = inner.len() - inner.trim_start().len();
+            if !inner.trim().is_empty() && inner_indent <= row_indent {
                 break;
             }
             if inner.trim() == "..." {
                 break;
+            }
+            if let Some(kind) = kind_re.captures(inner) {
+                is_suite = kind.get(1).is_some_and(|m| m.as_str() == "suite");
             }
             if let Some(duration) = duration_re.captures(inner) {
                 if let Some(value) = duration.get(1).and_then(|m| m.as_str().parse().ok()) {
@@ -140,6 +153,9 @@ fn parse_tap_output(stdout: &str) -> Vec<TapResult> {
                 }
                 message = Some(truncate_chars(collected.join("\n").trim(), 1200));
             }
+        }
+        if is_suite {
+            continue;
         }
         results.push(TapResult {
             name,
@@ -457,4 +473,97 @@ async fn run_tests(
         leaked: 0,
         duration_ms: execution.duration_ms,
     });
+}
+
+#[cfg(test)]
+mod tap_tests {
+    use super::*;
+
+    /// Verbatim shape of `node --test --test-reporter=tap` on node 22/24:
+    /// nested `describe`/`it`, a failing assert, a skip, and the suite's
+    /// own aggregate row.
+    const REAL_TAP: &str = r#"TAP version 13
+# Subtest: plain passes
+ok 1 - plain passes
+  ---
+  duration_ms: 0.692148
+  type: 'test'
+  ...
+# Subtest: plain fails
+not ok 2 - plain fails
+  ---
+  duration_ms: 0.507716
+  type: 'test'
+  location: '/ws/src/sample.test.mjs:4:1'
+  failureType: 'testCodeFailure'
+  error: '1 == 2'
+  code: 'ERR_ASSERTION'
+  ...
+# Subtest: group
+    # Subtest: inner passes
+    ok 1 - inner passes
+      ---
+      duration_ms: 0.137611
+      type: 'test'
+      ...
+    # Subtest: inner fails
+    not ok 2 - inner fails
+      ---
+      duration_ms: 4.907577
+      type: 'test'
+      failureType: 'testCodeFailure'
+      error: |-
+        The expression evaluated to a falsy value:
+
+          assert.ok(false)
+
+      code: 'ERR_ASSERTION'
+      ...
+    1..2
+not ok 3 - group
+  ---
+  duration_ms: 5.295322
+  type: 'suite'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: skipped one
+ok 4 - skipped one # SKIP
+  ---
+  duration_ms: 0.111321
+  type: 'test'
+  ...
+1..4
+# tests 5
+# pass 2
+# fail 2
+# skipped 1
+"#;
+
+    #[test]
+    fn nested_subtests_report_and_the_suite_aggregate_does_not() {
+        let results = parse_tap_output(REAL_TAP);
+        let names: Vec<&str> = results.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(
+            names,
+            vec![
+                "plain passes",
+                "plain fails",
+                "inner passes",
+                "inner fails",
+                "skipped one"
+            ],
+            "five tests, no 'group' aggregate row"
+        );
+        let by_name = |name: &str| results.iter().find(|r| r.name == name).expect(name);
+        assert_eq!(by_name("plain passes").status, TestStatus::Passed);
+        assert_eq!(by_name("inner fails").status, TestStatus::Failed);
+        assert_eq!(by_name("skipped one").status, TestStatus::Skipped);
+        assert!(by_name("inner fails")
+            .message
+            .as_deref()
+            .is_some_and(|m| m.contains("falsy value")));
+        assert!(by_name("inner passes").duration_ms > 0.0);
+    }
 }

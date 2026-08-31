@@ -35,6 +35,7 @@ pub struct RawProbeEvent {
 
 pub struct ProbeReader<'a> {
     buffer: String,
+    decoder: crate::util::Utf8Carry,
     events: u32,
     max_events: u32,
     on_event: Box<dyn FnMut(RawProbeEvent) + Send + 'a>,
@@ -45,6 +46,7 @@ impl<'a> ProbeReader<'a> {
     pub fn new(on_event: Box<dyn FnMut(RawProbeEvent) + Send + 'a>) -> Self {
         ProbeReader {
             buffer: String::new(),
+            decoder: crate::util::Utf8Carry::new(),
             events: 0,
             max_events: 10_000,
             on_event,
@@ -56,7 +58,10 @@ impl<'a> ProbeReader<'a> {
         if self.error.is_some() {
             return;
         }
-        self.buffer.push_str(&String::from_utf8_lossy(chunk));
+        // Chunk boundaries land wherever the pipe cuts them; a multibyte
+        // character split across two reads must not become U+FFFD inside a
+        // preview.
+        self.buffer.push_str(&self.decoder.decode(chunk));
         while let Some(newline) = self.buffer.find('\n') {
             let line: String = self.buffer.drain(..=newline).collect();
             let line = line.trim_end_matches('\n');
@@ -92,6 +97,7 @@ impl<'a> ProbeReader<'a> {
     }
 
     pub fn end(&mut self) {
+        self.buffer.push_str(&self.decoder.finish());
         if self.error.is_none() && !self.buffer.trim().is_empty() {
             self.error = Some("Probe channel ended with partial NDJSON".into());
         }
@@ -144,6 +150,7 @@ struct TestEnvelope {
 
 pub struct TestReader<'a> {
     buffer: String,
+    decoder: crate::util::Utf8Carry,
     events: u32,
     max_events: u32,
     on_event: Box<dyn FnMut(RawTestEvent) + Send + 'a>,
@@ -154,6 +161,7 @@ impl<'a> TestReader<'a> {
     pub fn new(on_event: Box<dyn FnMut(RawTestEvent) + Send + 'a>) -> Self {
         TestReader {
             buffer: String::new(),
+            decoder: crate::util::Utf8Carry::new(),
             events: 0,
             max_events: 10_000,
             on_event,
@@ -165,7 +173,7 @@ impl<'a> TestReader<'a> {
         if self.error.is_some() {
             return;
         }
-        self.buffer.push_str(&String::from_utf8_lossy(chunk));
+        self.buffer.push_str(&self.decoder.decode(chunk));
         while let Some(newline) = self.buffer.find('\n') {
             let line: String = self.buffer.drain(..=newline).collect();
             let line = line.trim_end_matches('\n');
@@ -199,8 +207,82 @@ impl<'a> TestReader<'a> {
     }
 
     pub fn end(&mut self) {
+        self.buffer.push_str(&self.decoder.finish());
         if self.error.is_none() && !self.buffer.trim().is_empty() {
             self.error = Some("Test channel ended with partial NDJSON".into());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+
+    fn probe_line(preview: &str) -> String {
+        format!(
+            concat!(
+                r#"{{"protocolVersion":1,"kind":"probe_value","probeId":"p","name":"x","#,
+                r#""line":1,"column":1,"typeName":"str","preview":"{}","truncated":false,"sequence":1}}"#,
+                "\n"
+            ),
+            preview
+        )
+    }
+
+    #[test]
+    fn a_preview_split_mid_character_between_chunks_survives() {
+        let seen: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let out = Arc::clone(&seen);
+        let mut reader = ProbeReader::new(Box::new(move |event| {
+            out.lock().expect("seen").push(event.preview);
+        }));
+        let line = probe_line("señor 🎉");
+        let bytes = line.as_bytes();
+        // Cut inside the emoji.
+        let cut = line.find('🎉').expect("emoji") + 2;
+        reader.push(&bytes[..cut]);
+        reader.push(&bytes[cut..]);
+        reader.end();
+        assert_eq!(reader.error, None);
+        assert_eq!(seen.lock().expect("seen").as_slice(), ["señor 🎉"]);
+    }
+
+    #[test]
+    fn a_foreign_protocol_version_is_an_error_not_a_guess() {
+        let mut reader = ProbeReader::new(Box::new(|_| {}));
+        reader.push(probe_line("x").replace("\"protocolVersion\":1", "\"protocolVersion\":2").as_bytes());
+        assert!(reader.error.is_some());
+    }
+
+    #[test]
+    fn a_partial_trailing_line_is_reported_at_end() {
+        let mut reader = TestReader::new(Box::new(|_| {}));
+        reader.push(br#"{"protocolVersion":1,"kind":"test_summary","#);
+        reader.end();
+        assert!(reader.error.is_some());
+    }
+
+    #[test]
+    fn test_events_parse_and_unknown_kinds_are_refused() {
+        let seen = Arc::new(Mutex::new(0u32));
+        let out = Arc::clone(&seen);
+        let mut reader = TestReader::new(Box::new(move |_| {
+            *out.lock().expect("count") += 1;
+        }));
+        reader.push(
+            concat!(
+                r#"{"protocolVersion":1,"kind":"test_start","index":0,"name":"a"}"#,
+                "\n",
+                r#"{"protocolVersion":1,"kind":"test_result","index":0,"name":"a","status":"passed","durationNs":5}"#,
+                "\n",
+            )
+            .as_bytes(),
+        );
+        assert_eq!(reader.error, None);
+        assert_eq!(*seen.lock().expect("count"), 2);
+        reader.push(br#"{"protocolVersion":1,"kind":"who_knows"}"#);
+        reader.push(b"\n");
+        assert!(reader.error.is_some());
     }
 }

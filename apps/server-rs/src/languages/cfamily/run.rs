@@ -18,7 +18,7 @@ use crate::exec::supervisor::{self, ProcessLimits, RunOptions, StreamCallbacks};
 
 use crate::languages::common::report_aborted_tests;
 use crate::languages::common::{
-    classify_execution, dedupe_diagnostics, execute_program, instrument_files,
+    classify_execution, compile_failure_reason, dedupe_diagnostics, execute_program, instrument_files,
     ExecuteConfig, InstrumentConfig,
 };
 use crate::languages::runtime::{cancelled_outcome, reset_generated, Events, RunnerEvent, RunnerOutcome, TerminalState};
@@ -120,14 +120,21 @@ async fn runtime_pch(
         return (None, 0.0);
     }
     let pch = target.join(format!("{}-runtime.pch", config.runtime_header));
-    // Reuse it while it is at least as new as the header it was built from.
+    // Reuse it while it is at least as new as the header it was built from
+    // AND the compiler is still the binary that built it. A persistent
+    // workspace outlives clang upgrades, and clang refuses a foreign PCH
+    // with an error the diagnostics regex cannot map to any source line.
+    let stamp_path = target.join(format!("{}-runtime.pch.toolchain", config.runtime_header));
+    let stamp = compiler_stamp(config.compiler);
     let fresh = match (tokio::fs::metadata(&pch).await, tokio::fs::metadata(&header).await) {
         (Ok(built), Ok(source)) => match (built.modified(), source.modified()) {
             (Ok(built), Ok(source)) => built >= source,
             _ => false,
         },
         _ => false,
-    };
+    } && tokio::fs::read_to_string(&stamp_path)
+        .await
+        .is_ok_and(|stored| stored == stamp);
     if fresh {
         return (Some(pch), 0.0);
     }
@@ -155,9 +162,33 @@ async fn runtime_pch(
     )
     .await;
     if result.exit_code == Some(0) {
+        let _ = tokio::fs::write(&stamp_path, &stamp).await;
         (Some(pch), result.duration_ms)
     } else {
         (None, result.duration_ms)
+    }
+}
+
+/// Identity of the compiler binary itself (size + mtime of what PATH
+/// resolves), so an upgraded clang invalidates PCHs without a per-run
+/// `--version` probe eating the time the PCH exists to save.
+fn compiler_stamp(compiler: &str) -> String {
+    let resolved = std::env::var_os("PATH").and_then(|path| {
+        std::env::split_paths(&path)
+            .map(|dir| dir.join(compiler))
+            .find(|candidate| candidate.is_file())
+    });
+    match resolved.and_then(|p| std::fs::metadata(p).ok()) {
+        Some(meta) => {
+            let modified = meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            format!("{}:{}", meta.len(), modified)
+        }
+        None => "unknown".to_string(),
     }
 }
 
@@ -270,14 +301,14 @@ int main(void) {{
 	int passed = 0;
 	for (int index = 0; index < total; index++) {{
 		snprintf(record, sizeof record,
-			"{{\"protocolVersion\":1,\"kind\":\"test_start\",\"index\":%d,\"name\":\"%s\"}}\n",
+			"{{\"protocolVersion\":1,\"kind\":\"test_start\",\"index\":%d,\"name\":\"%.300s\"}}\n",
 			index, __atomis_tests[index].name);
 		__atomis_write(record);
 		long long started = __atomis_now();
 		__atomis_tests[index].fn();
 		long long elapsed = __atomis_now() - started;
 		snprintf(record, sizeof record,
-			"{{\"protocolVersion\":1,\"kind\":\"test_result\",\"index\":%d,\"status\":\"passed\",\"durationNs\":%lld,\"name\":\"%s\"}}\n",
+			"{{\"protocolVersion\":1,\"kind\":\"test_result\",\"index\":%d,\"status\":\"passed\",\"durationNs\":%lld,\"name\":\"%.300s\"}}\n",
 			index, elapsed, __atomis_tests[index].name);
 		__atomis_write(record);
 		passed++;
@@ -435,10 +466,8 @@ pub async fn run(
         }
         metrics.exit_code = compile.exit_code;
         metrics.signal = compile.signal.clone();
-        metrics.reason = Some(match compile.limit {
-            Some(limit) => format!("{limit} output limit exceeded"),
-            None => "compiler error".to_string(),
-        });
+        metrics.timed_out = compile.timed_out;
+        metrics.reason = Some(compile_failure_reason(&compile));
         return RunnerOutcome {
             result: metrics,
             terminal_state: TerminalState::CompileError,
@@ -494,7 +523,7 @@ pub async fn run(
                 source: Some("runtime".to_string()),
             }],
         });
-        run_tests(session, settings, &test_catalog, &cancel, &events, &config).await;
+        run_tests(session, snapshot, settings, &test_catalog, &cancel, &events, &config).await;
         metrics.reason = Some("abnormal exit".to_string());
         return RunnerOutcome {
             result: metrics,
@@ -505,7 +534,7 @@ pub async fn run(
         owner: "runtime".to_string(),
         diagnostics: Vec::new(),
     });
-    run_tests(session, settings, &test_catalog, &cancel, &events, &config).await;
+    run_tests(session, snapshot, settings, &test_catalog, &cancel, &events, &config).await;
     RunnerOutcome {
         result: metrics,
         terminal_state: TerminalState::Succeeded,
@@ -514,6 +543,7 @@ pub async fn run(
 
 async fn run_tests(
     session: &Session,
+    snapshot: &Snapshot,
     settings: &SessionSettings,
     catalog: &[TestCase],
     cancel: &CancellationToken,
@@ -531,7 +561,9 @@ async fn run_tests(
     };
     let test_main_path = session.root.join("generated").join(config.test_main_name);
     let _ = tokio::fs::write(&test_main_path, build_test_main(catalog, config)).await;
-    let snapshot = session.current().await;
+    // The run's snapshot, not `session.current()`: an edit landing during
+    // the Running phase must not swap the file list under a catalog whose
+    // ids were already announced for the old one.
     let user_sources: Vec<&ProjectFile> = snapshot
         .files
         .iter()
