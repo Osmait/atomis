@@ -48,18 +48,33 @@ if (serve.status !== 0) {
 	process.exit(serve.status ?? 1);
 }
 
+/** The `cargo run` child, once spawned; signals may arrive before that. */
+let server;
+
 let stopped = false;
 const stop = () => {
+	// Idempotent: reached from the exit handler, from either signal and from
+	// the child's own exit — whichever fires first does the work, the rest
+	// are no-ops instead of running `tailscale serve … off` twice.
 	if (stopped) return;
 	stopped = true;
 	spawnSync("tailscale", ["serve", "--https=443", "off"], { stdio: "inherit" });
 };
+// Kill the child before exiting: a bare `process.exit(0)` tore down
+// `tailscale serve` and left `cargo run` (and the server under it) orphaned
+// on the port. The server also watches for its parent dying, so terminating
+// cargo is enough to take both down.
+const shutdown = () => {
+	if (server && server.exitCode === null) server.kill("SIGTERM");
+	stop();
+	process.exit(0);
+};
 process.on("exit", stop);
-for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => process.exit(0));
+for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, shutdown);
 
 console.log(`[serve-tailscale] ${origin} → 127.0.0.1:${port} (tailnet only)`);
 
-const server = spawn(
+server = spawn(
 	"cargo",
 	["run", "--release", "--manifest-path", "apps/server-rs/Cargo.toml"],
 	{

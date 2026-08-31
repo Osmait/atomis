@@ -35,7 +35,9 @@ if [[ ! -d "$root/apps/web/dist" ]]; then
 	exit 1
 fi
 
-host="$(tailscale status --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["Self"]["DNSName"].rstrip("."))')"
+# `|| true` so the friendly message below survives `set -euo pipefail`:
+# without it a stopped tailscaled aborts the pipeline before the hint prints.
+host="$(tailscale status --json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["Self"]["DNSName"].rstrip("."))' 2>/dev/null || true)"
 if [[ -z "$host" ]]; then
 	echo "This machine has no MagicDNS name — is tailscale up?" >&2
 	exit 1
@@ -75,6 +77,12 @@ if [[ -n "${ATOMIS_TOKEN:-}" ]]; then
 fi
 
 mkdir -p "$(dirname "$unit")"
+# The unit may carry ATOMIS_TOKEN in clear text, so it is born 0600 (rm +
+# umask covers creation, chmod covers a pre-existing file) — user services
+# default to 0644, which would hand the secret to every local account.
+rm -f "$unit"
+(
+umask 077
 cat > "$unit" <<UNIT
 [Unit]
 Description=Atomis — code playground, served to this machine's tailnet
@@ -98,6 +106,8 @@ $token_line
 [Install]
 WantedBy=default.target
 UNIT
+)
+chmod 600 "$unit"
 
 # Without linger a user service waits for a login session; with it, the
 # manager starts at boot and so does Atomis.

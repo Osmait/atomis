@@ -71,6 +71,12 @@ for (const { toml, lock, name } of cargoPackages) {
 		new RegExp(`(name = "${name}"\\nversion = )"\\d+\\.\\d+\\.\\d+"`),
 		`$1"${next}"`,
 	);
+	// Same check the Cargo.toml replace gets: a lock that silently keeps the
+	// old version fails the next `cargo build --locked` in CI, far from here.
+	if (lockBumped === lockSource) {
+		console.error(`no package entry for ${name} in ${lock}`);
+		process.exit(1);
+	}
 	writeFileSync(lockPath, lockBumped);
 }
 
