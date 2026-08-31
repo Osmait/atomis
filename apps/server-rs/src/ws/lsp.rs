@@ -205,7 +205,17 @@ struct ProxyState {
     restarts: u32,
     closing: bool,
     reader_task: Option<tokio::task::JoinHandle<()>>,
+    /// The task pumping the CURRENT websocket into child stdin. Aborted when
+    /// a newer socket attaches, so a lingering reconnect cannot interleave
+    /// its frames into the same stdin.
+    socket_task: Option<tokio::task::JoinHandle<()>>,
     child: Option<tokio::process::Child>,
+    /// The child's pid, held for `close()`: the exit watcher owns the
+    /// `Child` itself (it is parked in `wait()`), so a shutdown that the
+    /// server ignores can only be enforced by signalling the pid directly.
+    /// Cleared by the watcher once the process is reaped, after which the
+    /// pid may belong to someone else and must not be signalled.
+    child_pid: Option<i32>,
 }
 
 pub struct LspProxy {
@@ -225,7 +235,9 @@ impl LspProxy {
                 restarts: 0,
                 closing: false,
                 reader_task: None,
+                socket_task: None,
                 child: None,
+                child_pid: None,
             }),
         }
     }
@@ -250,10 +262,15 @@ impl LspProxy {
             }
         }
         let proxy = Arc::clone(self);
-        tokio::spawn(async move {
+        let pump = tokio::spawn(async move {
             while let Some(Ok(message)) = stream.next().await {
                 match message {
                     Message::Text(text) => {
+                        // The runtime socket bounds its messages; this one
+                        // feeds a child process and gets the same courtesy.
+                        if text.len() > MAX_LSP_MESSAGE {
+                            break;
+                        }
                         let Ok(value) = serde_json::from_str::<Value>(&text) else {
                             break;
                         };
@@ -271,6 +288,14 @@ impl LspProxy {
                 }
             }
         });
+        // Socket and pump swap together under one lock: a reconnect replaces
+        // both, and the previous socket's pump stops writing into the shared
+        // stdin — interleaved, only the newest client saw any response.
+        let mut state = self.state.lock().await;
+        state.socket = Some(sink);
+        if let Some(previous) = state.socket_task.replace(pump) {
+            previous.abort();
+        }
     }
 
     fn start_boxed(self: Arc<Self>) -> futures_util::future::BoxFuture<'static, ()> {
@@ -385,6 +410,7 @@ impl LspProxy {
         {
             let mut state = self.state.lock().await;
             state.reader_task = Some(reader);
+            state.child_pid = child.id().map(|pid| pid as i32);
             state.child = Some(child);
         }
 
@@ -399,6 +425,9 @@ impl LspProxy {
             let _ = child.wait().await;
             let mut state = proxy.state.lock().await;
             state.child_stdin = None;
+            // Reaped: from here the pid may be reused and must not be
+            // signalled by anyone.
+            state.child_pid = None;
             if state.closing {
                 return;
             }
@@ -473,7 +502,7 @@ impl LspProxy {
         Self::send_socket(&self.state, message.to_string()).await;
     }
 
-    async fn close(&self) {
+    async fn close(self: &Arc<Self>) {
         let mut state = self.state.lock().await;
         state.closing = true;
         if let Some(stdin) = state.child_stdin.as_mut() {
@@ -490,10 +519,107 @@ impl LspProxy {
         if let Some(task) = state.reader_task.take() {
             task.abort();
         }
+        if let Some(task) = state.socket_task.take() {
+            task.abort();
+        }
+        // The exit watcher owns the `Child` (it is parked in wait()), so
+        // this take() is a dead letter on the ordinary path — the pid is
+        // what can still be enforced. Polite first; a server that ignores
+        // `exit` gets SIGKILL, checked against the watcher having reaped.
         if let Some(mut child) = state.child.take() {
             let _ = child.start_kill();
         }
+        if let Some(pid) = state.child_pid {
+            unsafe {
+                libc::kill(pid, libc::SIGTERM);
+            }
+            let proxy = Arc::clone(self);
+            tokio::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                let state = proxy.state.lock().await;
+                if state.child_pid == Some(pid) {
+                    unsafe {
+                        libc::kill(pid, libc::SIGKILL);
+                    }
+                }
+            });
+        }
         state.child_stdin = None;
         state.socket = None;
+    }
+}
+
+#[cfg(test)]
+mod framer_tests {
+    use super::*;
+
+    fn framed(body: &str) -> Vec<u8> {
+        let mut out = format!("Content-Length: {}\r\n\r\n", body.len()).into_bytes();
+        out.extend_from_slice(body.as_bytes());
+        out
+    }
+
+    #[test]
+    fn a_message_arrives_whole_or_in_any_number_of_pieces() {
+        let bytes = framed(r#"{"jsonrpc":"2.0","method":"x"}"#);
+        // Whole.
+        let mut framer = LspFramer::new();
+        assert_eq!(framer.push(&bytes).unwrap().len(), 1);
+        // One byte at a time, headers included.
+        let mut framer = LspFramer::new();
+        let mut seen = 0;
+        for byte in &bytes {
+            seen += framer.push(std::slice::from_ref(byte)).unwrap().len();
+        }
+        assert_eq!(seen, 1);
+    }
+
+    #[test]
+    fn a_multibyte_body_split_between_chunks_still_parses() {
+        let bytes = framed(r#"{"m":"señor 🎉"}"#);
+        // Split inside the emoji's four bytes.
+        let cut = bytes.len() - 3;
+        let mut framer = LspFramer::new();
+        assert_eq!(framer.push(&bytes[..cut]).unwrap().len(), 0);
+        let messages = framer.push(&bytes[cut..]).unwrap();
+        assert_eq!(messages[0]["m"], "señor 🎉");
+    }
+
+    #[test]
+    fn two_messages_in_one_chunk_both_come_out() {
+        let mut bytes = framed(r#"{"a":1}"#);
+        bytes.extend_from_slice(&framed(r#"{"b":2}"#));
+        let mut framer = LspFramer::new();
+        assert_eq!(framer.push(&bytes).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn malformed_framing_is_an_error_not_a_hang() {
+        // Not a number.
+        let mut framer = LspFramer::new();
+        assert!(framer.push(b"Content-Length: nope\r\n\r\n{}").is_err());
+        // Zero, absent, doubled, and beyond the limit.
+        let mut framer = LspFramer::new();
+        assert!(framer.push(b"Content-Length: 0\r\n\r\n").is_err());
+        let mut framer = LspFramer::new();
+        assert!(framer.push(b"Content-Type: json\r\n\r\n{}").is_err());
+        let mut framer = LspFramer::new();
+        assert!(framer
+            .push(b"Content-Length: 2\r\nContent-Length: 3\r\n\r\n{}x")
+            .is_err());
+        let mut framer = LspFramer::new();
+        let huge = format!("Content-Length: {}\r\n\r\n", MAX_LSP_MESSAGE + 1);
+        assert!(framer.push(huge.as_bytes()).is_err());
+        // A body that is not JSON.
+        let mut framer = LspFramer::new();
+        assert!(framer.push(b"Content-Length: 3\r\n\r\nnop").is_err());
+    }
+
+    #[test]
+    fn an_unbounded_header_is_refused() {
+        let mut framer = LspFramer::new();
+        // No \r\n\r\n in sight and past the 8KB cap: refuse, do not buffer
+        // forever.
+        assert!(framer.push(&vec![b'a'; 9000]).is_err());
     }
 }

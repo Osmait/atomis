@@ -190,6 +190,14 @@ pub async fn handle_runtime(state: Arc<AppState>, session: Arc<Session>, socket:
         });
     }
 
+    // Dependency installs run detached from the message loop (an `npm
+    // install` must not freeze edits and cancels for three minutes), one at
+    // a time, and die with the socket instead of running headless forever.
+    let deps = DepsControl {
+        gate: Arc::new(tokio::sync::Mutex::new(())),
+        cancel: tokio_util::sync::CancellationToken::new(),
+    };
+
     use futures_util::StreamExt;
     while let Some(message) = stream.next().await {
         let Ok(message) = message else { break };
@@ -230,7 +238,7 @@ pub async fn handle_runtime(state: Arc<AppState>, session: Arc<Session>, socket:
         if message.session_id() != session.id {
             break;
         }
-        if let Err(error) = handle_message(&session, &scheduler, &outbox_tx, &state.collab, message).await {
+        if let Err(error) = handle_message(&session, &scheduler, &outbox_tx, &state.collab, &deps, message).await {
             let _ = outbox_tx.send(ServerEvent::ServerError {
                 recoverable: true,
                 message: error,
@@ -240,6 +248,7 @@ pub async fn handle_runtime(state: Arc<AppState>, session: Arc<Session>, socket:
     }
 
     scheduler.close().await;
+    deps.cancel.cancel();
     if let Some(workspace) = workspace.as_deref() {
         state.collab.leave(workspace, &session.id).await;
     }
@@ -249,13 +258,14 @@ pub async fn handle_runtime(state: Arc<AppState>, session: Arc<Session>, socket:
     preferences.abort();
     writer.abort();
     session.runtime_connected.store(false, Ordering::SeqCst);
-    state.lsp_registry.close_session(&session.id).await;
 
     // A scratch session's directory is deleted with it, so a dropped
     // connection used to cost the user their files — and a tablet drops one
     // every time its screen locks. Wait, and only tear down if nothing has
     // attached since: `attach_generation` still reading what this connection
-    // saw means nobody came back for it.
+    // saw means nobody came back for it. The language servers get the same
+    // grace: killing them on every screen lock threw away warm indexes the
+    // reconnect was about to use.
     let state_for_destroy = Arc::clone(&state);
     let session_for_destroy = Arc::clone(&session);
     let session_id = session.id.clone();
@@ -268,8 +278,15 @@ pub async fn handle_runtime(state: Arc<AppState>, session: Arc<Session>, socket:
         {
             return;
         }
+        state_for_destroy.lsp_registry.close_session(&session_id).await;
         state_for_destroy.sessions.destroy(&session_id).await;
     });
+}
+
+/// One dependency operation at a time, cancelled when its socket goes.
+struct DepsControl {
+    gate: Arc<tokio::sync::Mutex<()>>,
+    cancel: tokio_util::sync::CancellationToken,
 }
 
 /// Reads and reports what the workspace declares. Cheap enough to run
@@ -306,11 +323,42 @@ async fn send_deps_catalog(
 /// Runs one dependency command. Installing is the only step in Atomis that
 /// may reach the network, and only outbound HTTPS: the sandbox policy is
 /// widened for this process alone, never for builds or user code.
+/// Hands a dependency command to its own task, so the message loop keeps
+/// serving edits and cancels while a package manager talks to the network.
+/// The gate refuses a second command while one runs; the socket's token
+/// reaches both child processes, so closing the tab leaves no headless npm.
+fn spawn_deps_command(
+    session: &Arc<Session>,
+    outbox: &tokio::sync::mpsc::UnboundedSender<ServerEvent>,
+    deps: &DepsControl,
+    name: String,
+    installing: bool,
+) -> Result<(), String> {
+    let Ok(guard) = Arc::clone(&deps.gate).try_lock_owned() else {
+        return Err("A dependency operation is already running".to_string());
+    };
+    let session = Arc::clone(session);
+    let outbox = outbox.clone();
+    let cancel = deps.cancel.child_token();
+    tokio::spawn(async move {
+        let _guard = guard;
+        if let Err(error) = run_deps_command(&session, &outbox, name, installing, cancel).await {
+            let _ = outbox.send(ServerEvent::ServerError {
+                recoverable: true,
+                message: error,
+                details: None,
+            });
+        }
+    });
+    Ok(())
+}
+
 async fn run_deps_command(
     session: &Arc<Session>,
     outbox: &tokio::sync::mpsc::UnboundedSender<ServerEvent>,
     name: String,
     installing: bool,
+    cancel: tokio_util::sync::CancellationToken,
 ) -> Result<(), String> {
     let language = session.language;
     let support = crate::languages::deps::support(language).ok_or("This language has no package manager")?;
@@ -391,7 +439,7 @@ async fn run_deps_command(
             cwd: session.root.clone(),
             // Fetching a dependency tree is slower than a build.
             limits: crate::exec::supervisor::ProcessLimits::new(180_000, 512 * 1024, 512 * 1024),
-            cancel: tokio_util::sync::CancellationToken::new(),
+            cancel: cancel.clone(),
             probe_fd: false,
             env,
             sandbox: sandbox.clone(),
@@ -430,7 +478,7 @@ async fn run_deps_command(
                 crate::exec::supervisor::RunOptions {
                     cwd: session.root.clone(),
                     limits: crate::exec::supervisor::ProcessLimits::new(180_000, 512 * 1024, 512 * 1024),
-                    cancel: tokio_util::sync::CancellationToken::new(),
+                    cancel: cancel.clone(),
                     probe_fd: false,
                     env: support
                         .fetch_env
@@ -483,6 +531,7 @@ async fn handle_message(
     scheduler: &Arc<RunScheduler>,
     outbox: &tokio::sync::mpsc::UnboundedSender<ServerEvent>,
     collab: &crate::domain::collab::Collab,
+    deps: &DepsControl,
     message: RuntimeClientMessage,
 ) -> Result<(), String> {
     match message {
@@ -491,10 +540,10 @@ async fn handle_message(
             Ok(())
         }
         RuntimeClientMessage::DepsAdd { name, .. } => {
-            run_deps_command(session, outbox, name, true).await
+            spawn_deps_command(session, outbox, deps, name, true)
         }
         RuntimeClientMessage::DepsRemove { name, .. } => {
-            run_deps_command(session, outbox, name, false).await
+            spawn_deps_command(session, outbox, deps, name, false)
         }
         RuntimeClientMessage::DocumentUpdate {
             version,
@@ -506,34 +555,42 @@ async fn handle_message(
             // In a shared workspace the file on disk is not ours alone. A
             // write built on a revision that has moved is refused rather
             // than applied: silently replacing the other device's work is
-            // what this exists to stop.
-            if let Some(workspace) = session.workspace_id.as_deref() {
-                match collab
+            // what this exists to stop. Order matters just as much: the
+            // store persists BEFORE anything is recorded or broadcast, so a
+            // write the store refuses (a raced delete, an oversized
+            // project) is never one the peers already applied.
+            let snapshot = if let Some(workspace) = session.workspace_id.as_deref() {
+                let lock = collab.edit_lock(workspace).await;
+                let _guard = lock.lock().await;
+                if let Err(conflict) = collab.check_base(workspace, base_revision).await {
+                    let _ = outbox.send(ServerEvent::DocumentConflict {
+                        path,
+                        revision: conflict.current,
+                    });
+                    return Ok(());
+                }
+                let snapshot = session.update(version, &path, &source).await?;
+                // Cannot conflict while the guard is held: only record_edit
+                // bumps the revision, and every recording holds this lock.
+                if let Ok(revision) = collab
                     .record_edit(workspace, &session.id, &path, &source, base_revision)
                     .await
                 {
-                    Ok(revision) => {
-                        // The writer skips its own broadcast, so this is the
-                        // only way it learns the revision it just created —
-                        // without it every write after the first carries a
-                        // base that has moved and is refused. An empty path
-                        // is a revision and nothing else, same as on join.
-                        let _ = outbox.send(ServerEvent::DocumentChanged {
-                            path: String::new(),
-                            source: String::new(),
-                            revision,
-                        });
-                    }
-                    Err(conflict) => {
-                        let _ = outbox.send(ServerEvent::DocumentConflict {
-                            path,
-                            revision: conflict.current,
-                        });
-                        return Ok(());
-                    }
+                    // The writer skips its own broadcast, so this is the
+                    // only way it learns the revision it just created —
+                    // without it every write after the first carries a
+                    // base that has moved and is refused. An empty path
+                    // is a revision and nothing else, same as on join.
+                    let _ = outbox.send(ServerEvent::DocumentChanged {
+                        path: String::new(),
+                        source: String::new(),
+                        revision,
+                    });
                 }
-            }
-            let snapshot = session.update(version, &path, &source).await?;
+                snapshot
+            } else {
+                session.update(version, &path, &source).await?
+            };
             after_store_change(session, scheduler, outbox, &snapshot, &path, false).await;
             Ok(())
         }

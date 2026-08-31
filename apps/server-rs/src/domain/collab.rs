@@ -47,6 +47,8 @@ struct State {
     /// per file: it answers "has anything moved since you last looked", which
     /// is the question a stale write needs answered.
     revisions: HashMap<String, u64>,
+    /// One writer at a time per workspace — see [`Collab::edit_lock`].
+    edit_locks: HashMap<String, std::sync::Arc<Mutex<()>>>,
 }
 
 pub struct Collab {
@@ -104,6 +106,26 @@ impl Collab {
             .peers
             .get(workspace)
             .map_or(0, HashSet::len)
+    }
+
+    /// The per-workspace write lock. A caller that holds it across
+    /// check → persist → record knows the revision it checked is still the
+    /// revision when it records: nothing else can bump it in between, so an
+    /// edit is never broadcast for a write the store then refuses.
+    pub async fn edit_lock(&self, workspace: &str) -> std::sync::Arc<Mutex<()>> {
+        let mut state = self.state.lock().await;
+        std::sync::Arc::clone(state.edit_locks.entry(workspace.to_string()).or_default())
+    }
+
+    /// Whether a write built on `base` would be accepted right now, without
+    /// recording or announcing anything.
+    pub async fn check_base(&self, workspace: &str, base: Option<u64>) -> Result<(), Conflict> {
+        let mut state = self.state.lock().await;
+        let current = *state.revisions.entry(workspace.to_string()).or_insert(0);
+        match base {
+            Some(base) if base != current => Err(Conflict { current }),
+            _ => Ok(()),
+        }
     }
 
     /// Accepts an edit if it was built on the current revision, and tells

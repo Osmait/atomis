@@ -25,7 +25,13 @@ fn valid_origin_with(
     dev_allowlist: &str,
 ) -> bool {
     let Some(origin) = origin else { return false };
-    if origin == format!("http://127.0.0.1:{server_port}") {
+    // The three spellings of this machine: what the address bar shows depends
+    // on what the user typed, and refusing `localhost` for `127.0.0.1` turns
+    // into a 403 with no hint of why.
+    if LOOPBACK_HOSTS
+        .iter()
+        .any(|host| origin == format!("http://{host}:{server_port}"))
+    {
         return true;
     }
     // Remote access (`tailscale serve`, or any local reverse proxy): the page
@@ -35,13 +41,111 @@ fn valid_origin_with(
     if listed(remote_allowlist, origin) {
         return true;
     }
-    if !production && origin == "http://127.0.0.1:5173" {
+    if !production
+        && LOOPBACK_HOSTS
+            .iter()
+            .any(|host| origin == format!("http://{host}:5173"))
+    {
         return true;
     }
     if !production && listed(dev_allowlist, origin) {
         return true;
     }
     false
+}
+
+const LOOPBACK_HOSTS: [&str; 3] = ["127.0.0.1", "localhost", "[::1]"];
+
+/// Host-header guard against DNS rebinding.
+///
+/// A rebound name (`evil.com` → 127.0.0.1) makes the attacker's page
+/// same-origin with this server, and a same-origin GET carries no `Origin`
+/// for the Origin guard to refuse. What the browser cannot forge is `Host`:
+/// it always names what the address bar says. Accepting only this machine's
+/// own names (any port — a proxy may sit on another one) plus the hosts of
+/// the configured origins closes that road.
+pub fn valid_host(host: Option<&str>, remote_allowlist: &str, dev_allowlist: &str) -> bool {
+    let Some(host) = host else { return false };
+    let host = host.trim();
+    let name = host_without_port(host);
+    if LOOPBACK_HOSTS
+        .iter()
+        .any(|loopback| name.eq_ignore_ascii_case(loopback))
+    {
+        return true;
+    }
+    for allowlist in [remote_allowlist, dev_allowlist] {
+        for entry in allowlist.split(',') {
+            let entry = entry.trim();
+            if entry.is_empty() {
+                continue;
+            }
+            let allowed = entry
+                .strip_prefix("https://")
+                .or_else(|| entry.strip_prefix("http://"))
+                .unwrap_or(entry);
+            if !allowed.is_empty()
+                && (host.eq_ignore_ascii_case(allowed)
+                    || name.eq_ignore_ascii_case(host_without_port(allowed)))
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// `[::1]:4317` → `[::1]`; `localhost:4317` → `localhost`; ports are the
+/// caller's business — a reverse proxy answers on its own.
+fn host_without_port(host: &str) -> &str {
+    if let Some(end) = host.strip_prefix('[').and_then(|_| host.find(']')) {
+        return &host[..=end];
+    }
+    host.rsplit_once(':').map_or(host, |(name, _)| name)
+}
+
+/// Decodes a byte stream chunk by chunk without tearing UTF-8 sequences at
+/// chunk boundaries: an incomplete trailing sequence is carried into the
+/// next chunk instead of becoming U+FFFD twice.
+#[derive(Default)]
+pub struct Utf8Carry {
+    pending: Vec<u8>,
+}
+
+impl Utf8Carry {
+    pub fn new() -> Self {
+        Utf8Carry::default()
+    }
+
+    pub fn decode(&mut self, chunk: &[u8]) -> String {
+        let mut bytes = std::mem::take(&mut self.pending);
+        bytes.extend_from_slice(chunk);
+        match std::str::from_utf8(&bytes) {
+            Ok(text) => text.to_string(),
+            Err(error) => {
+                let valid = error.valid_up_to();
+                match error.error_len() {
+                    // A truly invalid sequence: nothing more will fix it.
+                    Some(_) => String::from_utf8_lossy(&bytes).into_owned(),
+                    // Incomplete tail: decode what is whole, keep the rest.
+                    None => {
+                        self.pending = bytes[valid..].to_vec();
+                        String::from_utf8_lossy(&bytes[..valid]).into_owned()
+                    }
+                }
+            }
+        }
+    }
+
+    /// The stream ended: whatever is still pending can never complete.
+    pub fn finish(&mut self) -> String {
+        let bytes = std::mem::take(&mut self.pending);
+        if bytes.is_empty() {
+            String::new()
+        } else {
+            String::from_utf8_lossy(&bytes).into_owned()
+        }
+    }
 }
 
 /// The shared secret every API call must carry, when one is configured.
@@ -297,6 +401,83 @@ mod tests {
         assert!(!valid_origin_with(Some("http://127.0.0.1:5173"), 4317, true, "", ""));
         assert!(!valid_origin_with(Some("http://evil.example"), 4317, true, "", ""));
         assert!(!valid_origin_with(None, 4317, true, "", ""));
+    }
+
+    #[test]
+    fn every_loopback_spelling_is_the_server_origin() {
+        // What the guard trusts is this machine, not one spelling of it: the
+        // page loads the same from localhost, 127.0.0.1 and [::1].
+        for origin in [
+            "http://localhost:4317",
+            "http://[::1]:4317",
+            "http://127.0.0.1:4317",
+        ] {
+            assert!(valid_origin_with(Some(origin), 4317, true, "", ""), "{origin}");
+        }
+        assert!(valid_origin_with(Some("http://localhost:5173"), 4317, false, "", ""));
+        assert!(!valid_origin_with(Some("http://localhost:5173"), 4317, true, "", ""));
+        assert!(!valid_origin_with(Some("http://localhost:4318"), 4317, true, "", ""));
+        // Only plain http reaches the loopback listener; a spoofed scheme is
+        // not this machine.
+        assert!(!valid_origin_with(Some("https://localhost:4317"), 4317, true, "", ""));
+    }
+
+    #[test]
+    fn a_rebound_host_never_passes_the_host_guard() {
+        // DNS rebinding presents Host: evil.com while resolving here; the
+        // browser never lies about Host, so refusing foreign names closes it.
+        assert!(!valid_host(Some("evil.com:4317"), "", ""));
+        assert!(!valid_host(Some("evil.com"), "", ""));
+        assert!(!valid_host(None, "", ""));
+        assert!(!valid_host(Some(""), "", ""));
+        for host in [
+            "127.0.0.1:4317",
+            "localhost:4317",
+            "LOCALHOST:4317",
+            "localhost",
+            "[::1]:4317",
+            "[::1]",
+            // The dev proxy forwards the browser's Host untouched.
+            "127.0.0.1:5173",
+            "localhost:5173",
+        ] {
+            assert!(valid_host(Some(host), "", ""), "{host}");
+        }
+    }
+
+    #[test]
+    fn allowed_origins_admit_their_hosts() {
+        let remote = "https://cachyos.tailnet.ts.net";
+        assert!(valid_host(Some("cachyos.tailnet.ts.net"), remote, ""));
+        assert!(valid_host(Some("cachyos.tailnet.ts.net:443"), remote, ""));
+        assert!(!valid_host(Some("other.tailnet.ts.net"), remote, ""));
+        // A dev harness origin carries its port in the entry.
+        assert!(valid_host(Some("dev.local:5199"), "", "http://dev.local:5199"));
+        assert!(valid_host(Some("dev.local"), "", "http://dev.local:5199"));
+    }
+
+    #[test]
+    fn utf8_carry_joins_sequences_split_between_chunks() {
+        let mut carry = Utf8Carry::new();
+        let text = "año señor 🎉".as_bytes();
+        // Split inside the ñ (2 bytes) and inside the emoji (4 bytes).
+        let mut decoded = String::new();
+        for chunk in [&text[..2], &text[2..12], &text[12..14], &text[14..]] {
+            decoded.push_str(&carry.decode(chunk));
+        }
+        decoded.push_str(&carry.finish());
+        assert_eq!(decoded, "año señor 🎉");
+        assert!(!decoded.contains('\u{FFFD}'));
+    }
+
+    #[test]
+    fn utf8_carry_still_reports_truly_invalid_bytes() {
+        let mut carry = Utf8Carry::new();
+        assert_eq!(carry.decode(&[b'a', 0xFF, b'b']), "a\u{FFFD}b");
+        // A tail that never completes surfaces at finish, not silently.
+        assert_eq!(carry.decode(&[0xC3]), "");
+        assert_eq!(carry.finish(), "\u{FFFD}");
+        assert_eq!(carry.finish(), "");
     }
 
     #[test]
