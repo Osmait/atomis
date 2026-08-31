@@ -45,6 +45,36 @@ func __atomisEscape(builder *strings.Builder, value string) {
 	}
 }
 
+// __atomisPreview formats a value WITHOUT materializing all of it first: a
+// hundred-million element slice rendered with %#v is gigabytes of string
+// built inside the user's own program just to keep 512 bytes of it.
+func __atomisPreview(value any) string {
+	v := reflect.ValueOf(value)
+	if !v.IsValid() {
+		return fmt.Sprintf("%#v", value)
+	}
+	switch v.Kind() {
+	case reflect.String:
+		s := v.String()
+		if len(s) > __atomisMaxPreview*2 {
+			end := __atomisMaxPreview * 2
+			for end > 0 && !__atomisIsBoundary(s, end) {
+				end--
+			}
+			return fmt.Sprintf("%q…", s[:end])
+		}
+	case reflect.Slice:
+		if v.Len() > 64 {
+			return fmt.Sprintf("%#v… (len %d)", v.Slice(0, 64).Interface(), v.Len())
+		}
+	case reflect.Array, reflect.Map:
+		if v.Len() > 64 {
+			return fmt.Sprintf("%T (len %d)", value, v.Len())
+		}
+	}
+	return fmt.Sprintf("%#v", value)
+}
+
 func __atomisTruncate(preview string) (string, bool) {
 	if len(preview) <= __atomisMaxPreview {
 		return preview, false
@@ -84,7 +114,7 @@ func __atomisLayout(value any) string {
 
 func __atomis_probe(probeID string, line int, column int, name string, value any) {
 	sequence := __atomisSequence.Add(1) - 1
-	preview, truncated := __atomisTruncate(fmt.Sprintf("%#v", value))
+	preview, truncated := __atomisTruncate(__atomisPreview(value))
 	typeName := fmt.Sprintf("%T", value)
 	var record strings.Builder
 	record.WriteString(`{"protocolVersion":1,"kind":"probe_value","probeId":"`)
@@ -121,7 +151,10 @@ func __atomis_log(fd int, fileID int, line int, column int) {
 }
 
 func __atomis_log_loop(fd int, fileID int, line int, column int, loopLine int, loopColumn int, variable string, value any) {
-	preview, _ := __atomisTruncate(fmt.Sprintf("%#v", value))
+	preview, _ := __atomisTruncate(__atomisPreview(value))
+	// The marker travels in-band: its own delimiters (or a newline) inside
+	// the preview would cut the frame short.
+	preview = strings.NewReplacer("\x1e", "?", "\x1f", "?", "\n", "\\n").Replace(preview)
 	marker := fmt.Sprintf(
 		"\x1eATOMIS_LOG:%d:%d:%d:%d:%d:%s:%s\x1f",
 		fileID, line, column, loopLine, loopColumn, variable, preview,
