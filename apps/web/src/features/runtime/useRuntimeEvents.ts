@@ -116,6 +116,7 @@ export function useRuntimeEvents(options: RuntimeEventsOptions) {
 	const [openFolds, setOpenFolds] = useState<Set<string>>(new Set());
 	const lastRunFailedRef = useRef(false);
 	const runNoRef = useRef(0);
+	const outputSeqRef = useRef(0);
 
 	const handleRuntimeEvent = useCallback(
 		(event: RuntimeServerEvent): void => {
@@ -146,6 +147,10 @@ export function useRuntimeEvents(options: RuntimeEventsOptions) {
 						source: event.source,
 						revision: event.revision,
 					});
+				// An empty path is our own write's ack: the store took it, so
+				// a "not saved — changed elsewhere" banner from an earlier
+				// refusal is stale. Nothing else ever cleared it.
+				else setConflict(undefined);
 				return;
 			}
 			if (event.type === "document.conflict") {
@@ -221,6 +226,7 @@ export function useRuntimeEvents(options: RuntimeEventsOptions) {
 							category: event.category,
 							chunk: event.chunk,
 							receivedAt: performance.now(),
+							seq: ++outputSeqRef.current,
 							...(sourceLocation ? { sourceLocation } : {}),
 						},
 					].slice(-500),
@@ -311,13 +317,21 @@ export function useRuntimeEvents(options: RuntimeEventsOptions) {
 	);
 
 	/// Clears everything the previous session produced. Used when the app
-	/// switches workspaces without reloading the page.
+	/// switches workspaces without reloading the page. EVERYTHING: a field
+	/// that survives the switch leaks the old workspace into the new one —
+	/// a stale revision makes the first keystroke a phantom conflict, a
+	/// stale peer count leaves a "2 devices" badge on a scratch session.
 	const reset = useCallback((): void => {
 		setRunState("idle");
 		setCatalog([]);
 		catalogRef.current = [];
 		setValues(new Map());
 		setStale(false);
+		setPeers(1);
+		setRevision(undefined);
+		revisionRef.current = undefined;
+		setConflict(undefined);
+		setRemoteEdit(undefined);
 		setOutput([]);
 		setDiagnostics({});
 		setResult(undefined);
@@ -329,12 +343,16 @@ export function useRuntimeEvents(options: RuntimeEventsOptions) {
 		setDrawer(false);
 		setDeps([]);
 		setDepsSupported(false);
+		setDepsManifest(undefined);
+		setDepsHint(undefined);
+		setDepsUntrusted(false);
 		setDepsState("idle");
 		setDepsError(undefined);
 		setDepsOutput([]);
 		setOpenFolds(new Set());
 		lastRunFailedRef.current = false;
 		runNoRef.current = 0;
+		outputSeqRef.current = 0;
 	}, []);
 
 	return {

@@ -278,6 +278,7 @@ export function App(): React.JSX.Element {
 		filesRef,
 		entryRef,
 		versionRef,
+		revisionRef,
 		lspClientsRef,
 		setStatus,
 	});

@@ -11,6 +11,13 @@ export interface TerminalEntry {
 	category: "program" | "error";
 	chunk: string;
 	receivedAt: number;
+	/**
+	 * Monotonic id assigned at arrival. The buffer keeps only the last 500
+	 * entries, so an entry's INDEX shifts every time the window slides —
+	 * anything keyed by index (React rows, fold open-state) re-mounts or
+	 * collapses mid-stream. The seq never changes.
+	 */
+	seq?: number;
 	sourceLocation?: TerminalSourceLocation;
 }
 

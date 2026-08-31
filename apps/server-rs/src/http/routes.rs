@@ -15,11 +15,18 @@ use crate::util;
 
 use super::guards::{allowed, allowed_read, origin_ok, token_ok};
 
-/// Deliberately unguarded and deliberately empty of detail: a container
-/// healthcheck must reach it before anyone holds a token, so it may say only
-/// that the process is up.
+/// Deliberately unguarded and deliberately almost empty of detail: a
+/// container healthcheck must reach it before anyone holds a token, so it
+/// may say only that the process is up — plus one bit the e2e suite needs
+/// BEFORE doing anything destructive: whether this server's preferences
+/// live in a store of their own (`ATOMIS_PREFERENCES`) or in the user's
+/// real one. A test harness that cannot tell the difference has wiped real
+/// settings before, and they sync to every device.
 pub(crate) async fn health() -> Json<serde_json::Value> {
-    Json(json!({ "ok": true }))
+    Json(json!({
+        "ok": true,
+        "isolatedPreferences": std::env::var_os("ATOMIS_PREFERENCES").is_some(),
+    }))
 }
 
 /// The doctor names the toolchains, their versions and whether the sandbox is
