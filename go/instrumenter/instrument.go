@@ -239,6 +239,17 @@ func (c *collector) walk(node ast.Node) {
 		if typed.Init != nil {
 			c.initStmts[typed.Init] = true
 		}
+		// `switch v := x.(type)` — the assign lives in the header; a probe
+		// spliced after it lands inside the guard and nothing compiles.
+		if typed.Assign != nil {
+			c.initStmts[typed.Assign] = true
+		}
+	case *ast.CommClause:
+		// `case v := <-ch:` in a select: same story, the receive is the
+		// clause's header, not a body statement.
+		if typed.Comm != nil {
+			c.initStmts[typed.Comm] = true
+		}
 	case *ast.ForStmt:
 		if typed.Init != nil {
 			c.initStmts[typed.Init] = true

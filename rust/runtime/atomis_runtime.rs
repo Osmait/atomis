@@ -131,6 +131,13 @@ pub fn emit_log_loop(
     value_preview: String,
 ) {
     let (preview, _) = truncate_preview(value_preview);
+    // The marker travels in-band: a preview carrying the marker's own
+    // delimiters (or a newline) would cut the frame short and leak the rest
+    // of it as phantom program output.
+    let preview = preview
+        .replace('\u{1e}', "?")
+        .replace('\u{1f}', "?")
+        .replace('\n', "\\n");
     let marker = format!(
         "\u{1e}ATOMIS_LOG:{file_id}:{line}:{column}:{loop_line}:{loop_column}:{variable}:{preview}\u{1f}"
     );
@@ -168,10 +175,38 @@ macro_rules! atomis_log {
 
 #[macro_export]
 macro_rules! atomis_log_loop {
+    // `captured`: the preview was taken at the top of the loop body (see
+    // atomis_loop_capture!), before any statement could move the variable —
+    // referencing the variable itself here was a use-after-move whenever
+    // the body consumed it before printing.
+    ($fd:expr, $file:expr, $line:expr, $col:expr, $lline:expr, $lcol:expr, $var:expr, captured $val:expr) => {{
+        $crate::__atomis_runtime::emit_log_loop(
+            $fd,
+            $file,
+            $line,
+            $col,
+            $lline,
+            $lcol,
+            $var,
+            ::std::clone::Clone::clone($val),
+        );
+    }};
     ($fd:expr, $file:expr, $line:expr, $col:expr, $lline:expr, $lcol:expr, $var:expr, $val:expr) => {{
         #[allow(unused_imports)]
         use $crate::__atomis_runtime::{DebugProbe as _, FallbackProbe as _};
         let (preview, _) = (&$crate::__atomis_runtime::Wrap($val)).atomis_preview();
         $crate::__atomis_runtime::emit_log_loop($fd, $file, $line, $col, $lline, $lcol, $var, preview);
+    }};
+}
+
+/// Formats a probe-style preview of `$val` RIGHT NOW, yielding the String.
+/// Spliced at the top of a loop body so later moves cannot invalidate it.
+#[macro_export]
+macro_rules! atomis_loop_capture {
+    ($val:expr) => {{
+        #[allow(unused_imports)]
+        use $crate::__atomis_runtime::{DebugProbe as _, FallbackProbe as _};
+        let (preview, _) = (&$crate::__atomis_runtime::Wrap($val)).atomis_preview();
+        preview
     }};
 }

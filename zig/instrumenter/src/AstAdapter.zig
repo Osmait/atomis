@@ -103,6 +103,31 @@ fn isDirectLoopBody(tree: Ast, node: Ast.Node.Index) bool {
     return false;
 }
 
+const ByteSpan = struct { first: usize, last: usize };
+
+/// The byte span of the innermost function body containing `node`, so a
+/// question about scope ("does a probe observe this variable HERE?") never
+/// reaches across functions that merely reuse a name.
+fn enclosingFunctionSpan(tree: Ast, node: Ast.Node.Index) ?ByteSpan {
+    const node_first = tree.tokenStart(tree.firstToken(node));
+    const node_last_token = tree.lastToken(node);
+    const node_last = tree.tokenStart(node_last_token) + tree.tokenSlice(node_last_token).len;
+    var best: ?ByteSpan = null;
+    var best_span: usize = std.math.maxInt(usize);
+    var index: usize = 1;
+    while (index < tree.nodes.len) : (index += 1) {
+        const candidate: Ast.Node.Index = @enumFromInt(index);
+        if (tree.nodeTag(candidate) != .fn_decl) continue;
+        const first = tree.tokenStart(tree.firstToken(candidate));
+        const last_token = tree.lastToken(candidate);
+        const last = tree.tokenStart(last_token) + tree.tokenSlice(last_token).len;
+        if (node_first < first or node_last > last or last - first >= best_span) continue;
+        best = .{ .first = first, .last = last };
+        best_span = last - first;
+    }
+    return best;
+}
+
 const LoopContext = struct {
     line: usize,
     column: usize,
@@ -278,10 +303,26 @@ pub fn instrument(
             if (unsupportedInitializer(tree, init_node)) {
                 supported = false;
                 reason = "type, namespace, or function value";
+            } else if (tree.firstToken(init_node) == tree.lastToken(init_node) and
+                std.mem.eql(u8, tree.tokenSlice(tree.firstToken(init_node)), "undefined"))
+            {
+                // Rendering `undefined` reads it: a 4MB undefined buffer is
+                // a stack-sized copy, and an undefined enum's tag panics in
+                // Debug — inside a program that never asked to.
+                supported = false;
+                reason = "undefined value";
             }
         } else {
             supported = false;
             reason = "declaration has no initializer";
+        }
+        if (supported and !isDirectBlockStatement(tree, node)) {
+            // A struct/enum/union member `const` is a declaration, not a
+            // statement: splicing a call after it does not parse
+            // ("declarations are not allowed between container fields").
+            // Same standard the assignment loop below already applies.
+            supported = false;
+            reason = "container-level declaration";
         }
 
         const id = probeId(uri, first_byte, end_byte, name);
@@ -407,9 +448,17 @@ pub fn instrument(
         if (tree.nodeTag(lhs) != .identifier or tree.nodeTag(rhs) != .identifier) continue;
         if (!std.mem.eql(u8, tree.tokenSlice(tree.nodeMainToken(lhs)), "_")) continue;
         const rhs_name = tree.tokenSlice(tree.nodeMainToken(rhs));
+        // Same name is not same variable: a probe on `y` in one function
+        // must not comment out `_ = y;` discarding another function's
+        // parameter — that trades one diagnostic for a build error.
+        const scope = enclosingFunctionSpan(tree, node);
         var observed = false;
         for (probes.items) |probe| {
-            if (probe.insertion_byte != null and std.mem.eql(u8, probe.name, rhs_name)) observed = true;
+            if (probe.insertion_byte == null or !std.mem.eql(u8, probe.name, rhs_name)) continue;
+            if (scope) |span| {
+                if (probe.range.start_byte < span.first or probe.range.start_byte > span.last) continue;
+            }
+            observed = true;
         }
         if (!observed) continue;
         const first = tree.tokenStart(tree.firstToken(node));
@@ -648,6 +697,72 @@ test "destructuring declarations are catalogued as unsupported" {
     for (result.probes) |probe| {
         try std.testing.expect(!probe.supported);
         try std.testing.expectEqualStrings("declaration has no initializer", probe.reason.?);
+    }
+}
+
+test "a container member const is never probed and the output parses" {
+    const source: [:0]const u8 =
+        "pub fn main() void {\n" ++
+        "    const v = Vec.zero;\n" ++
+        "    _ = v;\n" ++
+        "}\n" ++
+        "const Vec = struct {\n" ++
+        "    x: f32,\n" ++
+        "    const zero = Vec{ .x = 0 };\n" ++
+        "};\n";
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const result = try instrument(arena.allocator(), source, "file:///container.zig", true, &.{}, 0);
+    const generated = result.generated.?;
+    // Splicing after the member was "declarations are not allowed between
+    // container fields": any Zig file with a struct const broke.
+    for (result.probes) |probe| {
+        if (std.mem.eql(u8, probe.name, "zero")) {
+            try std.testing.expect(!probe.supported);
+            try std.testing.expectEqualStrings("container-level declaration", probe.reason.?);
+        }
+    }
+    const sentinel = try arena.allocator().dupeZ(u8, generated);
+    var tree = try Ast.parse(arena.allocator(), sentinel, .zig);
+    try std.testing.expectEqual(@as(usize, 0), tree.errors.len);
+    _ = &tree;
+}
+
+test "a discard in another function keeps its name" {
+    const source: [:0]const u8 =
+        "pub fn a() void {\n" ++
+        "    const y = 1;\n" ++
+        "    _ = y;\n" ++
+        "}\n" ++
+        "pub fn b(y: i32) void {\n" ++
+        "    _ = y;\n" ++
+        "}\n";
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const result = try instrument(arena.allocator(), source, "file:///discard.zig", true, &.{}, 0);
+    const generated = result.generated.?;
+    // a's discard is now pointless (the probe observes y) and is commented;
+    // b's discards a PARAMETER a whole function away — commenting it was an
+    // "unused function parameter" build error on valid code.
+    try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, generated, "// atomis: observed discard"));
+    try std.testing.expect(std.mem.indexOf(u8, generated, "pub fn b(y: i32) void {\n    _ = y;\n}") != null);
+}
+
+test "an undefined initializer is catalogued but never rendered" {
+    const source: [:0]const u8 =
+        "pub fn main() void {\n" ++
+        "    var buffer: [64]u8 = undefined;\n" ++
+        "    buffer[0] = 1;\n" ++
+        "    _ = buffer;\n" ++
+        "}\n";
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const result = try instrument(arena.allocator(), source, "file:///undef.zig", true, &.{}, 0);
+    for (result.probes) |probe| {
+        if (std.mem.eql(u8, probe.name, "buffer") and probe.range.start_line == 2) {
+            try std.testing.expect(!probe.supported);
+            try std.testing.expectEqualStrings("undefined value", probe.reason.?);
+        }
     }
 }
 
