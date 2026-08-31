@@ -46,6 +46,16 @@ dependency path reaches the network.
 A token is not a sandbox either. It decides who gets to run code, not what
 that code may do.
 
+## What inline values and test results are
+
+The instrumentation channels — the `\x1e…\x1f` markers on stdout/stderr and
+the NDJSON on fd 3 — travel in-band with the program's own output, so a
+program can print a well-formed marker and forge an inline value or a test
+result. This cannot be prevented from inside the process: code that could
+forge a "passed" could as easily make the test pass. It matters exactly
+once: in a shared workspace, results shown for a collaborator's code are
+claims made by that code. Treat them accordingly.
+
 ## Reporting
 
 Open an issue for anything that lets one session read or write outside its

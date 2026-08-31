@@ -299,12 +299,14 @@ async fn run_tests(
         started: std::collections::HashMap<u32, String>,
         counts: (u32, u32, u32),
         stderr_buffer: String,
+        reported: std::collections::HashSet<String>,
         summary: Option<(u32, u32, u32)>,
     }
     let state = Arc::new(StdMutex::new(TestState {
         started: std::collections::HashMap::new(),
         counts: (0, 0, 0),
         stderr_buffer: String::new(),
+        reported: std::collections::HashSet::new(),
         summary: None,
     }));
 
@@ -337,6 +339,9 @@ async fn run_tests(
                     _ => state.counts.2 += 1,
                 }
                 let matched = match_py_test_name(&catalog_owned, &name);
+                if let Some(matched) = matched {
+                    state.reported.insert(matched.test_id.clone());
+                }
                 let tail = state.stderr_buffer.trim().to_string();
                 let message = if status == TestStatus::Failed {
                     if tail.is_empty() {
@@ -419,7 +424,15 @@ async fn run_tests(
         execution.timed_out,
         events,
         &|name| match_py_test_name(catalog, name).map(|c| (c.test_id.clone(), c.name.clone())),
+        &mut state.reported,
     );
+    if execution.timed_out {
+        state.counts.1 += crate::languages::common::report_timed_out_remainder(
+            catalog,
+            &state.reported,
+            events,
+        );
+    }
     if state.summary.is_none()
         && execution.exit_code != Some(0)
         && !state.stderr_buffer.trim().is_empty()

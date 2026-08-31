@@ -701,12 +701,14 @@ async fn run_tests(
         started: std::collections::HashMap<u32, String>,
         counts: (u32, u32, u32),
         stderr_buffer: String,
+        reported: std::collections::HashSet<String>,
         summary: Option<(u32, u32, u32)>,
     }
     let state = Arc::new(StdMutex::new(TestState {
         started: std::collections::HashMap::new(),
         counts: (0, 0, 0),
         stderr_buffer: String::new(),
+        reported: std::collections::HashSet::new(),
         summary: None,
     }));
     let reader_state = Arc::clone(&state);
@@ -738,6 +740,9 @@ async fn run_tests(
                     _ => state.counts.2 += 1,
                 }
                 let matched = catalog_owned.iter().find(|c| c.name == name);
+                if let Some(matched) = matched {
+                    state.reported.insert(matched.test_id.clone());
+                }
                 let _ = reader_events.send(RunnerEvent::TestResult {
                     test_id: matched.map(|m| m.test_id.clone()),
                     name: matched.map(|m| m.name.clone()).unwrap_or(name),
@@ -801,7 +806,15 @@ async fn run_tests(
         execution.timed_out,
         events,
         &|name| catalog.iter().find(|c| c.name == name).map(|c| (c.test_id.clone(), c.name.clone())),
+        &mut state.reported,
     );
+    if execution.timed_out {
+        state.counts.1 += crate::languages::common::report_timed_out_remainder(
+            catalog,
+            &state.reported,
+            events,
+        );
+    }
     if let Some(message) = read_error {
         let _ = events.send(RunnerEvent::Output {
             stream: Stream::Stderr,

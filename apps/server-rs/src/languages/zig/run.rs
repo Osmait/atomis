@@ -412,6 +412,7 @@ struct TestRunState {
     started: HashMap<u32, String>,
     counts: (u32, u32, u32, u32),
     stderr_buffer: String,
+        reported: std::collections::HashSet<String>,
     summary: Option<(u32, u32, u32, u32)>,
 }
 
@@ -430,6 +431,7 @@ async fn run_tests(
         started: HashMap::new(),
         counts: (0, 0, 0, 0),
         stderr_buffer: String::new(),
+        reported: std::collections::HashSet::new(),
         summary: None,
     }));
     let read_error: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
@@ -459,6 +461,9 @@ async fn run_tests(
                     RawTestStatus::Leaked => state.counts.3 += 1,
                 }
                 let matched = match_runner_name(&catalog_owned, &name);
+                if let Some(matched) = matched {
+                    state.reported.insert(matched.test_id.clone());
+                }
                 let failing =
                     matches!(status, RawTestStatus::Failed | RawTestStatus::Leaked);
                 let tail = state.stderr_buffer.trim().to_string();
@@ -543,7 +548,15 @@ async fn run_tests(
         execution.timed_out,
         events,
         &|name| match_runner_name(catalog, name).map(|c| (c.test_id.clone(), c.name.clone())),
+        &mut state.reported,
     );
+    if execution.timed_out {
+        state.counts.1 += crate::languages::common::report_timed_out_remainder(
+            catalog,
+            &state.reported,
+            events,
+        );
+    }
     if let Some(message) = read_error.lock().expect("read error").clone() {
         let _ = events.send(RunnerEvent::Output {
             stream: Stream::Stderr,

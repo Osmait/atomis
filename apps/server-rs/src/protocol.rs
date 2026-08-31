@@ -311,7 +311,10 @@ pub struct RunResult {
     pub reason: Option<String>,
 }
 
-// ── Client → server messages (zod parity: strict, validated) ──
+// ── Client → server messages — strict, validated here. (The zod schemas
+// in packages/protocol are looser in places — UTF-16 counts vs bytes,
+// unchecked control characters — and the web client does not run them at
+// runtime; THIS validation is the contract.) ──
 
 #[derive(Debug, Clone, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]

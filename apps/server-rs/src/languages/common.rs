@@ -428,11 +428,15 @@ pub fn report_aborted_tests(
     timed_out: bool,
     events: &Events,
     lookup: &dyn Fn(&str) -> Option<(String, String)>,
+    reported_ids: &mut std::collections::HashSet<String>,
 ) -> u32 {
     let mut reported = 0;
     for name in started {
         reported += 1;
         let matched = lookup(&name);
+        if let Some((id, _)) = &matched {
+            reported_ids.insert(id.clone());
+        }
         let _ = events.send(RunnerEvent::TestResult {
             test_id: matched.as_ref().map(|(id, _)| id.clone()),
             name: matched.map(|(_, name)| name).unwrap_or(name),
@@ -445,6 +449,32 @@ pub fn report_aborted_tests(
             message: aborted_message(stderr_buffer, whole_stderr),
         });
         stderr_buffer.clear();
+    }
+    reported
+}
+
+/// On a suite timeout, every catalog entry that never reported met the same
+/// clock. Rust, go and ts already mark them all as timed out; zig, python
+/// and the C family leaving theirs blank made half the drawer look stuck
+/// for no reason. Returns how many results it sent.
+pub fn report_timed_out_remainder(
+    catalog: &[crate::protocol::TestCase],
+    reported_ids: &std::collections::HashSet<String>,
+    events: &Events,
+) -> u32 {
+    let mut reported = 0;
+    for test in catalog {
+        if reported_ids.contains(&test.test_id) {
+            continue;
+        }
+        reported += 1;
+        let _ = events.send(RunnerEvent::TestResult {
+            test_id: Some(test.test_id.clone()),
+            name: test.name.clone(),
+            status: TestStatus::TimedOut,
+            duration_ms: 0.0,
+            message: None,
+        });
     }
     reported
 }

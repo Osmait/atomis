@@ -2,6 +2,14 @@
 //! apps/server/src/compiler/RuntimeOutputParser.ts: strips
 //! `\x1eATOMIS_LOG:…\x1f` markers and annotates the preceding text with the
 //! marker's source location; stderr gets panic/error heuristics.
+//!
+//! Known limit, by design: the markers travel IN-BAND on the program's own
+//! stdout/stderr (and probe/test NDJSON on an inherited fd 3), so the
+//! program can print a well-formed marker — or write NDJSON to fd 3 — and
+//! forge inline values or test results. This is unpreventable in-process:
+//! the code that could forge a "passed" could as easily make the test pass.
+//! It only matters where someone reads results they did not write, i.e.
+//! shared workspaces — treat a collaborator's code as code, not as proof.
 
 #![allow(dead_code)]
 
