@@ -267,4 +267,73 @@ describe("a setting changed just before the page goes away", () => {
 		};
 		expect(sent.preferences["atomis.scaffold.v1"]).toBe("demo");
 	});
+
+	it("keeps a refused save queued and retries it — hidden is not gone", async () => {
+		// visibilitychange→hidden flushes too, and the page usually comes
+		// back. Before, the queue was emptied before the request, so a
+		// refusal lost the change in silence.
+		let puts = 0;
+		const bodies: string[] = [];
+		stubFetch((_url, init) => {
+			if (init?.method !== "PUT") return json({ preferences: {} });
+			puts += 1;
+			bodies.push(String(init.body));
+			return puts === 1 ? json({ error: "down" }, 500) : json({ preferences: {} });
+		});
+		await hydratePreferences();
+
+		writeStoredItem(THEME, '{"theme":"crust"}');
+		flushPreferencesNow();
+		await vi.runAllTimersAsync();
+
+		expect(puts).toBeGreaterThanOrEqual(2);
+		expect(JSON.parse(String(bodies.at(-1))).preferences).toEqual({
+			[THEME]: '{"theme":"crust"}',
+		});
+	});
+
+	it("handles a rejected keepalive request without an unhandled rejection", async () => {
+		let puts = 0;
+		stubFetch((_url, init) => {
+			if (init?.method !== "PUT") return json({ preferences: {} });
+			puts += 1;
+			return puts === 1
+				? Promise.reject(new Error("connection lost"))
+				: json({ preferences: {} });
+		});
+		await hydratePreferences();
+
+		writeStoredItem(THEME, '{"theme":"crust"}');
+		flushPreferencesNow();
+		await vi.runAllTimersAsync();
+
+		// The rejection was caught and the save retried.
+		expect(puts).toBeGreaterThanOrEqual(2);
+	});
+});
+
+describe("a retry racing a newer value from another device", () => {
+	it("drops the stale retry once the other device's value is acked", async () => {
+		let failPuts = true;
+		const bodies: string[] = [];
+		stubFetch((_url, init) => {
+			if (init?.method !== "PUT") return json({ preferences: {} });
+			bodies.push(String(init.body));
+			return failPuts ? json({ error: "down" }, 503) : json({ preferences: {} });
+		});
+		await hydratePreferences();
+
+		writeStoredItem(THEME, '{"theme":"old"}');
+		// The debounced save fails once…
+		await vi.advanceTimersByTimeAsync(400);
+		expect(bodies).toHaveLength(1);
+		// …and before the retry fires, the other device's newer value lands.
+		applyRemotePreferences({ [THEME]: '{"theme":"newer"}' });
+		failPuts = false;
+		await vi.runAllTimersAsync();
+
+		// The stale retry was discarded rather than resent over the newer value.
+		expect(bodies).toHaveLength(1);
+		expect(readStoredItem(THEME)).toBe('{"theme":"newer"}');
+	});
 });

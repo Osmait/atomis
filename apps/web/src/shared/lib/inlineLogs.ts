@@ -1,3 +1,4 @@
+import { sanitizeTerminalText } from "./ansi.js";
 import type { TerminalEntry } from "./terminalFolds.js";
 
 /**
@@ -22,7 +23,9 @@ const MAX_PREVIEW = 120;
 const MAX_HISTORY = 20;
 
 function previewOf(chunk: string): string {
-	const first = (chunk.split("\n", 1)[0] ?? "").trim();
+	// Sanitized first: a colored log would otherwise ghost its escape bytes
+	// into the editor, and a `\r` progress line would preview its first frame.
+	const first = (sanitizeTerminalText(chunk).split("\n", 1)[0] ?? "").trim();
 	return first.length > MAX_PREVIEW ? `${first.slice(0, MAX_PREVIEW)}…` : first;
 }
 

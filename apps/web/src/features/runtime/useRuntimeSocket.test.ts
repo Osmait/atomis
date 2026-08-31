@@ -9,6 +9,13 @@ import { act, renderHook } from "@testing-library/react";
 import type { CreateSessionResponse } from "@atomis/protocol";
 import { useRuntimeSocket } from "./useRuntimeSocket.js";
 
+interface SentMessage {
+	type?: string;
+	path?: string;
+	source?: string;
+	baseRevision?: number;
+}
+
 class FakeWebSocket {
 	static instances: FakeWebSocket[] = [];
 	static readonly OPEN = 1;
@@ -16,11 +23,11 @@ class FakeWebSocket {
 	readonly OPEN = 1;
 	readyState = FakeWebSocket.CONNECTING;
 	sent: string[] = [];
-	listeners = new Map<string, ((event: unknown) => void)[]>();
+	listeners = new Map<string, ((event: object) => void)[]>();
 	constructor(public url: string) {
 		FakeWebSocket.instances.push(this);
 	}
-	addEventListener(name: string, handler: (event: unknown) => void): void {
+	addEventListener(name: string, handler: (event: object) => void): void {
 		const bucket = this.listeners.get(name) ?? [];
 		bucket.push(handler);
 		this.listeners.set(name, bucket);
@@ -38,13 +45,13 @@ class FakeWebSocket {
 }
 
 function mount() {
-	vi.stubGlobal("WebSocket", FakeWebSocket as unknown as typeof WebSocket);
+	vi.stubGlobal("WebSocket", FakeWebSocket as never);
 	FakeWebSocket.instances = [];
 	const session = {
 		sessionId: "s".repeat(32),
 		authToken: "t",
 		initialSource: "initial",
-	} as unknown as CreateSessionResponse;
+	} as never as CreateSessionResponse;
 	const files = [{ path: "main.zig", uri: "u", source: "edited" }];
 	const revisionRef = { current: undefined as number | undefined };
 	const rendered = renderHook(() =>
@@ -64,7 +71,7 @@ function mount() {
 }
 
 const parsed = (socket: FakeWebSocket | undefined) =>
-	(socket?.sent ?? []).map((raw) => JSON.parse(raw) as Record<string, unknown>);
+	(socket?.sent ?? []).map((raw) => JSON.parse(raw) as SentMessage);
 
 describe("useRuntimeSocket", () => {
 	test("messages sent while connecting queue and flush on open, in order", () => {

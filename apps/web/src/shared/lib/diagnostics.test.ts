@@ -19,15 +19,66 @@ const diagnostic = (
 
 describe("flattenProblems", () => {
 	it("drops diagnostics repeated by a second owner", () => {
-		const flat = flattenProblems({
-			compiler: [{ message: "boom", severity: "error", line: 3, column: 2 }],
-			zls: [
-				{ message: "boom", severity: "error", line: 3, column: 2 },
-				{ message: "otro", severity: "warning", line: 4, column: 1 },
-			],
-		});
+		const flat = flattenProblems(
+			{
+				compiler: [{ message: "boom", severity: "error", line: 3, column: 2 }],
+				zls: [
+					{ message: "boom", severity: "error", line: 3, column: 2 },
+					{ message: "otro", severity: "warning", line: 4, column: 1 },
+				],
+			},
+			"main.zig",
+		);
 		expect(flat).toHaveLength(2);
 		expect(flat.map((item) => item.owner)).toEqual(["compiler", "zls"]);
+	});
+
+	it("keeps the same typo in two different files as two problems", () => {
+		const flat = flattenProblems(
+			{
+				"zls:main.zig": [
+					{
+						message: "boom",
+						severity: "error",
+						line: 3,
+						column: 2,
+						path: "src/main.zig",
+					},
+				],
+				"zls:util.zig": [
+					{
+						message: "boom",
+						severity: "error",
+						line: 3,
+						column: 2,
+						path: "src/util.zig",
+					},
+				],
+			},
+			"main.zig",
+		);
+		expect(flat).toHaveLength(2);
+	});
+
+	it("still dedupes an unattributed compiler entry against the LSP's", () => {
+		// The compiler reports the entry file without a path; the LSP names
+		// it. They resolve to the same document, so one problem is listed.
+		const flat = flattenProblems(
+			{
+				compiler: [{ message: "boom", severity: "error", line: 3, column: 2 }],
+				"zls:main.zig": [
+					{
+						message: "boom",
+						severity: "error",
+						line: 3,
+						column: 2,
+						path: "src/main.zig",
+					},
+				],
+			},
+			"main.zig",
+		);
+		expect(flat).toHaveLength(1);
 	});
 });
 

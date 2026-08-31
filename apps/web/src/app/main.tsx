@@ -19,6 +19,7 @@ import "monaco-editor/editor/contrib/semanticTokens/browser/viewportSemanticToke
 import "monaco-editor/editor/contrib/suggest/browser/suggestController";
 import ReactDOM from "react-dom/client";
 import { App } from "./App.js";
+import { ErrorBoundary } from "./ErrorBoundary.js";
 import { captureAccessToken } from "../shared/api/client.js";
 import { hydratePreferences } from "../shared/stores/storage.js";
 import "@fontsource/jetbrains-mono/400.css";
@@ -44,4 +45,10 @@ loader.config({ monaco });
 // storage, not on screen.
 captureAccessToken();
 await hydratePreferences();
-ReactDOM.createRoot(document.getElementById("root")!).render(<App />);
+// The boundary is the only thing standing between one render-time throw and
+// a blank page with no way back.
+ReactDOM.createRoot(document.getElementById("root")!).render(
+	<ErrorBoundary>
+		<App />
+	</ErrorBoundary>,
+);

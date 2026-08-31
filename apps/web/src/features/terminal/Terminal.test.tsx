@@ -46,42 +46,46 @@ function renderTerminal(
 		onEntryLeave: vi.fn(),
 	};
 	const output = overrides.output ?? [entry("hola\n", 100, 3)];
-	render(
-		<Terminal
-			active={false}
-			allProblems={[]}
-			busy={false}
-			caseTone={() => ""}
-			depsBusy={false}
-			depsCount={0}
-			depsPanel={<div data-testid="deps-stub" />}
-			dockEffective="right"
-			drawer={false}
-			drawerScore="0"
-			entryFile="main.zig"
-			focused={false}
-			lspLabel="zls connected"
-			narrow={false}
-			openFolds={new Set()}
-			output={output}
-			outputRows={groupOutput(output)}
-			probesLabel="4 / 4"
-			runCommand="zig build run"
-			runStateLabel="ready"
-			stageLabel="running…"
-			tab="output"
-			termMax={false}
-			termTone="ok"
-			testCommand="zig test"
-			tests={[]}
-			testsLabel="—"
-			testsTone=""
-			toolchainLabel="0.16.0"
-			{...handlers}
-			{...overrides}
-		/>,
-	);
-	return handlers;
+	const props: React.ComponentProps<typeof Terminal> = {
+		active: false,
+		allProblems: [],
+		busy: false,
+		caseTone: () => "",
+		depsBusy: false,
+		depsCount: 0,
+		depsPanel: <div data-testid="deps-stub" />,
+		dockEffective: "right",
+		drawer: false,
+		drawerScore: "0",
+		entryFile: "main.zig",
+		focused: false,
+		lspLabel: "zls connected",
+		narrow: false,
+		openFolds: new Set(),
+		output,
+		outputRows: groupOutput(output),
+		probesLabel: "4 / 4",
+		runCommand: "zig build run",
+		runStateLabel: "ready",
+		stageLabel: "running…",
+		tab: "output",
+		termMax: false,
+		termTone: "ok",
+		testCommand: "zig test",
+		tests: [],
+		testsLabel: "—",
+		testsTone: "",
+		toolchainLabel: "0.16.0",
+		...handlers,
+		...overrides,
+	};
+	const view = render(<Terminal {...props} />);
+	/** Re-renders the SAME instance with a new buffer, as streaming does. */
+	const rerenderOutput = (next: TerminalEntry[]): void =>
+		view.rerender(
+			<Terminal {...props} output={next} outputRows={groupOutput(next)} />,
+		);
+	return { ...handlers, rerenderOutput };
 }
 
 describe("Terminal", () => {
@@ -154,5 +158,30 @@ describe("Terminal", () => {
 		});
 		expect(screen.getByTestId("drawer-stub")).toBeTruthy();
 		expect(screen.queryByTitle("Show tests (⌘T)")).toBeNull();
+	});
+
+	it("keeps timestamps anchored to the first entry after the buffer slides", () => {
+		const first = { ...entry("uno\n", 1000), seq: 1 };
+		const second = { ...entry("dos\n", 3500), seq: 2 };
+		const view = renderTerminal({
+			output: [first, second],
+			outputRows: groupOutput([first, second]),
+		});
+		expect(screen.getByText("2.500s")).toBeTruthy();
+		// The window slides: "uno" falls out. Relative to the new output[0]
+		// this used to become 0.000s — the past rewriting itself.
+		view.rerenderOutput([second]);
+		expect(screen.getByText("2.500s")).toBeTruthy();
+		expect(screen.queryByText("0.000s")).toBeNull();
+	});
+
+	it("strips ANSI escapes from rendered output", () => {
+		const esc = String.fromCodePoint(0x1b);
+		const colored = entry(`${esc}[31mrojo${esc}[0m\n`, 100);
+		renderTerminal({
+			output: [colored],
+			outputRows: groupOutput([colored]),
+		});
+		expect(screen.getByText("rojo", { selector: "pre" })).toBeTruthy();
 	});
 });

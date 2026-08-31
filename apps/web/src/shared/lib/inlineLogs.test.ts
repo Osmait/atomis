@@ -57,6 +57,19 @@ describe("groupLogsByLine", () => {
 		expect(logs.get(5)).toMatchObject({ count: 91, isError: true });
 	});
 
+	it("sanitizes ANSI escapes and carriage returns before previewing", () => {
+		const esc = String.fromCodePoint(0x1b);
+		const logs = groupLogsByLine(
+			[
+				entry(`${esc}[31mboom${esc}[0m\n`, 1, 1),
+				entry("0%\r100%\n", 2, 1),
+			],
+			{ activePath: "main.zig", entryFile: "main.zig" },
+		);
+		expect(logs.get(1)?.text).toBe("boom");
+		expect(logs.get(2)?.text).toBe("100%");
+	});
+
 	it("skips blank chunks and caps long previews", () => {
 		const long = "x".repeat(200);
 		const logs = groupLogsByLine(

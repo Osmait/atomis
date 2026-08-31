@@ -59,6 +59,11 @@ function completionKind(
 	);
 }
 
+/** A request pending longer than this is answered by no one: the server
+ * died mid-call, and the promise would otherwise hang forever, stacking
+ * every later request behind it. */
+const REQUEST_TIMEOUT_MS = 15_000;
+
 export class LspClient {
 	private socket: WebSocket | undefined;
 	private nextId = 1;
@@ -66,6 +71,7 @@ export class LspClient {
 		number,
 		{
 			method: string;
+			/** Clears the timeout on its way; so does `reject`. */
 			resolve: (value: JsonValue | null) => void;
 			reject: (reason: Error) => void;
 		}
@@ -74,8 +80,18 @@ export class LspClient {
 	private readonly openedModels = new Map<string, Monaco.editor.ITextModel>();
 	private readonly pendingOpens = new Map<string, Monaco.editor.ITextModel>();
 	private initialized = false;
+	private closed = false;
 	private lastVersion = 0;
+	/** Last didChange version on the wire; LSP versions must only grow. */
+	private sentVersion = 0;
 	private capabilities: Record<string, JsonValue> = {};
+
+	/**
+	 * Fires once, when the socket closes for good. The owner caches clients
+	 * by language; a dead one handed out of that cache answers nothing, so
+	 * this is where the owner drops it and lets the next ensure build anew.
+	 */
+	public onClose: (() => void) | undefined;
 
 	public constructor(
 		private readonly monaco: typeof Monaco,
@@ -101,9 +117,10 @@ export class LspClient {
 		this.socket.addEventListener("message", (event) =>
 			this.receive(String(event.data)),
 		);
-		this.socket.addEventListener("close", () =>
-			this.onStatus(`${this.serverName} disconnected`),
-		);
+		this.socket.addEventListener("close", () => {
+			this.onStatus(`${this.serverName} disconnected`);
+			this.markClosed();
+		});
 		this.socket.addEventListener("error", () =>
 			this.onStatus(`${this.serverName} unavailable`),
 		);
@@ -176,6 +193,7 @@ export class LspClient {
 	public open(model: Monaco.editor.ITextModel, version: number): void {
 		const uri = model.uri.toString();
 		this.lastVersion = Math.max(this.lastVersion, version);
+		this.sentVersion = Math.max(this.sentVersion, version);
 		if (!this.initialized) {
 			// The server ignores anything before initialize completes; queue the
 			// model so the real didOpen goes out right after the handshake.
@@ -200,8 +218,17 @@ export class LspClient {
 		source: string,
 	): void {
 		this.open(model, version);
+		// Between the socket opening and initialize completing, the didOpen
+		// above is only queued — a didChange now would describe a document
+		// the server never saw open. The queued didOpen sends the model's
+		// current text after the handshake, which already carries this change.
+		if (!this.initialized) return;
+		// The runtime's document counter usually grows, but a remote edit
+		// re-announced to the LSP re-serves the last value; pad the wire
+		// version monotonic instead of trusting the caller's.
+		this.sentVersion = Math.max(version, this.sentVersion + 1);
 		this.notify("textDocument/didChange", {
-			textDocument: { uri: model.uri.toString(), version },
+			textDocument: { uri: model.uri.toString(), version: this.sentVersion },
 			contentChanges: [{ text: source }],
 		});
 	}
@@ -602,15 +629,53 @@ export class LspClient {
 	}
 
 	private request<T>(method: string, params: object): Promise<T> {
+		// A dead socket answers nothing: short-circuit with the same value a
+		// transient server error resolves to, so providers degrade silently.
+		if (this.closed) return Promise.resolve(asShape<T>(null));
 		const id = this.nextId++;
 		return new Promise<T>((resolve, reject) => {
+			const timer = setTimeout(() => {
+				if (!this.pending.delete(id)) return;
+				if (method === "initialize")
+					reject(new Error(`${this.serverName} initialize timed out`));
+				else resolve(asShape<T>(null));
+			}, REQUEST_TIMEOUT_MS);
 			this.pending.set(id, {
 				method,
-				resolve: (value) => resolve(asShape<T>(value)),
-				reject,
+				resolve: (value) => {
+					clearTimeout(timer);
+					resolve(asShape<T>(value));
+				},
+				reject: (reason) => {
+					clearTimeout(timer);
+					reject(reason);
+				},
 			});
 			this.socket?.send(JSON.stringify({ jsonrpc: "2.0", id, method, params }));
 		});
+	}
+
+	/**
+	 * The server is gone: every caller still waiting gets its answer now —
+	 * null, the transient-failure value — because nothing will ever arrive.
+	 * Before this, one hover against a dead server left its promise pending
+	 * forever, and every later request piled up behind it in `pending`.
+	 */
+	private failPending(): void {
+		const entries = [...this.pending.values()];
+		this.pending.clear();
+		for (const entry of entries) {
+			if (entry.method === "initialize")
+				entry.reject(new Error(`${this.serverName} connection closed`));
+			else entry.resolve(null);
+		}
+	}
+
+	private markClosed(): void {
+		if (this.closed) return;
+		this.closed = true;
+		this.failPending();
+		this.onClose?.();
 	}
 
 	public dispose(): void {
@@ -619,8 +684,11 @@ export class LspClient {
 		this.openedModels.clear();
 		this.pendingOpens.clear();
 		for (const disposable of this.disposables) disposable.dispose();
+		// Closed by the owner, who is already dropping this client from its
+		// cache — flip the flag first so the socket's own close event cannot
+		// re-enter through onClose while the owner iterates that cache.
+		this.closed = true;
 		this.socket?.close();
-		for (const pending of this.pending.values()) pending.resolve(null);
-		this.pending.clear();
+		this.failPending();
 	}
 }

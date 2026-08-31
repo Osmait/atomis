@@ -112,6 +112,8 @@ export function App(): React.JSX.Element {
 	const [session, setSession] = useState<CreateSessionResponse>();
 	const [files, setFiles] = useState<ProjectFile[]>([]);
 	const [startupError, setStartupError] = useState<string>();
+	/** A workspace switch that failed — recoverable, unlike a failed boot. */
+	const [switchError, setSwitchError] = useState<string>();
 	const [settings, setSettings] = useState<Settings>(loadSettings);
 	const [valueFmt, setValueFmt] = useState<ValueFmt>(loadValueFmt);
 	const [settingsOpen, setSettingsOpen] = useState(false);
@@ -267,7 +269,9 @@ export function App(): React.JSX.Element {
 	} = runtime;
 
 	const allProblems = useMemo<OwnedDiagnostic[]>(
-		() => flattenProblems(runtime.diagnostics),
+		// entryRef is read through the ref on purpose: it moves only when the
+		// session does, and a session change resets the diagnostics anyway.
+		() => flattenProblems(runtime.diagnostics, entryRef.current),
 		[runtime.diagnostics],
 	);
 
@@ -332,6 +336,14 @@ export function App(): React.JSX.Element {
 				serverName,
 			);
 			lspClientsRef.current[language] = client;
+			// A client whose socket has closed answers nothing, but it used
+			// to stay cached — every ensure kept handing it back. Dropped on
+			// close (by identity, in case a newer client took the slot), so
+			// the next ensure builds a live one.
+			client.onClose = () => {
+				if (lspClientsRef.current[language] === client)
+					delete lspClientsRef.current[language];
+			};
 			client.connect(
 				websocketUrl("/ws/lsp", created, { lang: language }),
 				versionRef.current,
@@ -351,6 +363,34 @@ export function App(): React.JSX.Element {
 		[ensureLspClient],
 	);
 
+	/**
+	 * A deleted or renamed file takes its diagnostics with it. Waiting for
+	 * the LSP's empty publishDiagnostics does not work: by the time it
+	 * arrives the file has left filesRef, so the publish keys under the URI
+	 * while the stale entries sit under the path — listed forever. Both the
+	 * per-server keys and the path-attributed entries of the shared owners
+	 * (compiler, runtime, instrumenter) are pruned at operation time.
+	 */
+	const pruneDiagnosticsForPath = useCallback(
+		(path: string): void => {
+			const docPath = `src/${path}`;
+			const lspKeys = new Set(
+				Object.values(WEB_LANGUAGE_PACKS).map(
+					(pack) => `${pack.serverName}:${path}`,
+				),
+			);
+			setDiagnostics((previous) => {
+				const next: typeof previous = {};
+				for (const [owner, items] of Object.entries(previous)) {
+					if (lspKeys.has(owner)) continue;
+					next[owner] = items.filter((item) => item.path !== docPath);
+				}
+				return next;
+			});
+		},
+		[setDiagnostics],
+	);
+
 	const project = useProjectFiles({
 		session,
 		sendRuntime,
@@ -365,6 +405,7 @@ export function App(): React.JSX.Element {
 		pinnedLogLocationRef,
 		logSourceDecorationsRef,
 		setStatus,
+		pruneDiagnosticsFor: pruneDiagnosticsForPath,
 	});
 	const {
 		activePath,
@@ -401,8 +442,22 @@ export function App(): React.JSX.Element {
 			previous.map((file) => (file.path === path ? { ...file, source } : file)),
 		);
 		const model = editorRef.current?.getModel();
-		if (activePathRef.current === path && model && model.getValue() !== source)
+		if (activePathRef.current === path && model && model.getValue() !== source) {
 			model.setValue(source);
+			// setValue re-enters onChange, which cuts on "nothing changed" —
+			// the file list above already holds this text — so the LSP never
+			// hears the didChange and keeps diagnosing the old document. Tell
+			// it directly. The runtime's document version stays put (this is
+			// not our edit, and the version gate compares exactly); the
+			// client pads its own wire version monotonic.
+			const language = languageForPath(path);
+			if (language)
+				lspClientsRef.current[language]?.change(
+					model,
+					versionRef.current,
+					source,
+				);
+		}
 	}, [activePathRef, remoteEdit, setConflict, setProjectFiles]);
 
 
@@ -459,9 +514,14 @@ export function App(): React.JSX.Element {
 	// Opening a session is the same work on first load and on every
 	// workspace switch: tear the old one down, ask for a new one, and let
 	// the socket/LSP effects rebuild themselves around it.
-	const { switchToWorkspace, boot } = useSessionLifecycle({
+	const { switchToWorkspace, boot, retryBoot } = useSessionLifecycle({
 		activeLanguageRef,
-		closePicker: useCallback(() => setWorkspacePickerOpen(false), []),
+		// Also the start of every switch attempt, which is why it clears the
+		// previous attempt's error: the picker reopens with it on failure.
+		closePicker: useCallback(() => {
+			setWorkspacePickerOpen(false);
+			setSwitchError(undefined);
+		}, []),
 		closeRuntime,
 		entryRef,
 		lspClientsRef,
@@ -474,6 +534,14 @@ export function App(): React.JSX.Element {
 		setSession,
 		setSettings,
 		setStartupError,
+		// A switch failing is not a boot failing: the UI around the old
+		// session is still worth keeping on screen. Reopen the picker with
+		// the error so choosing a workspace again IS the retry.
+		onSwitchFailed: useCallback((message: string) => {
+			setSwitchError(message);
+			setWorkspacePickerOpen(true);
+			setStatus(`Workspace switch failed: ${message}`);
+		}, []),
 		setStatus,
 		setSwitching,
 		settingsRef,
@@ -514,6 +582,17 @@ export function App(): React.JSX.Element {
 		if (session)
 			sendRuntime({ type: "run.cancel", sessionId: session.sessionId });
 	}, [sendRuntime, session]);
+
+	// `run` and `sendSettings` are rebuilt per session — they embed
+	// session.sessionId — but the editor mount and monaco-vim's `:w`
+	// register their handlers exactly once. A handler that closed over the
+	// first session's pair kept sending the old sessionId after a workspace
+	// switch, and the server answers an unknown session by closing the
+	// socket. These refs are the bridge between the two lifetimes.
+	const runRef = useRef(run);
+	runRef.current = run;
+	const sendSettingsRef = useRef(sendSettings);
+	sendSettingsRef.current = sendSettings;
 
 	// Probe/test state holds the LAST run's language only: entering a file of
 	// a different language would show nothing until an edit re-ran it. Kick
@@ -566,8 +645,8 @@ export function App(): React.JSX.Element {
 		openInLsp,
 		setupVimKeys,
 		attachVim,
-		sendSettings,
-		run,
+		sendSettingsRef,
+		runRef,
 	});
 
 	useEffect(() => {
@@ -594,6 +673,14 @@ export function App(): React.JSX.Element {
 		vimModeLabel,
 		activePath,
 	});
+
+	// monaco-vim writes its command line into the DOM node captured at
+	// attach(). Toggling the status bar unmounts that node and mounts a
+	// fresh one under the same ref, so vim kept typing into a dead element.
+	// Re-bind once the swap has committed; with vim off, attach is a no-op.
+	useEffect(() => {
+		attachVim();
+	}, [attachVim, chrome.statusBar]);
 
 
 	// Monaco models are keyed by absolute session paths, so the previous
@@ -820,8 +907,9 @@ export function App(): React.JSX.Element {
 				<pre>{startupError}</pre>
 				<p>
 					Run <code>pnpm run doctor</code>, correct the reported dependency, and
-					reload.
+					reload — or retry, if the server was simply slower than the page.
 				</p>
+				<button onClick={retryBoot}>Retry</button>
 			</main>
 		);
 	if (!session)
@@ -1205,7 +1293,10 @@ export function App(): React.JSX.Element {
 					activeId={session.workspace?.id}
 					busy={workspacesBusy}
 					language={activeLanguage}
-					onClose={() => setWorkspacePickerOpen(false)}
+					onClose={() => {
+						setWorkspacePickerOpen(false);
+						setSwitchError(undefined);
+					}}
 					onCreate={(name) => createNamedWorkspace(name, activeLanguage)}
 					onDelete={(id) =>
 						deleteNamedWorkspace(id, id === session.workspace?.id)
@@ -1214,7 +1305,9 @@ export function App(): React.JSX.Element {
 					onRename={renameNamedWorkspace}
 					onScratch={() => switchToWorkspace(undefined)}
 					workspaces={workspaces}
-					{...(workspaceError ? { error: workspaceError } : {})}
+					{...(switchError ?? workspaceError
+						? { error: switchError ?? workspaceError }
+						: {})}
 				/>
 			)}
 			{paletteOpen && (

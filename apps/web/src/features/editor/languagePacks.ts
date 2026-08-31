@@ -52,7 +52,7 @@ export const WEB_LANGUAGE_PACKS: Record<Language, WebLanguagePack> = {
 	},
 	ts: {
 		id: "ts",
-		extensions: [".ts", ".js", ".mjs"],
+		extensions: [".ts", ".js", ".mjs", ".cjs"],
 		entryFile: "main.ts",
 		monacoId: "typescript",
 		serverName: "tsserver",

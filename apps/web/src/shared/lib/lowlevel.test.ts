@@ -9,6 +9,7 @@ import {
 	formatInt,
 	parseBitopLine,
 	parseIntegerPreview,
+	typeIsSigned,
 } from "./lowlevel.js";
 
 describe("parseIntegerPreview", () => {
@@ -133,6 +134,54 @@ describe("applyBitop", () => {
 		expect(applyBitop(43n, { operator: "<<", operand: 1n }, 8)).toBe(86n);
 		expect(applyBitop(86n, { operator: "&", operand: 240n }, 8)).toBe(80n);
 		expect(applyBitop(200n, { operator: "<<", operand: 1n }, 8)).toBe(144n);
+	});
+
+	it("clamps huge shifts to the width instead of throwing", () => {
+		// `x <<= 9999999999` used to raise a RangeError in the middle of
+		// rendering the peek panel; a shift past the width is simply zero.
+		expect(
+			applyBitop(43n, { operator: "<<", operand: 9_999_999_999n }, 8),
+		).toBe(0n);
+		expect(
+			applyBitop(43n, { operator: ">>", operand: 9_999_999_999n }, 8),
+		).toBe(0n);
+		expect(applyBitop(43n, { operator: "<<", operand: 8n }, 8)).toBe(0n);
+		expect(applyBitop(43n, { operator: ">>", operand: 7n }, 8)).toBe(0n);
+	});
+});
+
+describe("parseOperand via parseBitopLine", () => {
+	it("reads a bare leading zero as C octal", () => {
+		expect(parseBitopLine("flags &= 017;")).toEqual({
+			operator: "&",
+			operand: 15n,
+		});
+		expect(parseBitopLine("flags &= 0o17;")).toEqual({
+			operator: "&",
+			operand: 15n,
+		});
+		expect(parseBitopLine("flags &= 0;")).toEqual({
+			operator: "&",
+			operand: 0n,
+		});
+	});
+});
+
+describe("typeIsSigned", () => {
+	it("treats u-prefixed and listed unsigned types as unsigned", () => {
+		expect(typeIsSigned("u8")).toBe(false);
+		expect(typeIsSigned("uint32_t")).toBe(false);
+		expect(typeIsSigned("unsigned int")).toBe(false);
+		expect(typeIsSigned("size_t")).toBe(false);
+		expect(typeIsSigned("byte")).toBe(false);
+	});
+
+	it("keeps signed types signed", () => {
+		expect(typeIsSigned("i32")).toBe(true);
+		expect(typeIsSigned("int")).toBe(true);
+		expect(typeIsSigned("ssize_t")).toBe(true);
+		expect(typeIsSigned("ptrdiff_t")).toBe(true);
+		expect(typeIsSigned("rune")).toBe(true);
 	});
 });
 

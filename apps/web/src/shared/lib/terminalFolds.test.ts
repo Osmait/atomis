@@ -14,9 +14,14 @@ function line(
 	};
 }
 
-function loopLine(chunk: string, executionIndex: number): TerminalEntry {
+function loopLine(
+	chunk: string,
+	executionIndex: number,
+	seq?: number,
+): TerminalEntry {
 	return line(chunk, {
 		stream: "stderr",
+		...(seq !== undefined ? { seq } : {}),
 		sourceLocation: {
 			path: "src/main.zig",
 			line: 4,
@@ -25,6 +30,13 @@ function loopLine(chunk: string, executionIndex: number): TerminalEntry {
 			loop: { line: 3, column: 5, variable: "i", value: String(executionIndex - 1) },
 		},
 	});
+}
+
+/** First fold key of a grouping, for stability assertions. */
+function firstFoldKey(entries: readonly TerminalEntry[]): string | undefined {
+	for (const row of groupOutput(entries))
+		if (row.kind === "fold") return row.key;
+	return undefined;
 }
 
 describe("groupOutput", () => {
@@ -70,5 +82,51 @@ describe("groupOutput", () => {
 		if (fold?.kind !== "fold") throw new Error("expected fold");
 		expect(fold.label).toBe("panic trace");
 		expect(fold.entries).toHaveLength(3);
+	});
+
+	it("keeps loop fold keys stable while the buffer window slides", () => {
+		// Past 500 entries the buffer drops from the front, so every INDEX
+		// shifts; a key built on the index re-mounted the fold and collapsed
+		// its open state. The seq travels with the entry.
+		const entries = [
+			line("inicio\n", { seq: 10 }),
+			loopLine("iter 0\n", 1, 11),
+			loopLine("iter 1\n", 2, 12),
+			loopLine("iter 2\n", 3, 13),
+			loopLine("iter 3\n", 4, 14),
+		];
+		const before = firstFoldKey(entries);
+		const after = firstFoldKey(entries.slice(1));
+		expect(before).toBe("loop:src/main.zig:4:9:11");
+		expect(after).toBe(before);
+	});
+
+	it("keeps panic fold keys stable while the buffer window slides", () => {
+		const trace = (chunk: string, seq: number): TerminalEntry =>
+			line(chunk, { stream: "stderr", category: "error", seq });
+		const entries = [
+			line("antes\n", { seq: 1 }),
+			trace("thread 100 panic: boom\n", 2),
+			trace("/lib/std/debug.zig:415:5\n", 3),
+			trace("main.zig:4:5: in main\n", 4),
+			trace("start.zig:100:2: in start\n", 5),
+		];
+		const before = firstFoldKey(entries);
+		const after = firstFoldKey(entries.slice(1));
+		expect(before).toBe("stack:3");
+		expect(after).toBe(before);
+	});
+
+	it("falls back to the buffer index when entries carry no seq", () => {
+		const rows = groupOutput([
+			line("inicio\n"),
+			loopLine("iter 0\n", 1),
+			loopLine("iter 1\n", 2),
+			loopLine("iter 2\n", 3),
+			loopLine("iter 3\n", 4),
+		]);
+		const fold = rows.find((row) => row.kind === "fold");
+		if (fold?.kind !== "fold") throw new Error("expected fold");
+		expect(fold.key).toBe("loop:src/main.zig:4:9:1");
 	});
 });

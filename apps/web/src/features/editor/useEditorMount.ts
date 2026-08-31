@@ -42,10 +42,17 @@ export interface EditorMountDeps {
 	) => void;
 	setFocusZone: (zone: "editor") => void;
 	openInLsp: (path: string, model: MonacoApi.editor.ITextModel) => void;
-	setupVimKeys: (run: () => void) => void;
+	setupVimKeys: (runRef: React.RefObject<() => void>) => void;
 	attachVim: () => void;
-	sendSettings: (next: Settings) => void;
-	run: () => void;
+	/**
+	 * `run` and `sendSettings` come as refs, not functions: the shell
+	 * rebuilds both per session (they embed the sessionId), but the mouse
+	 * and key handlers below register once per editor. A handler that closed
+	 * over the first session's pair kept sending the old sessionId after a
+	 * workspace switch — which the server answers by closing the socket.
+	 */
+	sendSettingsRef: React.RefObject<(next: Settings) => void>;
+	runRef: React.RefObject<() => void>;
 }
 
 /**
@@ -75,8 +82,8 @@ export function useEditorMount({
 	openInLsp,
 	setupVimKeys,
 	attachVim,
-	sendSettings,
-	run,
+	sendSettingsRef,
+	runRef,
 }: EditorMountDeps): OnMount {
 	return useCallback<OnMount>(
 	(editor, monaco) => {
@@ -120,7 +127,7 @@ export function useEditorMount({
 			) {
 				event.preventDefault();
 				event.stopPropagation();
-				run();
+				runRef.current();
 			}
 		});
 		const editorNode = editor.getContainerDomNode();
@@ -136,7 +143,7 @@ export function useEditorMount({
 		editor.onDidDispose(() =>
 			editorNode.removeEventListener("contextmenu", showContextMenu, true),
 		);
-		setupVimKeys(run);
+		setupVimKeys(runRef);
 		installVimExtensions();
 		attachVim();
 		editor.onDidFocusEditorText(() => setFocusZone("editor"));
@@ -184,8 +191,8 @@ export function useEditorMount({
 					probe.probeId,
 				),
 			};
-			sendSettings(next);
-			setTimeout(run, 0);
+			sendSettingsRef.current(next);
+			setTimeout(() => runRef.current(), 0);
 		});
 
 		// Nothing else claims the caret on load, so the window opens with
@@ -205,8 +212,8 @@ export function useEditorMount({
 			monacoRef,
 			setFocusZone,
 			openInLsp,
-			run,
-			sendSettings,
+			runRef,
+			sendSettingsRef,
 			session,
 			setCursorPosition,
 			setEditorContextMenu,
