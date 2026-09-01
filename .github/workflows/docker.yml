@@ -1,0 +1,32 @@
+# The container image is expensive to build and changes rarely, so it gets
+# a workflow of its own instead of a job in ci.yml: `on.paths` is the only
+# first-class way to run it ONLY when the image inputs change, and a manual
+# button covers "did I break the Dockerfile?" without pushing.
+name: Docker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - Dockerfile
+      - .dockerignore
+  pull_request:
+    branches: [main]
+    paths:
+      - Dockerfile
+      - .dockerignore
+  workflow_dispatch:
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docker:
+    name: docker build (no push)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the image
+        run: docker build .

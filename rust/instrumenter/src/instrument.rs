@@ -86,6 +86,11 @@ struct LoopMeta {
     line: usize,
     column: usize,
     variable: Option<String>,
+    /// Where the preview of the loop variable is captured — the top of the
+    /// body, before any statement can move the variable away.
+    shadow: String,
+    body_start: usize,
+    used: bool,
 }
 
 struct Collector<'a> {
@@ -96,7 +101,12 @@ struct Collector<'a> {
     probes: Vec<Probe>,
     insertions: Vec<(usize, String)>,
     loops: Vec<LoopMeta>,
+    loop_counter: usize,
     test_depth: usize,
+    /// Inside `const fn`, `const {}`, or a `const`/`static` initializer:
+    /// the runtime does I/O, and I/O in a const context is a compile error
+    /// injected into perfectly valid user code.
+    const_depth: usize,
 }
 
 fn is_test_attr(attrs: &[syn::Attribute]) -> bool {
@@ -140,6 +150,43 @@ impl<'a> Collector<'a> {
         self.auto_inspect || self.manual_ids.iter().any(|manual| manual == id)
     }
 
+    fn push_loop(&mut self, line: usize, column: usize, variable: Option<String>, body_start: usize) {
+        self.loop_counter += 1;
+        self.loops.push(LoopMeta {
+            line,
+            column,
+            variable,
+            shadow: format!("__atomis_loop_v{}", self.loop_counter),
+            body_start,
+            used: false,
+        });
+    }
+
+    fn pop_loop(&mut self) {
+        let Some(meta) = self.loops.pop() else { return };
+        if !meta.used {
+            return;
+        }
+        if let Some(variable) = &meta.variable {
+            self.insertions.push((
+                meta.body_start,
+                format!(
+                    " let {shadow} = crate::atomis_loop_capture!(&{variable});",
+                    shadow = meta.shadow
+                ),
+            ));
+        }
+    }
+
+    /// Loop context must not leak into a closure, an async block or a
+    /// nested item: a marker in there referencing the loop variable changes
+    /// what the closure captures (or simply cannot name it at all, E0434).
+    fn with_loop_barrier(&mut self, visit: impl FnOnce(&mut Self)) {
+        let saved = std::mem::take(&mut self.loops);
+        visit(self);
+        self.loops = saved;
+    }
+
     fn local_ident(pat: &syn::Pat) -> Result<Option<&syn::PatIdent>, &'static str> {
         match pat {
             syn::Pat::Ident(ident) => {
@@ -162,13 +209,57 @@ impl<'a> Collector<'a> {
 impl<'a, 'ast> Visit<'ast> for Collector<'a> {
     fn visit_item_fn(&mut self, item: &'ast syn::ItemFn) {
         let test = is_test_attr(&item.attrs);
+        let konst = item.sig.constness.is_some();
         if test {
             self.test_depth += 1;
         }
-        syn::visit::visit_item_fn(self, item);
+        if konst {
+            self.const_depth += 1;
+        }
+        self.with_loop_barrier(|c| syn::visit::visit_item_fn(c, item));
+        if konst {
+            self.const_depth -= 1;
+        }
         if test {
             self.test_depth -= 1;
         }
+    }
+
+    fn visit_impl_item_fn(&mut self, item: &'ast syn::ImplItemFn) {
+        let konst = item.sig.constness.is_some();
+        if konst {
+            self.const_depth += 1;
+        }
+        self.with_loop_barrier(|c| syn::visit::visit_impl_item_fn(c, item));
+        if konst {
+            self.const_depth -= 1;
+        }
+    }
+
+    fn visit_item_const(&mut self, item: &'ast syn::ItemConst) {
+        self.const_depth += 1;
+        syn::visit::visit_item_const(self, item);
+        self.const_depth -= 1;
+    }
+
+    fn visit_item_static(&mut self, item: &'ast syn::ItemStatic) {
+        self.const_depth += 1;
+        syn::visit::visit_item_static(self, item);
+        self.const_depth -= 1;
+    }
+
+    fn visit_expr_const(&mut self, node: &'ast syn::ExprConst) {
+        self.const_depth += 1;
+        syn::visit::visit_expr_const(self, node);
+        self.const_depth -= 1;
+    }
+
+    fn visit_expr_closure(&mut self, node: &'ast syn::ExprClosure) {
+        self.with_loop_barrier(|c| syn::visit::visit_expr_closure(c, node));
+    }
+
+    fn visit_expr_async(&mut self, node: &'ast syn::ExprAsync) {
+        self.with_loop_barrier(|c| syn::visit::visit_expr_async(c, node));
     }
 
     fn visit_item_mod(&mut self, item: &'ast syn::ItemMod) {
@@ -188,41 +279,49 @@ impl<'a, 'ast> Visit<'ast> for Collector<'a> {
             Ok(Some(ident)) => Some(ident.ident.to_string()),
             _ => None,
         };
-        self.loops.push(LoopMeta {
-            line: start.line,
-            column: start.column + 1,
-            variable,
-        });
+        let body_start = node.body.brace_token.span.open().byte_range().end;
+        self.push_loop(start.line, start.column + 1, variable, body_start);
         syn::visit::visit_expr_for_loop(self, node);
-        self.loops.pop();
+        self.pop_loop();
     }
 
     fn visit_expr_while(&mut self, node: &'ast syn::ExprWhile) {
         let start = node.while_token.span.start();
         let variable = first_ident(&node.cond);
-        self.loops.push(LoopMeta {
-            line: start.line,
-            column: start.column + 1,
-            variable,
-        });
+        let body_start = node.body.brace_token.span.open().byte_range().end;
+        self.push_loop(start.line, start.column + 1, variable, body_start);
         syn::visit::visit_expr_while(self, node);
-        self.loops.pop();
+        self.pop_loop();
     }
 
     fn visit_expr_loop(&mut self, node: &'ast syn::ExprLoop) {
         let start = node.loop_token.span.start();
-        self.loops.push(LoopMeta {
-            line: start.line,
-            column: start.column + 1,
-            variable: None,
-        });
+        let body_start = node.body.brace_token.span.open().byte_range().end;
+        self.push_loop(start.line, start.column + 1, None, body_start);
         syn::visit::visit_expr_loop(self, node);
-        self.loops.pop();
+        self.pop_loop();
     }
 
     fn visit_local(&mut self, local: &'ast syn::Local) {
         syn::visit::visit_local(self, local);
         if self.test_depth > 0 {
+            return;
+        }
+        if self.const_depth > 0 {
+            if let Ok(Some(ident)) = Self::local_ident(&local.pat) {
+                let name = ident.ident.to_string();
+                let range = span_range(ident.ident.span());
+                let id = probe_id(self.uri, &range, &name);
+                self.probes.push(Probe {
+                    probe_id: id,
+                    name,
+                    supported: false,
+                    reason: Some("const context"),
+                    range,
+                    insertion_byte: None,
+                    mode: Mode::Auto,
+                });
+            }
             return;
         }
         let ident = match Self::local_ident(&local.pat) {
@@ -285,7 +384,7 @@ impl<'a, 'ast> Visit<'ast> for Collector<'a> {
 
     fn visit_stmt(&mut self, stmt: &'ast syn::Stmt) {
         syn::visit::visit_stmt(self, stmt);
-        if self.test_depth > 0 {
+        if self.test_depth > 0 || self.const_depth > 0 {
             return;
         }
         let syn::Stmt::Macro(stmt_macro) = stmt else {
@@ -307,16 +406,19 @@ impl<'a, 'ast> Visit<'ast> for Collector<'a> {
         let line = start.line;
         let column = start.column + 1;
         let end = stmt.span().byte_range().end;
-        let enclosing = self
-            .loops
-            .last()
-            .and_then(|meta| meta.variable.clone().map(|variable| (meta.clone(), variable)));
+        let enclosing = self.loops.last_mut().and_then(|meta| {
+            meta.variable.clone().map(|variable| {
+                meta.used = true;
+                (meta.line, meta.column, variable, meta.shadow.clone())
+            })
+        });
         let insertion = match enclosing {
-            Some((meta, variable)) => format!(
-                " crate::atomis_log_loop!({fd}, {file}, {line}, {column}, {lline}, {lcolumn}, \"{variable}\", &{variable});",
+            // `captured &shadow`, never `&variable`: the preview was taken
+            // at the top of the body, so a print after the variable moved
+            // (consumed, sent down a channel) still compiles and reports.
+            Some((lline, lcolumn, variable, shadow)) => format!(
+                " crate::atomis_log_loop!({fd}, {file}, {line}, {column}, {lline}, {lcolumn}, \"{variable}\", captured &{shadow});",
                 file = self.file_id,
-                lline = meta.line,
-                lcolumn = meta.column,
             ),
             None => format!(
                 " crate::atomis_log!({fd}, {file}, {line}, {column});",
@@ -335,7 +437,16 @@ pub fn instrument(
     file_id: u32,
     entry: bool,
 ) -> Output {
-    if source.contains("atomis_probe!(") || source.contains("atomis_log") {
+    // syn strips a BOM before parsing, which would shift every byte offset
+    // three bytes off the text we splice into. Strip it ourselves and work
+    // on the same bytes syn sees; rustc is happy without it.
+    let source = source.strip_prefix('\u{feff}').unwrap_or(source);
+    // Exact generated forms only: a user merely *mentioning* atomis_log in
+    // a comment or string must not silently turn instrumentation off.
+    if source.contains("crate::atomis_probe!(")
+        || source.contains("crate::atomis_log!(")
+        || source.contains("crate::atomis_log_loop!(")
+    {
         return Output {
             generated: Some(source.to_string()),
             probes: Vec::new(),
@@ -371,7 +482,9 @@ pub fn instrument(
         probes: Vec::new(),
         insertions: Vec::new(),
         loops: Vec::new(),
+        loop_counter: 0,
         test_depth: 0,
+        const_depth: 0,
     };
     collector.visit_file(&file);
 
@@ -418,13 +531,82 @@ mod tests {
         assert_eq!(unsupported[0].reason, Some("destructuring pattern"));
     }
 
+    /// The assertion every instrumenter needs most: whatever was spliced
+    /// in, the output is still a Rust program.
+    fn must_parse(generated: &str) {
+        if let Err(error) = syn::parse_file(generated) {
+            panic!("generated output does not parse: {error}\n{generated}");
+        }
+    }
+
     #[test]
     fn log_markers_track_loops_and_streams() {
         let output = instrument(SAMPLE, "file:///main.rs", true, &[], 7, false);
         let generated = output.generated.unwrap();
-        assert!(generated
-            .contains("crate::atomis_log_loop!(1, 7, 5, 9, 4, 5, \"i\", &i);"));
+        // The preview is captured at the top of the body and the marker
+        // references the capture, so a body that moves `i` still compiles.
+        assert!(
+            generated.contains("let __atomis_loop_v1 = crate::atomis_loop_capture!(&i);"),
+            "{generated}"
+        );
+        assert!(generated.contains(
+            "crate::atomis_log_loop!(1, 7, 5, 9, 4, 5, \"i\", captured &__atomis_loop_v1);"
+        ));
         assert!(generated.contains("crate::atomis_log!(2, 7, 7, 5);"));
+        must_parse(&generated);
+    }
+
+    #[test]
+    fn a_loop_that_moves_its_variable_still_instruments() {
+        let source = "fn consume(_s: String) {}\nfn main() {\n    let items = vec![String::from(\"a\")];\n    for s in items {\n        consume(s);\n        println!(\"done\");\n    }\n}\n";
+        let output = instrument(source, "file:///main.rs", true, &[], 1, false);
+        let generated = output.generated.unwrap();
+        // The capture precedes the move; the marker never touches `s` again.
+        let capture = generated.find("atomis_loop_capture!(&s)").expect("capture");
+        let consume = generated.find("consume(s)").expect("consume");
+        assert!(capture < consume, "{generated}");
+        assert!(!generated.contains("captured &s"), "{generated}");
+        must_parse(&generated);
+    }
+
+    #[test]
+    fn loop_context_stops_at_closures_and_nested_items() {
+        let source = "fn main() {\n    for s in [1, 2] {\n        let f = move || {\n            println!(\"inner\");\n        };\n        f();\n        fn nested() {\n            println!(\"deeper\");\n        }\n        nested();\n    }\n}\n";
+        let output = instrument(source, "file:///main.rs", true, &[], 1, false);
+        let generated = output.generated.unwrap();
+        // Markers inside the closure and the nested fn are plain logs: a
+        // loop marker there would change the closure's capture set, or
+        // reference a variable a nested fn cannot see at all (E0434).
+        assert!(!generated.contains("atomis_log_loop"), "{generated}");
+        assert!(generated.contains("crate::atomis_log!("));
+        // And nothing captures the loop variable nobody printed.
+        assert!(!generated.contains("atomis_loop_capture"), "{generated}");
+        must_parse(&generated);
+    }
+
+    #[test]
+    fn const_contexts_are_left_alone() {
+        let source = "const fn size() -> usize {\n    let base = 10;\n    base * 2\n}\nstatic TOTAL: usize = {\n    let x = 3;\n    x\n};\nfn main() {\n    let y = size() + TOTAL;\n    println!(\"{y}\");\n}\n";
+        let output = instrument(source, "file:///main.rs", true, &[], 1, false);
+        let generated = output.generated.unwrap();
+        // Probing does I/O; I/O in const evaluation is a compile error.
+        assert!(!generated.contains("\"base\""), "{generated}");
+        assert!(!generated.contains("\"x\","), "{generated}");
+        assert!(generated.contains("\"y\", &y"), "{generated}");
+        let base = output.probes.iter().find(|p| p.name == "base").unwrap();
+        assert_eq!(base.reason, Some("const context"));
+        must_parse(&generated);
+    }
+
+    #[test]
+    fn a_bom_does_not_shift_every_insertion() {
+        let source = "\u{feff}fn main() {\n    let x = 1;\n    println!(\"{x}\");\n}\n";
+        let output = instrument(source, "file:///main.rs", true, &[], 1, false);
+        let generated = output.generated.unwrap();
+        // Pre-fix, syn's offsets were three bytes short of the BOM'd text
+        // and every splice landed mid-token.
+        assert!(generated.contains("let x = 1; crate::atomis_probe!("), "{generated}");
+        must_parse(&generated);
     }
 
     #[test]

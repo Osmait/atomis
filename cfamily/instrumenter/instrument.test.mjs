@@ -78,3 +78,74 @@ test("passthrough for already instrumented sources", () => {
 	assert.equal(result.generated, source);
 	assert.equal(result.probes.length, 0);
 });
+
+test("C: bytes before an insertion point do not shift the splice", () => {
+	// The comment carries multibyte characters; clang's offsets are bytes,
+	// and slicing by UTF-16 units used to land every later insertion a few
+	// bytes early — inside a token.
+	const source = `// año señor 🎉 medición
+int main(void) {
+	int price = 40;
+	return price;
+}
+`;
+	const result = run(source, "c");
+	assert.match(result.generated, /int price = 40; __atomis_probe\("/);
+	// The splice landed exactly after the semicolon, not mid-token.
+	assert.ok(!result.generated.includes("40 ;"));
+	assert.equal(
+		(source.match(/\n/g) ?? []).length,
+		(result.generated.match(/\n/g) ?? []).length,
+	);
+});
+
+test("C++: an if-init declaration stays inside its parentheses", () => {
+	const source = `int f() { return 3; }
+int main() {
+	if (int x = f(); x > 0) {
+		return x;
+	}
+	return 0;
+}
+`;
+	const result = run(source, "cpp");
+	assert.ok(
+		!/f\(\);[^)]*__atomis_probe/.test(result.generated),
+		`probe spliced into the if header:\n${result.generated}`,
+	);
+});
+
+test("C++: a lambda body does not borrow the enclosing loop's variable", () => {
+	const source = `#include <cstdio>
+int main() {
+	for (int i = 0; i < 2; i++) {
+		auto f = []() { printf("x\\n"); };
+		f();
+	}
+	return 0;
+}
+`;
+	const result = run(source, "cpp");
+	assert.ok(
+		!result.generated.includes("__atomis_log_loop"),
+		`loop marker inside a lambda cannot capture i:\n${result.generated}`,
+	);
+});
+
+test("C++: a cout line inside a raw string is data, not a statement", () => {
+	const source = `#include <iostream>
+int main() {
+	const char *doc = R"(
+std::cout << x;
+)";
+	std::cout << doc;
+	return 0;
+}
+`;
+	const result = run(source, "cpp");
+	// One marker for the real cout; none spliced into the raw string.
+	assert.ok(
+		!result.generated.includes('std::cout << x;, __atomis_log'),
+		`marker spliced into string content:\n${result.generated}`,
+	);
+});

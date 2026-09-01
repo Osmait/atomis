@@ -33,8 +33,26 @@ pub fn discover_py_tests(files: &[crate::protocol::ProjectFile]) -> Vec<TestCase
         if !is_py_test_file(&file.path) {
             continue;
         }
+        // The runner executes module-level `test_*` functions AND the
+        // methods of `unittest.TestCase` classes; the catalog has to know
+        // both or class-based tests report as rows with no source line.
+        let mut current_class: Option<String> = None;
         for (index, line) in file.source.split('\n').enumerate() {
-            let Some(rest) = line.strip_prefix("def test_") else {
+            if let Some(rest) = line.strip_prefix("class ") {
+                let name: String = rest
+                    .chars()
+                    .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                    .collect();
+                current_class = (!name.is_empty()).then_some(name);
+                continue;
+            }
+            // Any statement back at column 0 ends the class body.
+            if !line.is_empty() && !line.starts_with(char::is_whitespace) {
+                current_class = None;
+            }
+            let trimmed = line.trim_start();
+            let indent = line.len() - trimmed.len();
+            let Some(rest) = trimmed.strip_prefix("def test") else {
                 continue;
             };
             let name: String = rest
@@ -45,10 +63,17 @@ pub fn discover_py_tests(files: &[crate::protocol::ProjectFile]) -> Vec<TestCase
             if !after.trim_start().starts_with('(') {
                 continue;
             }
+            let qualified = match (&current_class, indent) {
+                // A module-level function must start with `test_` exactly.
+                (_, 0) if name.starts_with('_') => format!("test{name}"),
+                (_, 0) => continue,
+                (Some(class), _) => format!("{class}.test{name}"),
+                (None, _) => continue,
+            };
             tests.push(TestCase {
                 test_id: format!("{}:{}", file.path, index + 1),
                 path: format!("src/{}", file.path),
-                name: format!("test_{name}"),
+                name: qualified,
                 line: (index + 1) as u32,
                 column: 1,
             });
@@ -58,15 +83,22 @@ pub fn discover_py_tests(files: &[crate::protocol::ProjectFile]) -> Vec<TestCase
 }
 
 pub fn match_py_test_name<'a>(catalog: &'a [TestCase], runner_name: &str) -> Option<&'a TestCase> {
-    let (module_name, title) = match runner_name.rfind('.') {
-        Some(index) => (&runner_name[..index], &runner_name[index + 1..]),
-        None => ("", runner_name),
-    };
-    let by_title: Vec<&TestCase> = catalog.iter().filter(|c| c.name == title).collect();
-    if by_title.len() <= 1 {
-        return by_title.first().copied();
+    // The runner reports `module.test_x` or `module.Class.test_x`; the
+    // catalog knows `test_x` and `Class.test_x`. Match by dotted suffix,
+    // then break ties between files on the module stem.
+    let by_suffix: Vec<&TestCase> = catalog
+        .iter()
+        .filter(|c| {
+            runner_name == c.name
+                || runner_name
+                    .strip_suffix(&c.name)
+                    .is_some_and(|head| head.ends_with('.'))
+        })
+        .collect();
+    if by_suffix.len() <= 1 {
+        return by_suffix.first().copied();
     }
-    by_title
+    by_suffix
         .iter()
         .find(|candidate| {
             let stem = candidate
@@ -78,10 +110,13 @@ pub fn match_py_test_name<'a>(catalog: &'a [TestCase], runner_name: &str) -> Opt
                 .rsplit('/')
                 .next()
                 .unwrap_or("");
-            stem == module_name
+            runner_name
+                .strip_suffix(&candidate.name)
+                .and_then(|head| head.strip_suffix('.'))
+                == Some(stem)
         })
         .copied()
-        .or_else(|| by_title.first().copied())
+        .or_else(|| by_suffix.first().copied())
 }
 
 /// The interpreter a run should use: the workspace's own virtualenv when
@@ -264,12 +299,14 @@ async fn run_tests(
         started: std::collections::HashMap<u32, String>,
         counts: (u32, u32, u32),
         stderr_buffer: String,
+        reported: std::collections::HashSet<String>,
         summary: Option<(u32, u32, u32)>,
     }
     let state = Arc::new(StdMutex::new(TestState {
         started: std::collections::HashMap::new(),
         counts: (0, 0, 0),
         stderr_buffer: String::new(),
+        reported: std::collections::HashSet::new(),
         summary: None,
     }));
 
@@ -302,6 +339,9 @@ async fn run_tests(
                     _ => state.counts.2 += 1,
                 }
                 let matched = match_py_test_name(&catalog_owned, &name);
+                if let Some(matched) = matched {
+                    state.reported.insert(matched.test_id.clone());
+                }
                 let tail = state.stderr_buffer.trim().to_string();
                 let message = if status == TestStatus::Failed {
                     if tail.is_empty() {
@@ -384,7 +424,15 @@ async fn run_tests(
         execution.timed_out,
         events,
         &|name| match_py_test_name(catalog, name).map(|c| (c.test_id.clone(), c.name.clone())),
+        &mut state.reported,
     );
+    if execution.timed_out {
+        state.counts.1 += crate::languages::common::report_timed_out_remainder(
+            catalog,
+            &state.reported,
+            events,
+        );
+    }
     if state.summary.is_none()
         && execution.exit_code != Some(0)
         && !state.stderr_buffer.trim().is_empty()
@@ -416,7 +464,8 @@ async fn run_tests(
 
 #[cfg(test)]
 mod tests {
-    use super::last_py_location;
+    use super::{discover_py_tests, last_py_location, match_py_test_name};
+    use crate::protocol::TestCase;
 
     #[test]
     fn the_traceback_location_survives_a_coloured_frame() {
@@ -442,5 +491,53 @@ mod tests {
             Some(("helper.py".to_string(), 3))
         );
         assert_eq!(last_py_location("no traceback here"), None);
+    }
+
+    #[test]
+    fn the_catalog_knows_functions_and_testcase_methods() {
+        let files = vec![crate::protocol::ProjectFile {
+            path: "sample_test.py".into(),
+            uri: "file:///sample_test.py".into(),
+            source: concat!(
+                "import unittest\n",
+                "def test_plain():\n",
+                "    assert True\n",
+                "class TestThings(unittest.TestCase):\n",
+                "    def test_case_passes(self):\n",
+                "        self.assertEqual(2, 2)\n",
+                "def helper():\n",
+                "    pass\n",
+                "def not_a_test():\n",
+                "    pass\n",
+            )
+            .into(),
+        }];
+        let catalog = discover_py_tests(&files);
+        let names: Vec<&str> = catalog.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, vec!["test_plain", "TestThings.test_case_passes"]);
+        assert_eq!(catalog[1].line, 5);
+    }
+
+    #[test]
+    fn runner_names_map_back_to_both_shapes() {
+        let case = |name: &str, path: &str| TestCase {
+            test_id: format!("{path}:{name}"),
+            path: format!("src/{path}"),
+            name: name.into(),
+            line: 1,
+            column: 1,
+        };
+        let catalog = vec![
+            case("test_plain", "sample_test.py"),
+            case("TestThings.test_case_passes", "sample_test.py"),
+            case("test_plain", "other_test.py"),
+        ];
+        let hit = match_py_test_name(&catalog, "sample_test.TestThings.test_case_passes")
+            .expect("class method matches");
+        assert_eq!(hit.name, "TestThings.test_case_passes");
+        // Two files share a function name: the module stem decides.
+        let hit = match_py_test_name(&catalog, "other_test.test_plain").expect("matches");
+        assert_eq!(hit.path, "src/other_test.py");
+        assert!(match_py_test_name(&catalog, "sample_test.test_unknown").is_none());
     }
 }

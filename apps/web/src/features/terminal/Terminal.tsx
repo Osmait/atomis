@@ -1,6 +1,7 @@
 import React, { useRef, useState } from "react";
 import type { RunResult, TestCase } from "@atomis/protocol";
 import { useDismissable } from "../../shared/ui/useDismissable.js";
+import { sanitizeTerminalText } from "../../shared/lib/ansi.js";
 import type { OwnedDiagnostic } from "../../shared/lib/diagnostics.js";
 import type { TerminalRow } from "../../shared/lib/terminalFolds.js";
 import type { LogSourceLocation, TerminalEntry } from "../../shared/types.js";
@@ -46,7 +47,7 @@ function OutputEntry(props: OutputEntryProps): React.JSX.Element {
 			}
 		>
 			<span className="output-chevron">›</span>
-			<pre className={entry.category}>{entry.chunk}</pre>
+			<pre className={entry.category}>{sanitizeTerminalText(entry.chunk)}</pre>
 			<time>
 				{((entry.receivedAt - (props.baseTime ?? entry.receivedAt)) / 1000).toFixed(3)}
 				s
@@ -165,8 +166,16 @@ export function Terminal(props: TerminalProps): React.JSX.Element {
 		setMenuOpen(true);
 	};
 	const { tab, allProblems } = props;
+	// Timestamps are relative to the run's FIRST entry, not to whatever the
+	// sliding 500-entry buffer currently starts with — pinned when output
+	// first appears, released when it is cleared (new run, Clear output),
+	// so old lines' times cannot rewrite themselves as the window slides.
+	const baseTimeRef = useRef<number | undefined>(undefined);
+	const firstEntry = props.output[0];
+	if (!firstEntry) baseTimeRef.current = undefined;
+	else baseTimeRef.current ??= firstEntry.receivedAt;
 	const entryProps = {
-		baseTime: props.output[0]?.receivedAt,
+		baseTime: baseTimeRef.current,
 		entryFile: props.entryFile,
 		onEntryClick: props.onEntryClick,
 		onEntryHover: props.onEntryHover,
@@ -352,7 +361,10 @@ export function Terminal(props: TerminalProps): React.JSX.Element {
 								<OutputEntry
 									entry={row.entry}
 									index={row.index}
-									key={row.index}
+									// Keyed by seq: the buffer index shifts when the
+									// 500-entry window slides, and index keys re-mounted
+									// every row past that point.
+									key={row.entry.seq ?? row.index}
 									{...entryProps}
 								/>
 							) : (
@@ -375,7 +387,7 @@ export function Terminal(props: TerminalProps): React.JSX.Element {
 												child
 												entry={grouped.entry}
 												index={grouped.index}
-												key={grouped.index}
+												key={grouped.entry.seq ?? grouped.index}
 												{...entryProps}
 											/>
 										))}

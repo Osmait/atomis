@@ -343,6 +343,23 @@ pub fn classify_execution(
     None
 }
 
+/// Why a compile-phase process failed, shared by every compiled runner.
+///
+/// A timeout must say so: `exit_code: None` with no limit used to fall into
+/// "compiler error", so a first cold build that outlived its budget showed
+/// an empty diagnostics panel instead of the one word that explained it.
+/// The caller also copies `timed_out` into its metrics — only the execution
+/// phase used to, and the UI trusted it.
+pub fn compile_failure_reason(compile: &ProcessResult) -> String {
+    if let Some(limit) = compile.limit {
+        format!("{limit} output limit exceeded")
+    } else if compile.timed_out {
+        "compilation timed out".to_string()
+    } else {
+        "compiler error".to_string()
+    }
+}
+
 pub fn truncate_chars(text: &str, max: usize) -> String {
     text.chars().take(max).collect()
 }
@@ -411,11 +428,15 @@ pub fn report_aborted_tests(
     timed_out: bool,
     events: &Events,
     lookup: &dyn Fn(&str) -> Option<(String, String)>,
+    reported_ids: &mut std::collections::HashSet<String>,
 ) -> u32 {
     let mut reported = 0;
     for name in started {
         reported += 1;
         let matched = lookup(&name);
+        if let Some((id, _)) = &matched {
+            reported_ids.insert(id.clone());
+        }
         let _ = events.send(RunnerEvent::TestResult {
             test_id: matched.as_ref().map(|(id, _)| id.clone()),
             name: matched.map(|(_, name)| name).unwrap_or(name),
@@ -428,6 +449,32 @@ pub fn report_aborted_tests(
             message: aborted_message(stderr_buffer, whole_stderr),
         });
         stderr_buffer.clear();
+    }
+    reported
+}
+
+/// On a suite timeout, every catalog entry that never reported met the same
+/// clock. Rust, go and ts already mark them all as timed out; zig, python
+/// and the C family leaving theirs blank made half the drawer look stuck
+/// for no reason. Returns how many results it sent.
+pub fn report_timed_out_remainder(
+    catalog: &[crate::protocol::TestCase],
+    reported_ids: &std::collections::HashSet<String>,
+    events: &Events,
+) -> u32 {
+    let mut reported = 0;
+    for test in catalog {
+        if reported_ids.contains(&test.test_id) {
+            continue;
+        }
+        reported += 1;
+        let _ = events.send(RunnerEvent::TestResult {
+            test_id: Some(test.test_id.clone()),
+            name: test.name.clone(),
+            status: TestStatus::TimedOut,
+            duration_ms: 0.0,
+            message: None,
+        });
     }
     reported
 }

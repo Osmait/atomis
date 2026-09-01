@@ -35,16 +35,23 @@ function probeId(uri, range, name) {
 }
 
 export function instrument(source, uri, autoInspect, manualIds, fileId) {
+	// Exact generated forms only: a user merely mentioning atomis_log in a
+	// comment must not silently turn instrumentation off.
 	if (
-		source.includes("__atomis_probe(") ||
-		source.includes("__atomis_log")
+		source.includes("; __atomis_probe(") ||
+		source.includes("; __atomis_log(") ||
+		source.includes("; __atomis_log_loop(") ||
+		source.includes(", __atomis_log(")
 	) {
 		return { generated: source, probes: [], parseDiagnostics: [] };
 	}
-	const scriptKind =
-		uri.endsWith(".js") || uri.endsWith(".mjs") || uri.endsWith(".cjs")
-			? ts.ScriptKind.JS
-			: ts.ScriptKind.TS;
+	const scriptKind = uri.endsWith(".tsx")
+		? ts.ScriptKind.TSX
+		: uri.endsWith(".jsx")
+			? ts.ScriptKind.JSX
+			: uri.endsWith(".js") || uri.endsWith(".mjs") || uri.endsWith(".cjs")
+				? ts.ScriptKind.JS
+				: ts.ScriptKind.TS;
 	const sourceFile = ts.createSourceFile(
 		"input.ts",
 		source,
@@ -128,6 +135,13 @@ export function instrument(source, uri, autoInspect, manualIds, fileId) {
 		return found;
 	};
 
+	const consoleFd = (call) =>
+		ts.isPropertyAccessExpression(call.expression) &&
+		ts.isIdentifier(call.expression.expression) &&
+		call.expression.expression.getText(sourceFile) === "console"
+			? LOG_TARGETS.get(call.expression.name.getText(sourceFile))
+			: undefined;
+
 	const loopVariable = (node) => {
 		if (
 			(ts.isForOfStatement(node) || ts.isForInStatement(node)) &&
@@ -188,26 +202,40 @@ export function instrument(source, uri, autoInspect, manualIds, fileId) {
 		if (
 			ts.isExpressionStatement(node) &&
 			ts.isCallExpression(node.expression) &&
-			ts.isPropertyAccessExpression(node.expression.expression) &&
-			ts.isIdentifier(node.expression.expression.expression) &&
-			node.expression.expression.expression.getText(sourceFile) === "console"
+			consoleFd(node.expression) !== undefined
 		) {
-			const method = node.expression.expression.name.getText(sourceFile);
-			const fd = LOG_TARGETS.get(method);
-			if (fd !== undefined) {
-				const at = position(node.getStart(sourceFile));
-				const enclosing = loops.at(-1);
-				if (enclosing?.variable)
-					insertions.push({
-						offset: node.end,
-						text: `; __atomis_log_loop(${fd}, ${fileId}, ${at.line}, ${at.column}, ${enclosing.line}, ${enclosing.column}, ${JSON.stringify(enclosing.variable)}, ${enclosing.variable});`,
-					});
-				else
-					insertions.push({
-						offset: node.end,
-						text: `; __atomis_log(${fd}, ${fileId}, ${at.line}, ${at.column});`,
-					});
-			}
+			const fd = consoleFd(node.expression);
+			const at = position(node.getStart(sourceFile));
+			const enclosing = loops.at(-1);
+			if (enclosing?.variable)
+				insertions.push({
+					offset: node.end,
+					text: `; __atomis_log_loop(${fd}, ${fileId}, ${at.line}, ${at.column}, ${enclosing.line}, ${enclosing.column}, ${JSON.stringify(enclosing.variable)}, ${enclosing.variable});`,
+				});
+			else
+				insertions.push({
+					offset: node.end,
+					text: `; __atomis_log(${fd}, ${fileId}, ${at.line}, ${at.column});`,
+				});
+		}
+
+		// `xs.forEach(x => console.log(x))`: the call is an arrow's concise
+		// body, not a statement — the marker rides a comma expression so the
+		// arrow still returns what it returned.
+		if (
+			ts.isCallExpression(node) &&
+			consoleFd(node) !== undefined &&
+			node.parent &&
+			ts.isArrowFunction(node.parent) &&
+			node.parent.body === node
+		) {
+			const fd = consoleFd(node);
+			const at = position(node.getStart(sourceFile));
+			insertions.push({ offset: node.getStart(sourceFile), text: "(" });
+			insertions.push({
+				offset: node.end,
+				text: `, __atomis_log(${fd}, ${fileId}, ${at.line}, ${at.column}))`,
+			});
 		}
 
 		ts.forEachChild(node, visit);

@@ -12,6 +12,12 @@ use std::time::{Duration, Instant};
 use tokio::io::AsyncReadExt;
 use tokio_util::sync::CancellationToken;
 
+/// After the main process exits, how long surviving descendants may keep
+/// the output pipes open before the run stops waiting for them. Long enough
+/// for a backgrounded child to flush its last words, short enough that a
+/// setsid() escapee — unreachable by the group kill — cannot pin the run.
+pub const DESCENDANT_DRAIN_MS: u64 = 1500;
+
 pub struct ProcessLimits {
     pub timeout_ms: u64,
     pub stdout_bytes: usize,
@@ -255,6 +261,21 @@ pub async fn run(command: &str, args: &[String], options: RunOptions<'_>) -> Pro
     let mut stdout_done = stdout.is_none();
     let mut stderr_done = stderr.is_none();
     let mut probe_done = probe_reader.is_none();
+    // A multibyte character split between two reads must not become two
+    // U+FFFDs: the carry joins it back up across the boundary.
+    let mut stdout_decoder = crate::util::Utf8Carry::new();
+    let mut stderr_decoder = crate::util::Utf8Carry::new();
+    // Over the limit, reads continue (to drain the pipe) but nothing more is
+    // accumulated or streamed: the cap is a cap, not a suggestion.
+    let mut stdout_capped = false;
+    let mut stderr_capped = false;
+    let mut probe_capped = false;
+    // EOF requires every copy of the pipe's write end to close, and a
+    // descendant that outlives the main process holds one. Waiting on it
+    // forever pins the run task — a setsid() escapee is not even reachable
+    // by the group kill — so exit starts a countdown instead.
+    let mut drain_deadline: Option<tokio::time::Instant> = None;
+    let finished = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
 
     let terminate = |terminating: &mut bool| {
         if *terminating || pid == 0 {
@@ -263,9 +284,15 @@ pub async fn run(command: &str, args: &[String], options: RunOptions<'_>) -> Pro
         *terminating = true;
         kill_group(pid, libc::SIGTERM);
         let kill_pid = pid;
+        let finished = std::sync::Arc::clone(&finished);
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_millis(250)).await;
-            kill_group(kill_pid, libc::SIGKILL);
+            // Once the run has fully wound down every pipe was closed, so
+            // the group is in all likelihood gone — and its id may already
+            // name someone else's processes. Only stragglers get the kill.
+            if !finished.load(std::sync::atomic::Ordering::SeqCst) {
+                kill_group(kill_pid, libc::SIGKILL);
+            }
         });
     };
 
@@ -280,19 +307,32 @@ pub async fn run(command: &str, args: &[String], options: RunOptions<'_>) -> Pro
                 result.timed_out = true;
                 terminate(&mut terminating);
             }
+            _ = async { tokio::time::sleep_until(drain_deadline.expect("drain armed")).await }, if drain_deadline.is_some() => {
+                // The main process is gone but something it left behind
+                // still holds an output pipe. Sweep the group and stop
+                // reading; dropping our ends follows at return, and an
+                // escapee that writes again dies of EPIPE on its own.
+                terminate(&mut terminating);
+                stdout_done = true;
+                stderr_done = true;
+                probe_done = true;
+            }
             read = async { stdout.as_mut().expect("stdout").read(&mut stdout_buf).await }, if !stdout_done => {
                 match read {
                     Ok(0) | Err(_) => stdout_done = true,
                     Ok(n) => {
                         stdout_bytes += n;
-                        let text = String::from_utf8_lossy(&stdout_buf[..n]).into_owned();
-                        result.stdout.push_str(&text);
-                        if let Some(cb) = callbacks.stdout.as_mut() {
-                            cb(&text);
-                        }
-                        if stdout_bytes > options.limits.stdout_bytes {
-                            result.limit = Some("stdout");
-                            terminate(&mut terminating);
+                        if !stdout_capped {
+                            let text = stdout_decoder.decode(&stdout_buf[..n]);
+                            result.stdout.push_str(&text);
+                            if let Some(cb) = callbacks.stdout.as_mut() {
+                                cb(&text);
+                            }
+                            if stdout_bytes > options.limits.stdout_bytes {
+                                stdout_capped = true;
+                                result.limit = Some("stdout");
+                                terminate(&mut terminating);
+                            }
                         }
                     }
                 }
@@ -302,14 +342,17 @@ pub async fn run(command: &str, args: &[String], options: RunOptions<'_>) -> Pro
                     Ok(0) | Err(_) => stderr_done = true,
                     Ok(n) => {
                         stderr_bytes += n;
-                        let text = String::from_utf8_lossy(&stderr_buf[..n]).into_owned();
-                        result.stderr.push_str(&text);
-                        if let Some(cb) = callbacks.stderr.as_mut() {
-                            cb(&text);
-                        }
-                        if stderr_bytes > options.limits.stderr_bytes {
-                            result.limit = Some("stderr");
-                            terminate(&mut terminating);
+                        if !stderr_capped {
+                            let text = stderr_decoder.decode(&stderr_buf[..n]);
+                            result.stderr.push_str(&text);
+                            if let Some(cb) = callbacks.stderr.as_mut() {
+                                cb(&text);
+                            }
+                            if stderr_bytes > options.limits.stderr_bytes {
+                                stderr_capped = true;
+                                result.limit = Some("stderr");
+                                terminate(&mut terminating);
+                            }
                         }
                     }
                 }
@@ -319,12 +362,15 @@ pub async fn run(command: &str, args: &[String], options: RunOptions<'_>) -> Pro
                     Ok(0) | Err(_) => probe_done = true,
                     Ok(n) => {
                         probe_bytes += n;
-                        if let Some(cb) = callbacks.probe.as_mut() {
-                            cb(&probe_buf[..n]);
-                        }
-                        if probe_bytes > options.limits.probe_bytes {
-                            result.limit = Some("probes");
-                            terminate(&mut terminating);
+                        if !probe_capped {
+                            if let Some(cb) = callbacks.probe.as_mut() {
+                                cb(&probe_buf[..n]);
+                            }
+                            if probe_bytes > options.limits.probe_bytes {
+                                probe_capped = true;
+                                result.limit = Some("probes");
+                                terminate(&mut terminating);
+                            }
                         }
                     }
                 }
@@ -334,10 +380,32 @@ pub async fn run(command: &str, args: &[String], options: RunOptions<'_>) -> Pro
                 exited = Some(
                     status.unwrap_or_else(|_| std::process::ExitStatus::from_raw(0)),
                 );
+                drain_deadline = Some(
+                    tokio::time::Instant::now() + Duration::from_millis(DESCENDANT_DRAIN_MS),
+                );
             }
         }
         if exited.is_some() && stdout_done && stderr_done && probe_done {
             break;
+        }
+    }
+    finished.store(true, std::sync::atomic::Ordering::SeqCst);
+    if !stdout_capped {
+        let tail = stdout_decoder.finish();
+        if !tail.is_empty() {
+            result.stdout.push_str(&tail);
+            if let Some(cb) = callbacks.stdout.as_mut() {
+                cb(&tail);
+            }
+        }
+    }
+    if !stderr_capped {
+        let tail = stderr_decoder.finish();
+        if !tail.is_empty() {
+            result.stderr.push_str(&tail);
+            if let Some(cb) = callbacks.stderr.as_mut() {
+                cb(&tail);
+            }
         }
     }
 
@@ -352,9 +420,100 @@ pub async fn run(command: &str, args: &[String], options: RunOptions<'_>) -> Pro
 
 #[cfg(test)]
 mod tests {
-    use super::{scrub_value, Scrubbed};
+    use super::{run, scrub_value, ProcessLimits, RunOptions, Scrubbed, StreamCallbacks};
+    use std::time::Duration;
+    use tokio_util::sync::CancellationToken;
 
     const BUNDLE: &str = "/tmp/.mount_atomisAbCdEf";
+
+    fn options(timeout_ms: u64, stdout_bytes: usize) -> RunOptions<'static> {
+        RunOptions {
+            cwd: std::env::temp_dir(),
+            limits: ProcessLimits::new(timeout_ms, stdout_bytes, 512 * 1024),
+            cancel: CancellationToken::new(),
+            probe_fd: false,
+            env: Vec::new(),
+            sandbox: None,
+            callbacks: StreamCallbacks::default(),
+        }
+    }
+
+    fn have(command: &str) -> bool {
+        std::process::Command::new("sh")
+            .args(["-c", &format!("command -v {command}")])
+            .stdout(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success())
+    }
+
+    #[tokio::test]
+    async fn a_setsid_escapee_cannot_pin_the_run() {
+        if !have("setsid") {
+            return;
+        }
+        // The escapee leaves the process group, so the group kill misses it,
+        // and it inherits stdout, so EOF never comes. The run must still end.
+        let script = "setsid sleep 30 & exit 7";
+        let result = tokio::time::timeout(
+            Duration::from_secs(10),
+            run("sh", &["-c".into(), script.into()], options(30_000, 1024 * 1024)),
+        )
+        .await
+        .expect("the run must not hang on an escaped descendant");
+        assert_eq!(result.exit_code, Some(7));
+        assert!(!result.timed_out, "a clean exit is not a timeout");
+    }
+
+    #[tokio::test]
+    async fn a_backgrounded_child_ends_the_run_at_the_drain_window() {
+        // Same group this time: the drain window closes the run and the
+        // group sweep takes the straggler with it, without a false timeout.
+        let script = "sleep 30 & exit 0";
+        let result = tokio::time::timeout(
+            Duration::from_secs(10),
+            run("sh", &["-c".into(), script.into()], options(30_000, 1024 * 1024)),
+        )
+        .await
+        .expect("the run must not wait for the background child");
+        assert_eq!(result.exit_code, Some(0));
+        assert!(!result.timed_out);
+    }
+
+    #[tokio::test]
+    async fn the_output_limit_is_a_hard_cap() {
+        // `yes` writes forever; the run must stop it and keep only about the
+        // limit, not everything that arrived while dying.
+        let result = tokio::time::timeout(
+            Duration::from_secs(10),
+            run("yes", &[], options(30_000, 10_000)),
+        )
+        .await
+        .expect("the limit must end the run");
+        assert_eq!(result.limit, Some("stdout"));
+        assert!(
+            result.stdout.len() <= 10_000 + 16 * 1024,
+            "kept {} bytes for a 10000-byte limit",
+            result.stdout.len()
+        );
+    }
+
+    #[tokio::test]
+    async fn split_multibyte_output_survives_the_chunk_boundary() {
+        if !have("python3") {
+            return;
+        }
+        // Two explicit writes that cut the ñ in half, so the halves are
+        // guaranteed to arrive in different reads.
+        let script = "import os\nos.write(1, b'a' * 100 + b'\\xc3')\nos.write(1, b'\\xb1ok')\n";
+        let result = run(
+            "python3",
+            &["-c".into(), script.into()],
+            options(10_000, 1024 * 1024),
+        )
+        .await;
+        assert_eq!(result.exit_code, Some(0));
+        assert_eq!(result.stdout, format!("{}ñok", "a".repeat(100)));
+    }
 
     #[test]
     fn a_variable_that_only_names_the_bundle_is_dropped() {

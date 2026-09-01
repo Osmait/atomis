@@ -28,15 +28,20 @@ export function diagnosticDocPath(
 
 /**
  * Flattens `{owner: diagnostics}` into one list, dropping diagnostics that
- * repeat another owner's severity+position+message (compiler vs LSP overlap).
+ * repeat another owner's severity+position+message in the SAME document
+ * (compiler vs LSP overlap). The document is part of the identity — the
+ * same typo at the same position in two files is two problems — and it is
+ * resolved through `diagnosticDocPath` so an unattributed compiler entry
+ * still dedupes against the LSP's path-carrying twin.
  */
 export function flattenProblems(
 	byOwner: Record<string, readonly ProjectDiagnostic[]>,
+	entryFile: string,
 ): OwnedDiagnostic[] {
 	const seen = new Set<string>();
 	return Object.entries(byOwner).flatMap(([owner, items]) =>
 		items.flatMap((item) => {
-			const key = `${item.severity}:${item.line}:${item.column}:${item.message}`;
+			const key = `${diagnosticDocPath(item, entryFile)}:${item.severity}:${item.line}:${item.column}:${item.message}`;
 			if (seen.has(key)) return [];
 			seen.add(key);
 			return [{ owner, ...item }];

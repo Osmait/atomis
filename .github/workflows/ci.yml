@@ -31,7 +31,10 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - uses: dtolnay/rust-toolchain@stable
+      # Pinned to what the Dockerfile builds with (rust:1.96-bookworm): an
+      # unpinned `stable` beside `clippy -D warnings` means every new Rust
+      # release can break CI with lints nobody wrote yet.
+      - uses: dtolnay/rust-toolchain@1.96.0
         with:
           components: clippy
           targets: aarch64-apple-darwin
@@ -66,9 +69,10 @@ jobs:
           version: ${{ env.ZIG_VERSION }}
       - uses: actions/setup-go@v5
         with:
-          go-version: stable
+          # What go/*/go.mod declares (`go 1.22`); `stable` drifted ahead.
+          go-version: "1.22.x"
           cache: false
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.96.0
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: atomis
@@ -95,9 +99,10 @@ jobs:
           version: ${{ env.ZIG_VERSION }}
       - uses: actions/setup-go@v5
         with:
-          go-version: stable
+          # What go/*/go.mod declares (`go 1.22`); `stable` drifted ahead.
+          go-version: "1.22.x"
           cache: false
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.96.0
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: atomis

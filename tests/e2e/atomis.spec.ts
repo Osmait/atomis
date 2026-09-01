@@ -104,10 +104,12 @@ async function replaceEditor(
 	// Paste instead of typing: Monaco applies auto-indent and brace
 	// auto-closing to typed text, which corrupts multi-line snippets whose
 	// first line opens a block. Paste inserts the text verbatim.
+	// The page is already navigated by the time this runs, so its own URL
+	// is the one origin that is always right, whatever port the stack uses.
 	await page
 		.context()
 		.grantPermissions(["clipboard-read", "clipboard-write"], {
-			origin: process.env.ATOMIS_BASE_URL ?? "http://127.0.0.1:5173",
+			origin: new URL(page.url()).origin,
 		});
 	await page.evaluate(
 		async (text) => await navigator.clipboard.writeText(text),
@@ -230,10 +232,14 @@ pub fn main(init: std.process.Init) !void {
 	).toHaveCount(0);
 });
 
-test("Vim mode keeps native clipboard shortcuts", async ({ page, context }) => {
+test("Vim mode keeps native clipboard shortcuts", async ({
+	page,
+	context,
+	baseURL,
+}) => {
 	const pageErrors: string[] = [];
 	await context.grantPermissions(["clipboard-read", "clipboard-write"], {
-		origin: process.env.ATOMIS_BASE_URL ?? "http://127.0.0.1:5173",
+		origin: baseURL ?? "http://127.0.0.1:5391",
 	});
 	page.on("pageerror", (error) => pageErrors.push(error.message));
 	await openClean(page);
@@ -544,9 +550,12 @@ async function openRust(page: import("@playwright/test").Page): Promise<boolean>
 		const body = (await response.json()) as {
 			checks: { name: string; detected: string }[];
 		};
+		// "degraded", not "disabled": that is the word the doctor actually
+		// emits for a missing toolchain, and matching the wrong one made
+		// the Rust specs FAIL on machines without cargo instead of skipping.
 		return body.checks.some(
 			(check) =>
-				check.name === "Rust cargo" && !check.detected.includes("disabled"),
+				check.name === "Rust cargo" && !check.detected.includes("degraded"),
 		);
 	});
 	if (!doctor) return false;
@@ -668,6 +677,9 @@ test("Ctrl+S formats the document and returns vim to normal mode", async ({
 });
 
 test("multi-file imports run in every language", async ({ page }) => {
+	// Five languages compiled with cold caches do not fit inside the global
+	// 60s budget; slow() triples it for this spec alone.
+	test.slow();
 	await openClean(page);
 	// A sandboxed session starts with cold toolchain caches (they live in
 	// the workspace, not the user's home), so the first compile of each
@@ -785,19 +797,25 @@ test("programs that open TCP/HTTP servers are killed at the timeout", async ({
 	await expect(page.locator(".panel-content")).toContainText(
 		"escuchando en 39123",
 	);
-	await page.waitForTimeout(600);
-	const httpPortFree = await page.evaluate(async () => {
-		try {
-			await fetch("http://127.0.0.1:39123/", {
-				mode: "no-cors",
-				signal: AbortSignal.timeout(1000),
-			});
-			return false;
-		} catch {
-			return true;
-		}
-	});
-	expect(httpPortFree).toBe(true);
+	// The condition the old fixed sleep stood in for: the process-group kill
+	// finishing, observable as the port refusing connections. Poll for it.
+	await expect
+		.poll(
+			() =>
+				page.evaluate(async () => {
+					try {
+						await fetch("http://127.0.0.1:39123/", {
+							mode: "no-cors",
+							signal: AbortSignal.timeout(1000),
+						});
+						return false;
+					} catch {
+						return true;
+					}
+				}),
+			{ timeout: 15_000 },
+		)
+		.toBe(true);
 
 	// Same policy for a raw TCP listener in Python.
 	await page.getByRole("button", { name: "main.py", exact: true }).click();
@@ -808,24 +826,42 @@ test("programs that open TCP/HTTP servers are killed at the timeout", async ({
 	await expect(page.locator(".state-timed_out")).toBeVisible({
 		timeout: 30_000,
 	});
-	await page.waitForTimeout(600);
-	const tcpPortFree = await page.evaluate(async () => {
-		try {
-			await fetch("http://127.0.0.1:39124/", {
-				mode: "no-cors",
-				signal: AbortSignal.timeout(1000),
-			});
-			return false;
-		} catch {
-			return true;
-		}
-	});
-	expect(tcpPortFree).toBe(true);
+	// Same poll as above: wait for the kill to actually free the port.
+	await expect
+		.poll(
+			() =>
+				page.evaluate(async () => {
+					try {
+						await fetch("http://127.0.0.1:39124/", {
+							mode: "no-cors",
+							signal: AbortSignal.timeout(1000),
+						});
+						return false;
+					} catch {
+						return true;
+					}
+				}),
+			{ timeout: 15_000 },
+		)
+		.toBe(true);
 	if (sandboxed) await setToggle(page, "Sandbox", true);
 });
 
 test("leader key navigates tree and terminal app-wide", async ({ page }) => {
 	await openClean(page);
+	// The tab-cycling half of this spec opens the demo's main.rs, which the
+	// tree only lists when cargo is available — same gate as the Rust specs.
+	const rustAvailable = await page.evaluate(async () => {
+		const response = await fetch("/api/doctor");
+		const body = (await response.json()) as {
+			checks: { name: string; detected: string }[];
+		};
+		return body.checks.some(
+			(check) =>
+				check.name === "Rust cargo" && !check.detected.includes("degraded"),
+		);
+	});
+	test.skip(!rustAvailable, "cargo not available");
 	await expect(page.locator(".state-succeeded")).toBeVisible();
 
 	// With vim off, Space inside the editor must keep typing spaces — the
@@ -1106,6 +1142,12 @@ test("go sessions run with inline values, tests and mapped diagnostics", async (
 	await expect(page.locator(".global-status")).toContainText(
 		"src/main_test.go",
 	);
+	// A deliberate negative wait, kept as a fixed pause because there is no
+	// positive signal to await: what is under test is that opening a Go file
+	// never routes its content to ZLS, and the only symptom of the bug was a
+	// bogus diagnostic appearing shortly after the open. 1500ms is comfortably
+	// past the LSP round-trip that used to produce it; a poll cannot shorten
+	// an assertion about something NOT happening.
 	await page.waitForTimeout(1500);
 	await expect(page.locator(".error-lens-message")).toHaveCount(0);
 	await page.getByRole("button", { name: "main.go", exact: true }).click();
@@ -1375,7 +1417,11 @@ test("workspace starts minimal, loads the demo and clears back", async ({
 	await expect(page.locator(".state-succeeded")).toBeVisible({
 		timeout: 60_000,
 	});
-	expect(await page.locator(".tree-file").count()).toBeGreaterThan(3);
+	// Poll rather than a one-shot count: the demo files stream in after the
+	// workspace switch, and a snapshot taken too early saw only the first.
+	await expect
+		.poll(() => page.locator(".tree-file").count())
+		.toBeGreaterThan(3);
 
 	await page.locator(".tree-menu-btn").click();
 	await page.getByRole("menuitem", { name: "Clear workspace" }).click();
@@ -1422,7 +1468,9 @@ test("vim gets quick-scope targets and editor-integrated commands", async ({
 	await page.keyboard.press("t");
 	await expect(page.locator(".qs-match").first()).toBeVisible();
 	await page.keyboard.press(";");
-	expect(await page.locator(".qs-match").count()).toBeGreaterThan(0);
+	// Poll: the overlay redraws asynchronously after the ; repeat, and a
+	// one-shot count could run between the clear and the redraw.
+	await expect.poll(() => page.locator(".qs-match").count()).toBeGreaterThan(0);
 	await page.keyboard.press("j");
 	await expect(page.locator(".qs-match")).toHaveCount(0);
 	await page.keyboard.type("gg");
@@ -1612,11 +1660,18 @@ test("persistent workspaces keep their files across reloads", async ({
 	await expect(page.locator(".buffer-tab.active")).toContainText(
 		"persisted.zig",
 	);
-	await page.waitForTimeout(500);
-	await page.reload();
-	await expect(page.locator(".file-tree")).toBeVisible();
+	// The edit travels as document.update and is persisted before the server
+	// acknowledges anything, but that acknowledgement never surfaces in the
+	// UI — so instead of sleeping an arbitrary 500ms and hoping, retry the
+	// reload until the store actually lists the file.
+	await expect(async () => {
+		await page.reload();
+		await expect(page.locator(".file-tree")).toBeVisible({ timeout: 5_000 });
+		await expect(page.getByLabel("persisted.zig")).toBeVisible({
+			timeout: 2_000,
+		});
+	}).toPass({ timeout: 30_000 });
 	await expect(page.locator(".branch-status")).toContainText(name);
-	await expect(page.getByLabel("persisted.zig")).toBeVisible();
 	await page.getByLabel("persisted.zig").click();
 	// ZLS paints an inlay hint into this line once it has analysed the file
 	// ("const kept: comptime_int = 41;"), and whether it has by now depends on
@@ -1760,11 +1815,14 @@ test("Allow network lets code call out while files stay confined", async ({
 	);
 
 	// A local request keeps the test off the internet; the boundary being
-	// tested is the sandbox, not the route.
+	// tested is the sandbox, not the route. The target is this suite's own
+	// stack (the page's origin proxies /api to it) — a hard-coded 4317 would
+	// knock on whatever real Atomis happens to live there.
+	const apiOrigin = new URL(page.url()).origin;
 	await page.getByRole("button", { name: "main.ts", exact: true }).click();
 	await replaceEditor(
 		page,
-		'const probe = "/tmp/atomis-network-probe.txt";\nconst { writeFileSync } = await import("node:fs");\nlet reached = "denied";\ntry {\n\tconst response = await fetch("http://127.0.0.1:4317/api/health");\n\treached = String((await response.json()).ok);\n} catch {\n\treached = "denied";\n}\nlet wrote = "denied";\ntry {\n\twriteFileSync(probe, "x");\n\twrote = "escaped";\n} catch {\n\twrote = "denied";\n}\nconsole.log(`net:${reached} disk:${wrote}`);\n',
+		`const probe = "/tmp/atomis-network-probe.txt";\nconst { writeFileSync } = await import("node:fs");\nlet reached = "denied";\ntry {\n\tconst response = await fetch("${apiOrigin}/api/health");\n\treached = String((await response.json()).ok);\n} catch {\n\treached = "denied";\n}\nlet wrote = "denied";\ntry {\n\twriteFileSync(probe, "x");\n\twrote = "escaped";\n} catch {\n\twrote = "denied";\n}\nconsole.log(\`net:\${reached} disk:\${wrote}\`);\n`,
 	);
 	// Off by default: the program cannot reach the server at all.
 	await expect(page.locator(".output-list")).toContainText(
@@ -1804,6 +1862,21 @@ test("the toolbar, the tabs and the status bar can each be put away", async ({
 	page,
 }) => {
 	await openClean(page);
+	// The tab-strip half of this spec opens the demo's main.py, which the
+	// tree only lists when python3 is available — same gate as the Python
+	// specs.
+	const pythonAvailable = await page.evaluate(async () => {
+		const response = await fetch("/api/doctor");
+		const body = (await response.json()) as {
+			checks: { name: string; detected: string }[];
+		};
+		return body.checks.some(
+			(check) =>
+				check.name === "Python python3" &&
+				!check.detected.includes("degraded"),
+		);
+	});
+	test.skip(!pythonAvailable, "python3 not available");
 	await expect(page.locator(".editor-chrome")).toBeVisible();
 	await expect(page.locator(".global-status")).toBeVisible();
 

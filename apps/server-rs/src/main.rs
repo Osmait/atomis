@@ -100,11 +100,7 @@ async fn main() {
             hourly.tick().await; // the immediate first tick; initialize just swept
             loop {
                 hourly.tick().await;
-                let removed = domain::session::sweep_stale(
-                    sessions.sessions.root(),
-                    domain::session::STALE_AFTER_MS,
-                )
-                .await;
+                let removed = sessions.sessions.sweep().await;
                 if removed > 0 {
                     tracing::info!(removed, "swept stale session directories");
                 }

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"go/parser"
+	"go/token"
 	"strings"
 	"testing"
 )
@@ -113,5 +115,58 @@ func TestInstrumentedSourcePassesThrough(t *testing.T) {
 	result := Instrument(source, "file:///main.go", true, nil, 1)
 	if result.Generated != source || len(result.Probes) != 0 {
 		t.Fatal("expected passthrough")
+	}
+}
+
+func TestTypeSwitchAndSelectHeadersStayUntouched(t *testing.T) {
+	source := `package main
+
+import "fmt"
+
+func describe(x any) {
+	switch v := x.(type) {
+	case int:
+		fmt.Println(v)
+	}
+}
+
+func pick(ch chan int) {
+	select {
+	case v := <-ch:
+		fmt.Println(v)
+	default:
+	}
+}
+`
+	result := Instrument(source, "file:///main.go", true, nil, 1)
+	if !result.HasGenerated {
+		t.Fatalf("expected generated output: %+v", result.ParseDiagnostics)
+	}
+	if strings.Contains(result.Generated, "x.(type); __atomis_probe") {
+		t.Fatalf("probe spliced into the type switch guard:\n%s", result.Generated)
+	}
+	if strings.Contains(result.Generated, "<-ch; __atomis_probe") {
+		t.Fatalf("probe spliced into the select comm clause:\n%s", result.Generated)
+	}
+	mustParse(t, result.Generated)
+}
+
+// The assertion every instrumenter needs most: whatever was spliced in,
+// the output is still a Go program.
+func mustParse(t *testing.T, generated string) {
+	t.Helper()
+	fset := token.NewFileSet()
+	if _, err := parser.ParseFile(fset, "generated.go", generated, 0); err != nil {
+		t.Fatalf("generated output does not parse: %v\n%s", err, generated)
+	}
+}
+
+func TestEveryGeneratedSampleParses(t *testing.T) {
+	for _, source := range []string{sample} {
+		result := Instrument(source, "file:///main.go", true, nil, 1)
+		if !result.HasGenerated {
+			t.Fatalf("expected generated output: %+v", result.ParseDiagnostics)
+		}
+		mustParse(t, result.Generated)
 	}
 }

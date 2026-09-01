@@ -310,16 +310,34 @@ async fn command_version(command: &str, args: &[&str]) -> String {
 /// that fills the disk.
 pub const STALE_AFTER_MS: u64 = 24 * 60 * 60 * 1000;
 
-/// Removes session directories untouched for `max_age_ms`. Returns how many
-/// went, and never fails: a directory that resists deletion is not worth
-/// refusing to start over.
-pub async fn sweep_stale(root: &Path, max_age_ms: u64) -> usize {
+/// Removes session directories untouched for `max_age_ms`, sparing the ids
+/// in `keep`. Returns how many went, and never fails: a directory that
+/// resists deletion is not worth refusing to start over.
+///
+/// `keep` matters because the age is read off the directory's own mtime,
+/// and editing `src/whatever` never touches the root's: a session left open
+/// across a long weekend looks a day cold while someone is typing in it.
+/// The manager knows which sessions are alive; those are simply not
+/// candidates. (After a restart the map is empty, and rightly so — a
+/// scratch session cannot be resumed once its in-memory token is gone.)
+pub async fn sweep_stale(
+    root: &Path,
+    max_age_ms: u64,
+    keep: &std::collections::HashSet<String>,
+) -> usize {
     let cutoff = now_ms().saturating_sub(max_age_ms);
     let Ok(mut entries) = tokio::fs::read_dir(root).await else {
         return 0;
     };
     let mut removed = 0;
     while let Ok(Some(entry)) = entries.next_entry().await {
+        if entry
+            .file_name()
+            .to_str()
+            .is_some_and(|name| keep.contains(name))
+        {
+            continue;
+        }
         let Ok(meta) = entry.metadata().await else {
             continue;
         };
@@ -339,17 +357,28 @@ pub async fn sweep_stale(root: &Path, max_age_ms: u64) -> usize {
 
 impl SessionManager {
     pub fn new() -> Self {
+        // Per user, not shared: a fixed /tmp/atomis on a multi-user machine
+        // is a directory anyone can pre-create world-writable and then swap
+        // session contents under another user's build.
+        let uid = unsafe { libc::getuid() };
         SessionManager {
             sessions: Mutex::new(HashMap::new()),
-            root: std::env::temp_dir().join("atomis"),
+            root: std::env::temp_dir().join(format!("atomis-{uid}")),
             toolchain: tokio::sync::OnceCell::new(),
         }
     }
 
     pub async fn initialize(&self) -> std::io::Result<()> {
         tokio::fs::create_dir_all(&self.root).await?;
-        sweep_stale(&self.root, STALE_AFTER_MS).await;
+        self.sweep().await;
         Ok(())
+    }
+
+    /// Sweeps stale session directories, never touching a live session.
+    pub async fn sweep(&self) -> usize {
+        let keep: std::collections::HashSet<String> =
+            self.sessions.lock().await.keys().cloned().collect();
+        sweep_stale(&self.root, STALE_AFTER_MS, &keep).await
     }
 
     /// The session root, so a caller can keep sweeping it.
@@ -526,6 +555,18 @@ impl SessionManager {
         // them; only a brand new one gets the scaffold.
         if !existing.is_empty() {
             sources = existing;
+            // Every store mutation refuses to commit without the entry file,
+            // so a workspace whose entry vanished from disk (an external
+            // sync, a stray rm) would open fine and then reject every edit
+            // for good. Restore the scaffold entry instead.
+            let entry = packs::pack(language).entry_file;
+            if !sources.iter().any(|(path, _)| path == entry) {
+                let source = packs::pack(language).default_source.to_string();
+                tokio::fs::write(source_root.join(entry), &source)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                sources.push((entry.to_string(), source));
+            }
         } else {
             for (entry, source) in &sources {
                 tokio::fs::write(source_root.join(entry), source)
@@ -699,14 +740,36 @@ mod sweep_tests {
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         tokio::fs::create_dir_all(root.join("warm")).await.unwrap();
 
-        assert_eq!(sweep_stale(&root, 100).await, 1);
+        let keep = std::collections::HashSet::new();
+        assert_eq!(sweep_stale(&root, 100, &keep).await, 1);
         assert!(!root.join("cold").exists());
         assert!(root.join("warm").exists());
         // Only directories are sessions; a stray file is left where it is.
         assert!(root.join("loose-file").exists());
 
         // A root that does not exist yet is not an error worth reporting.
-        assert_eq!(sweep_stale(&root.join("missing"), 100).await, 0);
+        assert_eq!(sweep_stale(&root.join("missing"), 100, &keep).await, 0);
+        tokio::fs::remove_dir_all(&root).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_live_session_is_never_swept_however_cold_its_root_looks() {
+        // Editing src/ never touches the root directory's mtime, so a
+        // session in active use can look a day old. Being alive is what
+        // spares it, not its timestamp.
+        let root = std::env::temp_dir().join(format!("atomis-sweep-{}", random_hex(8)));
+        tokio::fs::create_dir_all(root.join("live").join("src"))
+            .await
+            .unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        // A recent write below the root; the root's own mtime stays old.
+        tokio::fs::write(root.join("live").join("src").join("main.zig"), b"x")
+            .await
+            .unwrap();
+
+        let keep: std::collections::HashSet<String> = ["live".to_string()].into_iter().collect();
+        assert_eq!(sweep_stale(&root, 100, &keep).await, 0);
+        assert!(root.join("live").exists());
         tokio::fs::remove_dir_all(&root).await.unwrap();
     }
 }

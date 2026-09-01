@@ -2,6 +2,14 @@
 //! apps/server/src/compiler/RuntimeOutputParser.ts: strips
 //! `\x1eATOMIS_LOG:…\x1f` markers and annotates the preceding text with the
 //! marker's source location; stderr gets panic/error heuristics.
+//!
+//! Known limit, by design: the markers travel IN-BAND on the program's own
+//! stdout/stderr (and probe/test NDJSON on an inherited fd 3), so the
+//! program can print a well-formed marker — or write NDJSON to fd 3 — and
+//! forge inline values or test results. This is unpreventable in-process:
+//! the code that could forge a "passed" could as easily make the test pass.
+//! It only matters where someone reads results they did not write, i.e.
+//! shared workspaces — treat a collaborator's code as code, not as proof.
 
 #![allow(dead_code)]
 
@@ -25,6 +33,20 @@ pub struct MarkerParser<'a> {
 const MARKER_START: char = '\u{1e}';
 const MARKER_END: char = '\u{1f}';
 const MARKER_PREFIX: &str = "\u{1e}ATOMIS_LOG:";
+/// A real marker is well under this; a \x1e followed by this much text with
+/// no \x1f is program output that happens to contain a control character,
+/// not a marker forever in transit.
+const MAX_PENDING_MARKER: usize = 4096;
+
+/// Where the streamable prefix of the buffer ends: everything before the
+/// most recent complete line. See the note in [`MarkerParser::push`].
+fn line_holdback(buffer: &str) -> usize {
+    let Some(last) = buffer.rfind('\n') else { return 0 };
+    match buffer[..last].rfind('\n') {
+        Some(previous) => previous + 1,
+        None => 0,
+    }
+}
 
 struct ParsedMarker {
     start: usize,
@@ -237,10 +259,27 @@ impl<'a> MarkerParser<'a> {
             self.emit_text(&before, Some(&location));
             self.buffer.drain(..marker.end);
         }
-        // Avoid emitting a partial marker: keep buffering if a MARKER_START is
-        // pending without its terminator (mirrors the regex behaviour, which
-        // simply does not match until the \x1f arrives).
-        let _ = MARKER_START;
+        // What stays buffered, and why: a marker annotates the text just
+        // before it, and instrumented output writes the two adjacently, so
+        // the freshest line may still be waiting for its marker in the next
+        // chunk — hold the partial line, the most recent complete line, and
+        // any half-arrived marker. Everything older streams out NOW: output
+        // with no markers at all (a raw progress loop, a subprocess) used
+        // to sit here until the process died, looking hung the whole way.
+        let marker_hold = match self.buffer.rfind(MARKER_START) {
+            Some(index)
+                if !self.buffer[index..].contains(MARKER_END)
+                    && self.buffer.len() - index <= MAX_PENDING_MARKER =>
+            {
+                index
+            }
+            _ => self.buffer.len(),
+        };
+        let hold_from = line_holdback(&self.buffer).min(marker_hold);
+        if hold_from > 0 {
+            let ready: String = self.buffer.drain(..hold_from).collect();
+            self.emit_text(&ready, None);
+        }
     }
 
     pub fn flush(&mut self) {
@@ -303,5 +342,47 @@ mod tests {
     fn panics_turn_sticky_error() {
         let lines = collect(&["thread 1 panic: boom\nsiguiente\n"], true);
         assert!(lines.iter().all(|(_, category, _)| *category == OutputCategory::Error));
+    }
+
+    #[test]
+    fn markerless_output_streams_before_the_process_ends() {
+        // A raw progress loop must not look hung until exit: only the most
+        // recent line may wait (its marker could still be in flight).
+        let sink: Arc<Mutex<Vec<Emitted>>> = Arc::new(Mutex::new(Vec::new()));
+        let out = Arc::clone(&sink);
+        let mut parser = MarkerParser::new(
+            Stream::Stdout,
+            false,
+            HashMap::new(),
+            Box::new(move |_, chunk, category, location| {
+                out.lock().expect("sink").push((chunk.to_string(), category, location));
+            }),
+        );
+        parser.push("progress 1\nprogress 2\nprogress 3\n");
+        let streamed = sink.lock().expect("sink").len();
+        assert!(
+            streamed >= 2,
+            "older lines must stream before flush, streamed {streamed}"
+        );
+        parser.flush();
+        assert_eq!(sink.lock().expect("sink").len(), 3);
+    }
+
+    #[test]
+    fn a_marker_split_between_chunks_still_annotates_its_line() {
+        let lines = collect(&["hola\n\u{1e}ATOMIS", "_LOG:1:4:9\u{1f}"], false);
+        assert_eq!(lines.len(), 1);
+        let location = lines[0].2.as_ref().expect("the split marker must land");
+        assert_eq!((location.line, location.column), (4, 9));
+    }
+
+    #[test]
+    fn a_stray_control_character_is_not_a_marker_in_transit() {
+        // \x1e in program output with no terminator: after the pending cap
+        // it must stream as ordinary text instead of buffering forever.
+        let noise = format!("\u{1e}{}\n", "x".repeat(5000));
+        let lines = collect(&[noise.as_str()], false);
+        assert!(!lines.is_empty());
+        assert!(lines.iter().all(|(_, _, location)| location.is_none()));
     }
 }

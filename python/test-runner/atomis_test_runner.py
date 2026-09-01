@@ -23,6 +23,41 @@ def emit(payload):
         pass
 
 
+def collect_tests(module, module_name):
+    """`test_*` functions, plus the methods of `unittest.TestCase` classes —
+    the standard shape a Python test file takes, which used to be skipped in
+    silence and summarized as 0/0."""
+    for name, value in list(vars(module).items()):
+        if isinstance(value, type):
+            if issubclass(value, unittest.TestCase) and value is not unittest.TestCase:
+                for method_name in sorted(vars(value)):
+                    if not method_name.startswith("test"):
+                        continue
+                    if not callable(getattr(value, method_name, None)):
+                        continue
+                    yield (
+                        f"{name}.{method_name}",
+                        _bound_case(value, method_name),
+                    )
+            # A class merely named test_* is not a callable test.
+            continue
+        if name.startswith("test_") and callable(value):
+            yield name, value
+
+
+def _bound_case(case_class, method_name):
+    def run():
+        case = case_class(method_name)
+        result = unittest.TestResult()
+        case.run(result)
+        for _, message in result.errors + result.failures:
+            raise AssertionError(message)
+        if result.skipped:
+            raise unittest.SkipTest(result.skipped[0][1])
+
+    return run
+
+
 def main(paths):
     if paths:
         sys.path.insert(0, os.path.dirname(os.path.abspath(paths[0])))
@@ -40,9 +75,7 @@ def main(paths):
         except Exception:  # noqa: BLE001 - report and continue with other files
             traceback.print_exc()
             continue
-        for name, value in list(vars(module).items()):
-            if not name.startswith("test_") or not callable(value):
-                continue
+        for name, value in list(collect_tests(module, module_name)):
             qualified = f"{module_name}.{name}"
             emit(
                 {
@@ -56,9 +89,19 @@ def main(paths):
             status = "passed"
             error_name = None
             try:
-                value()
+                outcome = value()
+                # A generator named test_* "passes" without running a line;
+                # drive it so its asserts actually execute.
+                if hasattr(outcome, "__next__"):
+                    for _ in outcome:
+                        pass
             except unittest.SkipTest:
                 status = "skipped"
+            except SystemExit as error:
+                # A test calling sys.exit() must not take the runner (and
+                # every remaining test, and the summary) down with it.
+                status = "failed"
+                error_name = f"SystemExit({error.code})"
             except Exception as error:  # noqa: BLE001
                 traceback.print_exc()
                 status = "failed"

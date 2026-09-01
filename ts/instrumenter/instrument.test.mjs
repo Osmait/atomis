@@ -99,3 +99,23 @@ test("instrumented sources pass through unchanged", () => {
 	assert.equal(result.generated, source);
 	assert.equal(result.probes.length, 0);
 });
+
+test("a concise arrow body log gains its marker without becoming a statement", () => {
+	const source = "const xs = [1, 2];\nxs.forEach((x) => console.log(x));\n";
+	const result = instrument(source, "file:///main.ts", true, [], 1);
+	assert.match(
+		result.generated,
+		/\(x\) => \(console\.log\(x\), __atomis_log\(1, 1, 2, 19\)\)/,
+	);
+	// Still a valid program: reinstrumenting parses it (the instrumenter
+	// reports parse errors instead of output when it does not).
+	const again = instrument(result.generated, "file:///main.ts", true, [], 1);
+	assert.equal(again.generated, result.generated);
+});
+
+test("tsx parses as tsx instead of erroring on JSX", () => {
+	const source = "const el = <div a={1}>hola</div>;\nexport default el;\n";
+	const result = instrument(source, "file:///main.tsx", true, [], 1);
+	assert.equal(result.parseDiagnostics.length, 0);
+	assert.match(result.generated ?? "", /__atomis_probe\(/);
+});

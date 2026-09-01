@@ -1,6 +1,14 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
+// Where the Rust API lives. ATOMIS_PORT is the same variable the server
+// itself binds with, so a harness that moves the server (the e2e stack on
+// 4391) moves the proxy with one setting; ATOMIS_PROXY still overrides for
+// a target that is not loopback.
+const apiTarget =
+	process.env.ATOMIS_PROXY ??
+	`http://127.0.0.1:${process.env.ATOMIS_PORT ?? 4317}`;
+
 export default defineConfig({
 	plugins: [react()],
 	resolve: {
@@ -17,13 +25,10 @@ export default defineConfig({
 		strictPort: true,
 		proxy: {
 			"/api": {
-				target: process.env.ATOMIS_PROXY ?? "http://127.0.0.1:4317",
+				target: apiTarget,
 			},
 			"/ws": {
-				target: (process.env.ATOMIS_PROXY ?? "http://127.0.0.1:4317").replace(
-					"http",
-					"ws",
-				),
+				target: apiTarget.replace("http", "ws"),
 				ws: true,
 			},
 		},

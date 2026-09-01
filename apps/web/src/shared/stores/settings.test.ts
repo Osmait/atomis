@@ -2,11 +2,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	DEFAULT_LAYOUT,
 	DEFAULT_SETTINGS,
+	flushEntrySourceNow,
+	loadEntrySource,
 	loadLanguage,
 	loadLayout,
 	loadSettings,
 	loadValueFmt,
 	loadVimMode,
+	saveEntrySource,
 	saveSettings,
 } from "./settings.js";
 import { DEFAULT_APPEARANCE, loadAppearance } from "./appearance.js";
@@ -83,5 +86,90 @@ describe("persistence loaders", () => {
 			"atomis.settings.v1": JSON.stringify({ manualProbeIds: ["p1"] }),
 		});
 		expect(loadSettings().manualProbeIds).toEqual([]);
+	});
+
+	it("clamps stored numeric settings into the server's ranges", () => {
+		// A blob synced from another device with debounceMs 9999 used to make
+		// the server refuse the whole settings.update on every connection.
+		stubStorage({
+			"atomis.settings.v1": JSON.stringify({
+				debounceMs: 9999,
+				timeoutMs: 50,
+			}),
+		});
+		expect(loadSettings()).toMatchObject({ debounceMs: 500, timeoutMs: 100 });
+		stubStorage({
+			"atomis.settings.v1": JSON.stringify({
+				debounceMs: 100,
+				timeoutMs: 99_999,
+			}),
+		});
+		expect(loadSettings()).toMatchObject({
+			debounceMs: 300,
+			timeoutMs: 10_000,
+		});
+	});
+
+	it("discards stored settings fields of the wrong type", () => {
+		stubStorage({
+			"atomis.settings.v1": JSON.stringify({
+				timeoutMs: "2000",
+				debounceMs: null,
+				autoRun: "yes",
+				sandbox: 1,
+			}),
+		});
+		expect(loadSettings()).toEqual(DEFAULT_SETTINGS);
+	});
+
+	it("keeps valid in-range values as they are", () => {
+		stubStorage({
+			"atomis.settings.v1": JSON.stringify({
+				debounceMs: 350,
+				timeoutMs: 5000,
+				autoRun: false,
+			}),
+		});
+		expect(loadSettings()).toMatchObject({
+			debounceMs: 350,
+			timeoutMs: 5000,
+			autoRun: false,
+		});
+	});
+});
+
+describe("saveEntrySource", () => {
+	it("debounces the localStorage write and reads its own pending value", () => {
+		vi.useFakeTimers();
+		try {
+			const store = stubStorage();
+			saveEntrySource("v1");
+			saveEntrySource("v2");
+			// Nothing hits storage until the typing pause…
+			expect(store.has("atomis.source.v1")).toBe(false);
+			// …but a reader already sees the newest value.
+			expect(loadEntrySource()).toBe("v2");
+			vi.advanceTimersByTime(500);
+			expect(store.get("atomis.source.v1")).toBe("v2");
+			expect(loadEntrySource()).toBe("v2");
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("flushes immediately when asked (unload, tab hidden)", () => {
+		vi.useFakeTimers();
+		try {
+			const store = stubStorage();
+			saveEntrySource("last words");
+			flushEntrySourceNow();
+			expect(store.get("atomis.source.v1")).toBe("last words");
+			// The debounce timer was cancelled: nothing writes twice.
+			store.delete("atomis.source.v1");
+			vi.advanceTimersByTime(1000);
+			expect(store.has("atomis.source.v1")).toBe(false);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 });

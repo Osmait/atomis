@@ -11,6 +11,13 @@ export interface TerminalEntry {
 	category: "program" | "error";
 	chunk: string;
 	receivedAt: number;
+	/**
+	 * Monotonic id assigned at arrival. The buffer keeps only the last 500
+	 * entries, so an entry's INDEX shifts every time the window slides —
+	 * anything keyed by index (React rows, fold open-state) re-mounts or
+	 * collapses mid-stream. The seq never changes.
+	 */
+	seq?: number;
 	sourceLocation?: TerminalSourceLocation;
 }
 
@@ -59,7 +66,10 @@ export function groupOutput(entries: readonly TerminalEntry[]): TerminalRow[] {
 				const start = index;
 				rows.push({
 					kind: "fold",
-					key: `loop:${key}:${start}`,
+					// Keyed by the first entry's seq, not its buffer index:
+					// the index shifts every time the 500-entry window slides,
+					// which re-mounted the fold and collapsed it mid-stream.
+					key: `loop:${key}:${entry.seq ?? start}`,
 					label: `trace · ${key}${loopSuffix}`,
 					entries: entries
 						.slice(start, end)
@@ -90,7 +100,7 @@ export function groupOutput(entries: readonly TerminalEntry[]): TerminalRow[] {
 				const start = index;
 				rows.push({
 					kind: "fold",
-					key: `stack:${start}`,
+					key: `stack:${entries[start]?.seq ?? start}`,
 					label: "panic trace",
 					entries: entries
 						.slice(start, end)

@@ -38,12 +38,19 @@ function renderPreview(value) {
 }
 
 function typeName(value) {
-	if (value === null) return "null";
-	if (Array.isArray(value)) return "Array";
-	const kind = typeof value;
-	if (kind === "object" || kind === "function")
-		return value.constructor?.name ?? kind;
-	return kind;
+	// A Proxy trap or a hostile getter can throw on `.constructor`; the
+	// probe site is inside the user's own program, so nothing here may
+	// propagate back into it.
+	try {
+		if (value === null) return "null";
+		if (Array.isArray(value)) return "Array";
+		const kind = typeof value;
+		if (kind === "object" || kind === "function")
+			return value.constructor?.name ?? kind;
+		return kind;
+	} catch {
+		return "unknown";
+	}
 }
 
 globalThis.__atomis_probe = (probeId, line, column, name, value) => {

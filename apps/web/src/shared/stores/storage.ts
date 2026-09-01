@@ -90,6 +90,11 @@ export function writeStoredItem(key: string, value: string): void {
 
 async function flush(): Promise<void> {
 	flushTimer = undefined;
+	// A key another device moved past while ours sat queued (its newer value
+	// arrived over the socket and is in `remote`) is stale here: retrying it
+	// would overwrite their acknowledged value with our older one.
+	for (const [key, value] of pending)
+		if (remote !== null && remote.get(key) !== value) pending.delete(key);
 	if (pending.size === 0) return;
 	const sending = pending;
 	pending = new Map();
@@ -102,9 +107,11 @@ async function flush(): Promise<void> {
 		if (!response.ok) throw new Error(String(response.status));
 		consecutiveFailures = 0;
 	} catch {
-		// Put back only what nothing newer has replaced.
+		// Put back only what nothing newer has replaced — locally by a later
+		// write, or remotely by another device's value.
 		for (const [key, value] of sending)
-			if (!pending.has(key)) pending.set(key, value);
+			if (!pending.has(key) && remote?.get(key) === value)
+				pending.set(key, value);
 		// And retry on our own: waiting for the next write would strand a
 		// change made while the server was briefly unreachable, for as long
 		// as nothing else happens to be changed.
@@ -122,21 +129,51 @@ async function flush(): Promise<void> {
  * a setting changed immediately before a reload — "Load demo workspace" does
  * exactly that — was still waiting when the page went away, and the server's
  * older value came back on the next load.
+ *
+ * The queue is NOT emptied up front: this also runs on every
+ * visibilitychange→hidden, where the page usually comes back, and a save the
+ * server refused would have vanished in silence. Keys leave the queue only
+ * once the response says they landed; a failure keeps them queued and
+ * retries, exactly like the debounced path.
  */
 export function flushPreferencesNow(): void {
 	if (remote === null || pending.size === 0) return;
-	const body = JSON.stringify({ preferences: Object.fromEntries(pending) });
-	pending = new Map();
+	const sending = new Map(pending);
 	if (flushTimer !== undefined) clearTimeout(flushTimer);
 	flushTimer = undefined;
+	const retryLater = (): void => {
+		consecutiveFailures += 1;
+		scheduleFlush(
+			Math.min(FLUSH_DELAY_MS * 2 ** consecutiveFailures, MAX_RETRY_MS),
+		);
+	};
 	try {
-		void apiFetch(ENDPOINT, {
-			method: "PUT",
-			headers: { "content-type": "application/json" },
-			body,
-			// The page is going; without this the request is cancelled with it.
-			keepalive: true,
-		});
+		Promise.resolve(
+			apiFetch(ENDPOINT, {
+				method: "PUT",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ preferences: Object.fromEntries(sending) }),
+				// The page is going; without this the request is cancelled with it.
+				keepalive: true,
+			}),
+		).then(
+			(response) => {
+				if (!response.ok) {
+					retryLater();
+					return;
+				}
+				consecutiveFailures = 0;
+				// Forget only what was actually delivered: a key rewritten
+				// while the request flew keeps its newer value queued.
+				for (const [key, value] of sending)
+					if (pending.get(key) === value) pending.delete(key);
+			},
+			// The request died but the page may have survived (hidden and
+			// shown again): everything is still queued, so retry on our own.
+			// Handling the rejection here is also what keeps a genuinely
+			// dying page from logging an unhandled rejection on the way out.
+			retryLater,
+		);
 	} catch {
 		// Leaving anyway; the value stays in localStorage for this device.
 	}

@@ -16,7 +16,7 @@ use crate::domain::session::{Session, SessionSettings, Snapshot};
 use crate::exec::supervisor::{self, ProcessLimits, RunOptions, StreamCallbacks};
 
 use crate::languages::common::{
-    classify_execution, dedupe_diagnostics, execute_program, instrument_files, truncate_chars,
+    classify_execution, compile_failure_reason, dedupe_diagnostics, execute_program, instrument_files, truncate_chars,
     ExecuteConfig, InstrumentConfig,
 };
 use crate::languages::runtime::{cancelled_outcome, reset_generated, Events, RunnerEvent, RunnerOutcome, TerminalState};
@@ -48,10 +48,17 @@ pub fn discover_go_tests(files: &[crate::protocol::ProjectFile]) -> Vec<TestCase
             let Some(capture) = re.captures(line) else {
                 continue;
             };
+            let name = capture.get(1).map(|m| m.as_str()).unwrap_or("");
+            // TestMain is the harness hook, not a test: `go test` never
+            // reports it, so a catalog row for it can only ever sit there
+            // unreported (and get a phantom TimedOut on a suite timeout).
+            if name == "TestMain" {
+                continue;
+            }
             tests.push(TestCase {
                 test_id: format!("{}:{}", file.path, index + 1),
                 path: format!("src/{}", file.path),
-                name: capture.get(1).map(|m| m.as_str()).unwrap_or("").to_string(),
+                name: name.to_string(),
                 line: (index + 1) as u32,
                 column: 1,
             });
@@ -276,10 +283,8 @@ pub async fn run(
         }
         metrics.exit_code = compile.exit_code;
         metrics.signal = compile.signal.clone();
-        metrics.reason = Some(match compile.limit {
-            Some(limit) => format!("{limit} output limit exceeded"),
-            None => "compiler error".to_string(),
-        });
+        metrics.timed_out = compile.timed_out;
+        metrics.reason = Some(compile_failure_reason(&compile));
         return RunnerOutcome {
             result: metrics,
             terminal_state: TerminalState::CompileError,
@@ -427,7 +432,13 @@ async fn run_tests(
             TestStatus::Failed => counts.1 += 1,
             _ => counts.2 += 1,
         }
-        let matched = catalog.iter().find(|c| c.name == result.name);
+        // `t.Run` subtests report as `TestParent/case`; the catalog only
+        // knows the parent (it is read off `func Test…` declarations), so
+        // that is the row a subtest belongs to.
+        let matched = catalog.iter().find(|c| c.name == result.name).or_else(|| {
+            let parent = result.name.split('/').next().unwrap_or(&result.name);
+            catalog.iter().find(|c| c.name == parent)
+        });
         if let Some(matched) = matched {
             reported.insert(matched.test_id.clone());
         }

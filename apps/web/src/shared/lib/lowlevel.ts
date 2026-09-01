@@ -85,11 +85,19 @@ export function bitsForType(
 	return C_WIDTHS[name];
 }
 
+/** Unsigned integer types whose names do not start with `u`. */
+const UNSIGNED_NAMES: ReadonlySet<string> = new Set([
+	"size_t",
+	"byte",
+	"bool",
+	"_Bool",
+]);
+
 /** True when the type name is a signed integer (affects chr/dec rendering). */
 export function typeIsSigned(typeName: string): boolean {
 	const name = typeName.trim();
-	if (name.startsWith("u")) return false;
-	return true;
+	if (UNSIGNED_NAMES.has(name)) return false;
+	return !name.startsWith("u");
 }
 
 const group = (text: string, size: number): string =>
@@ -165,7 +173,11 @@ function parseOperand(text: string): bigint | undefined {
 	if (!/^(0[xX][0-9a-fA-F]+|0[bB][01]+|0[oO]?[0-7]*|\d+)$/.test(cleaned))
 		return undefined;
 	try {
-		return BigInt(cleaned);
+		// A bare leading zero is octal in the C family (017 == 15), but
+		// BigInt would read the same digits as decimal 17.
+		return /^0[0-7]+$/.test(cleaned)
+			? BigInt(`0o${cleaned.slice(1)}`)
+			: BigInt(cleaned);
 	} catch {
 		return undefined;
 	}
@@ -198,8 +210,14 @@ export function applyBitop(
 ): bigint {
 	const mask = (1n << BigInt(bits)) - 1n;
 	const ua = unsignedValue(a, bits);
-	if (info.operator === "<<") return (ua << info.operand) & mask;
-	if (info.operator === ">>") return ua >> info.operand;
+	if (info.operator === "<<" || info.operator === ">>") {
+		// A shift of `bits` or more already clears every bit of the width;
+		// clamping there keeps `x <<= 9999999999` from asking BigInt for a
+		// number it refuses to build (RangeError, thrown mid-render with the
+		// peek panel open).
+		const shift = info.operand < BigInt(bits) ? info.operand : BigInt(bits);
+		return info.operator === "<<" ? (ua << shift) & mask : ua >> shift;
+	}
 	if (info.operator === "&") return ua & info.operand & mask;
 	if (info.operator === "|") return (ua | info.operand) & mask;
 	return (ua ^ info.operand) & mask;

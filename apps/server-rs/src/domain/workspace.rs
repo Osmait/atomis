@@ -10,12 +10,18 @@
 
 use std::path::{Path, PathBuf};
 
+use tokio::sync::Mutex;
 
 pub use crate::protocol::WorkspaceMeta;
 use crate::util::now_ms;
 
 const META_FILE: &str = "atomis.json";
 const MAX_NAME_CHARS: usize = 64;
+
+/// Serializes every meta read-modify-write. `touch` and `rename` both do
+/// read → modify → write; interleaved, the slower one resurrects what the
+/// faster one just wrote (a rename undone by a timestamp update).
+static META_LOCK: Mutex<()> = Mutex::const_new(());
 
 /// `$XDG_DATA_HOME/atomis`, falling back to `~/.local/share/atomis`:
 /// everything Atomis keeps between runs lives under here.
@@ -74,7 +80,14 @@ pub async fn read_meta(dir: &Path) -> Option<WorkspaceMeta> {
 
 pub async fn write_meta(dir: &Path, meta: &WorkspaceMeta) -> Result<(), String> {
     let raw = serde_json::to_string_pretty(meta).map_err(|e| e.to_string())?;
-    tokio::fs::write(dir.join(META_FILE), raw)
+    // Write then rename, like preferences: a concurrent `list()` reads the
+    // previous meta whole, never half of the new one (half parses as no
+    // meta at all, and the workspace vanishes from the picker).
+    let temporary = dir.join(format!("{META_FILE}.tmp"));
+    tokio::fs::write(&temporary, raw)
+        .await
+        .map_err(|e| e.to_string())?;
+    tokio::fs::rename(&temporary, dir.join(META_FILE))
         .await
         .map_err(|e| e.to_string())
 }
@@ -101,6 +114,7 @@ pub async fn list() -> Vec<WorkspaceMeta> {
 
 pub async fn touch(id: &str) {
     let Some(dir) = workspace_dir(id) else { return };
+    let _guard = META_LOCK.lock().await;
     if let Some(mut meta) = read_meta(&dir).await {
         meta.updated_at = now_ms();
         let _ = write_meta(&dir, &meta).await;
@@ -110,6 +124,7 @@ pub async fn touch(id: &str) {
 pub async fn rename(id: &str, name: &str) -> Result<WorkspaceMeta, String> {
     let dir = workspace_dir(id).ok_or("Invalid workspace id")?;
     let name = sanitize_name(name).ok_or("A workspace needs a name")?;
+    let _guard = META_LOCK.lock().await;
     let mut meta = read_meta(&dir).await.ok_or("Unknown workspace")?;
     meta.name = name;
     meta.updated_at = now_ms();
@@ -130,8 +145,15 @@ pub async fn delete(id: &str) -> Result<(), String> {
 /// Visible sources of a workspace, as the session snapshot wants them.
 /// Walks `src/` depth first; anything unreadable as UTF-8 is skipped
 /// (binary assets are mirrored by the runners, not edited in the browser).
+///
+/// Symlinks are skipped outright: `src/x → /etc/anything` must not come
+/// back as the "content" of a project file, and the store's own limits
+/// apply here the same as they do to every later edit — a snapshot too big
+/// to ever commit is not worth building.
 pub async fn read_sources(source_root: &Path) -> Vec<(String, String)> {
+    use crate::protocol::{MAX_PROJECT_BYTES, MAX_PROJECT_FILES};
     let mut found = Vec::new();
+    let mut total_bytes = 0usize;
     let mut pending = vec![source_root.to_path_buf()];
     while let Some(dir) = pending.pop() {
         let Ok(mut entries) = tokio::fs::read_dir(&dir).await else {
@@ -142,8 +164,14 @@ pub async fn read_sources(source_root: &Path) -> Vec<(String, String)> {
             let Ok(kind) = entry.file_type().await else {
                 continue;
             };
+            if kind.is_symlink() {
+                continue;
+            }
             if kind.is_dir() {
                 pending.push(path);
+                continue;
+            }
+            if found.len() >= MAX_PROJECT_FILES {
                 continue;
             }
             let Ok(relative) = path.strip_prefix(source_root) else {
@@ -153,6 +181,10 @@ pub async fn read_sources(source_root: &Path) -> Vec<(String, String)> {
                 continue;
             };
             if let Ok(source) = tokio::fs::read_to_string(&path).await {
+                if total_bytes + source.len() > MAX_PROJECT_BYTES {
+                    continue;
+                }
+                total_bytes += source.len();
                 found.push((relative.to_string(), source));
             }
         }
@@ -210,5 +242,62 @@ mod tests {
             Some(previous) => std::env::set_var(key, previous),
             None => std::env::remove_var(key),
         }
+    }
+
+    #[tokio::test]
+    async fn a_reader_racing_a_meta_write_never_sees_half_a_file() {
+        let dir = std::env::temp_dir().join(format!("atomis-meta-{}", crate::util::random_hex(8)));
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        let meta = |name: &str| WorkspaceMeta {
+            id: "0123456789abcdef0123456789abcdef".into(),
+            name: name.into(),
+            language: crate::protocol::Language::Zig,
+            created_at: 1,
+            updated_at: 1,
+        };
+        write_meta(&dir, &meta("first")).await.unwrap();
+        let writer_dir = dir.clone();
+        let writer = tokio::spawn(async move {
+            for turn in 0..200u32 {
+                let name = "x".repeat(1 + (turn as usize % 40));
+                write_meta(&writer_dir, &meta(&name)).await.unwrap();
+            }
+        });
+        for _ in 0..200 {
+            // Pre-fix this raced a plain `fs::write` and read torn JSON,
+            // which parses as "no such workspace".
+            assert!(read_meta(&dir).await.is_some(), "meta must always parse");
+        }
+        writer.await.unwrap();
+        tokio::fs::remove_dir_all(&dir).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn read_sources_skips_symlinks_and_keeps_the_store_limits() {
+        let root = std::env::temp_dir().join(format!("atomis-src-{}", crate::util::random_hex(8)));
+        let src = root.join("src");
+        tokio::fs::create_dir_all(&src).await.unwrap();
+        let secret = root.join("outside.txt");
+        tokio::fs::write(&secret, b"not a project file").await.unwrap();
+        tokio::fs::write(src.join("main.zig"), b"real").await.unwrap();
+        tokio::fs::symlink(&secret, src.join("sneaky.txt")).await.unwrap();
+
+        let sources = read_sources(&src).await;
+        assert!(
+            !sources.iter().any(|(path, _)| path == "sneaky.txt"),
+            "a symlink's target is not workspace content"
+        );
+        assert!(sources.iter().any(|(path, _)| path == "main.zig"));
+
+        // More files than a project may hold; whichever make the cut, the
+        // snapshot never exceeds what the store would later accept.
+        for extra in 0..crate::protocol::MAX_PROJECT_FILES + 5 {
+            tokio::fs::write(src.join(format!("extra{extra:03}.txt")), b"x")
+                .await
+                .unwrap();
+        }
+        let sources = read_sources(&src).await;
+        assert_eq!(sources.len(), crate::protocol::MAX_PROJECT_FILES);
+        tokio::fs::remove_dir_all(&root).await.unwrap();
     }
 }

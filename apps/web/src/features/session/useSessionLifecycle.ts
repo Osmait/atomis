@@ -23,7 +23,15 @@ interface SessionLifecycleOptions {
 	lspClientsRef: React.RefObject<Partial<Record<Language, LspClient>>>;
 	setProjectFiles: (files: ProjectFile[]) => void;
 	setSettings: (update: (previous: Settings) => Settings) => void;
-	setStartupError: (message: string) => void;
+	setStartupError: (message: string | undefined) => void;
+	/**
+	 * A session open failing during a workspace SWITCH — not the boot. By
+	 * then the old socket and language clients are already torn down, but
+	 * the rest of the UI is alive; replacing it wholesale with the fatal
+	 * boot screen threw away a working editor over a network blip. The
+	 * shell shows this recoverably instead.
+	 */
+	onSwitchFailed: (message: string) => void;
 	setSwitching: (switching: boolean) => void;
 	setCapabilities: (capabilities: Record<string, never>) => void;
 	setStatus: (status: string) => void;
@@ -54,6 +62,7 @@ export function useSessionLifecycle(options: SessionLifecycleOptions) {
 		setProjectFiles,
 		setSettings,
 		setStartupError,
+		onSwitchFailed,
 		setSwitching,
 		setCapabilities,
 		setStatus,
@@ -63,6 +72,14 @@ export function useSessionLifecycle(options: SessionLifecycleOptions) {
 		resetRuntime,
 		closePicker,
 	} = options;
+
+	/**
+	 * Whether the last open attempt failed. It keeps the "already there"
+	 * shortcut in switchToWorkspace honest: after a failed switch the
+	 * session ref still names the OLD workspace, whose socket is gone —
+	 * going back to it must be a real reopen, not a no-op.
+	 */
+	const lastOpenFailedRef = useRef(false);
 
 	const requestSession = useCallback(
 		(workspace: string | undefined): Promise<Response> =>
@@ -80,6 +97,8 @@ export function useSessionLifecycle(options: SessionLifecycleOptions) {
 
 	const openSession = useCallback(
 		async (workspace: string | undefined): Promise<void> => {
+			// A previous session means this is a switch, not the boot.
+			const isSwitch = sessionRef.current !== undefined;
 			try {
 				let response = await requestSession(workspace);
 				// A stored workspace that no longer exists falls back to a
@@ -91,6 +110,7 @@ export function useSessionLifecycle(options: SessionLifecycleOptions) {
 				if (!response.ok)
 					throw new Error(`Session creation failed (${response.status})`);
 				const created = (await response.json()) as CreateSessionResponse;
+				lastOpenFailedRef.current = false;
 				sessionRef.current = created;
 				const entry = WEB_LANGUAGE_PACKS[created.language].entryFile;
 				entryRef.current = entry;
@@ -116,9 +136,11 @@ export function useSessionLifecycle(options: SessionLifecycleOptions) {
 						return next;
 					});
 			} catch (error) {
-				setStartupError(
-					error instanceof Error ? error.message : String(error),
-				);
+				lastOpenFailedRef.current = true;
+				const message =
+					error instanceof Error ? error.message : String(error);
+				if (isSwitch) onSwitchFailed(message);
+				else setStartupError(message);
 			} finally {
 				setSwitching(false);
 			}
@@ -126,6 +148,7 @@ export function useSessionLifecycle(options: SessionLifecycleOptions) {
 		[
 			activeLanguageRef,
 			entryRef,
+			onSwitchFailed,
 			requestSession,
 			resetToEntry,
 			sessionRef,
@@ -143,8 +166,14 @@ export function useSessionLifecycle(options: SessionLifecycleOptions) {
 			closePicker();
 			// Re-opening the workspace you are already in would throw away a
 			// live session (and flash the tree) to arrive exactly where you
-			// started.
-			if (id === sessionRef.current?.workspace?.id) return;
+			// started — unless the last open failed, in which case "already
+			// there" is a fiction: the session ref still names a workspace
+			// whose socket and clients were torn down for the switch.
+			if (
+				!lastOpenFailedRef.current &&
+				id === sessionRef.current?.workspace?.id
+			)
+				return;
 			saveActiveWorkspace(id);
 			setSwitching(true);
 			for (const client of Object.values(lspClientsRef.current))
@@ -180,5 +209,16 @@ export function useSessionLifecycle(options: SessionLifecycleOptions) {
 		void openSession(loadActiveWorkspace());
 	}, [openSession]);
 
-	return { openSession, switchToWorkspace, boot };
+	/**
+	 * A second try at a failed boot, without the full page reload the error
+	 * screen otherwise demands — the server may simply have been slower to
+	 * come up than the page.
+	 */
+	const retryBoot = useCallback((): void => {
+		setStartupError(undefined);
+		setStatus("Retrying…");
+		void openSession(loadActiveWorkspace());
+	}, [openSession, setStartupError, setStatus]);
+
+	return { openSession, switchToWorkspace, boot, retryBoot };
 }

@@ -48,8 +48,20 @@ function makeStubs(source) {
 
 export function instrument(source, options) {
 	const { inputPath, uri, lang, autoInspect, manualIds, fileId } = options;
-	if (source.includes("__atomis_probe(") || source.includes("__atomis_log"))
+	// Exact generated forms only: merely mentioning the runtime in a comment
+	// must not silently turn instrumentation off.
+	if (
+		source.includes(' __atomis_probe("') ||
+		source.includes(", __atomis_log(") ||
+		source.includes(", __atomis_log_loop(")
+	)
 		return { generated: source, probes: [] };
+	// Clang's offsets are BYTES of the file; JavaScript strings index UTF-16
+	// units. One non-ASCII character before an insertion point used to shift
+	// every later splice into the middle of a token.
+	const sourceBytes = Buffer.from(source, "utf8");
+	const byteSlice = (begin, end) =>
+		sourceBytes.subarray(begin, end).toString("utf8");
 
 	const stubDir = makeStubs(source);
 	let dump;
@@ -177,6 +189,26 @@ export function instrument(source, options) {
 		track(node.loc);
 		const inMain = inInput();
 
+		if (node.kind === "IfStmt" || node.kind === "SwitchStmt") {
+			// C++17 `if (init; cond)` / `switch (init; cond)`: the DeclStmt
+			// lives in the header parentheses; a probe spliced after it lands
+			// inside them and nothing compiles.
+			for (const child of node.inner ?? []) {
+				if (child?.kind === "DeclStmt") skipDeclStmts.add(child);
+			}
+		}
+
+		if (node.kind === "LambdaExpr" || node.kind === "CXXRecordDecl") {
+			// A lambda (or local class) body must not inherit the enclosing
+			// loop: a loop marker in there references a variable the closure
+			// never captured ("cannot be implicitly captured").
+			const depth = loops.length;
+			loops.push({ line: 0, column: 0, variable: "" });
+			for (const child of node.inner ?? []) visit(child, node);
+			loops.length = depth;
+			return;
+		}
+
 		if (
 			node.kind === "ForStmt" ||
 			node.kind === "WhileStmt" ||
@@ -224,13 +256,14 @@ export function instrument(source, options) {
 				// clang ≤18 drops the recovered initializer of an unknown-type
 				// VarDecl from the JSON dump entirely (newer clangs keep a
 				// RecoveryExpr and the init marker), so fall back to the
-				// statement text to tell `T x = …;` from `T x;`.
-				const statementText = source.slice(range.begin, range.end);
+				// statement text to tell `T x = …;` from `T x;` — including
+				// C++ direct-initialization `Foo x(5);`.
+				const statementText = byteSlice(range.begin, range.end);
 				const afterName = statementText.slice(
 					statementText.indexOf(varDecls[0].name),
 				);
 				const initialized =
-					varDecls[0].init !== undefined || /[={]/.test(afterName);
+					varDecls[0].init !== undefined || /[={(]/.test(afterName);
 				if (initialized) recordProbe(varDecls[0], range.end, undefined);
 				else
 					recordProbe(
@@ -252,7 +285,7 @@ export function instrument(source, options) {
 			inMain &&
 			range
 		) {
-			const text = source.slice(range.begin, range.end);
+			const text = byteSlice(range.begin, range.end);
 			let fd = 0;
 			if (/\bcerr\b/.test(text) || /fprintf\s*\(\s*stderr/.test(text))
 				fd = 2;
@@ -275,17 +308,25 @@ export function instrument(source, options) {
 	// Statements built on stream objects from stubbed headers (std::cout,
 	// std::cerr) vanish from the recovered AST, so single-line stream
 	// statements are matched textually and get their marker via the same
-	// comma-operator insertion before the closing semicolon.
+	// comma-operator insertion before the closing semicolon. Byte offsets,
+	// like everything else, and never inside a raw string or a comment —
+	// splicing there rewrites the user's DATA, not their code.
 	{
+		const unsafe = linesInsideStringsOrComments(source);
 		const lines = source.split("\n");
-		let offset = 0;
+		let byteOffset = 0;
 		for (const [index, lineText] of lines.entries()) {
 			const lineNumber = index + 1;
+			const lineBytes = Buffer.byteLength(lineText, "utf8");
 			const match =
 				/^(\s*)(?:std\s*::\s*)?(cout|cerr)\s*<<.*;\s*$/.exec(lineText);
-			if (match && !markedLines.has(lineNumber)) {
+			if (match && !markedLines.has(lineNumber) && !unsafe.has(lineNumber)) {
 				const fd = match[2] === "cerr" ? 2 : 1;
 				const semicolon = lineText.lastIndexOf(";");
+				const semicolonByte = Buffer.byteLength(
+					lineText.slice(0, semicolon),
+					"utf8",
+				);
 				const enclosing = loopRanges
 					.filter(
 						(loop) =>
@@ -295,24 +336,86 @@ export function instrument(source, options) {
 				const marker = enclosing?.variable
 					? `, __atomis_log_loop(${fd}, ${fileId}, ${lineNumber}, ${(match[1]?.length ?? 0) + 1}, ${enclosing.line}, ${enclosing.column}, "${enclosing.variable}", ${enclosing.variable})`
 					: `, __atomis_log(${fd}, ${fileId}, ${lineNumber}, ${(match[1]?.length ?? 0) + 1})`;
-				insertions.push({ offset: offset + semicolon, text: marker });
+				insertions.push({ offset: byteOffset + semicolonByte, text: marker });
 			}
-			offset += lineText.length + 1;
+			byteOffset += lineBytes + 1;
 		}
 	}
 
 	insertions.sort((left, right) => right.offset - left.offset);
-	let generated = source;
+	let generatedBytes = sourceBytes;
 	for (const item of insertions)
-		if (item.offset <= generated.length)
-			generated =
-				generated.slice(0, item.offset) +
-				item.text +
-				generated.slice(item.offset);
+		if (item.offset <= generatedBytes.length)
+			generatedBytes = Buffer.concat([
+				generatedBytes.subarray(0, item.offset),
+				Buffer.from(item.text, "utf8"),
+				generatedBytes.subarray(item.offset),
+			]);
+	const generated = generatedBytes.toString("utf8");
 	const newlines = (text) => (text.match(/\n/g) ?? []).length;
 	if (newlines(source) !== newlines(generated))
 		return { generated: source, probes: [] };
 	return { generated, probes };
+}
+
+// Which lines BEGIN inside a raw string, a regular string that a line
+// continuation carried over, or a block comment. The textual cout pass must
+// not touch those: `std::cout << x;` inside R"( … )" is content.
+function linesInsideStringsOrComments(source) {
+	const unsafe = new Set();
+	let line = 1;
+	let mode = "code"; // code | block_comment | line_comment | string | char | raw
+	let rawDelimiter = "";
+	for (let index = 0; index < source.length; index++) {
+		const char = source[index];
+		if (char === "\n") {
+			line += 1;
+			if (mode === "line_comment") mode = "code";
+			else if (mode === "string" || mode === "char") mode = "code"; // unterminated: clang would reject anyway
+			if (mode !== "code") unsafe.add(line);
+			continue;
+		}
+		switch (mode) {
+			case "code": {
+				const pair = source.slice(index, index + 2);
+				if (pair === "//") mode = "line_comment";
+				else if (pair === "/*") mode = "block_comment";
+				else if (char === '"') {
+					const raw = /^R"([^ ()\\\t\v\f\n]{0,16})\(/.exec(
+						source.slice(index - 1, index + 20),
+					);
+					if (source[index - 1] === "R" && raw) {
+						mode = "raw";
+						rawDelimiter = `)${raw[1]}"`;
+						index += raw[1].length + 1;
+					} else mode = "string";
+				} else if (char === "'") mode = "char";
+				break;
+			}
+			case "block_comment":
+				if (source.slice(index, index + 2) === "*/") {
+					mode = "code";
+					index += 1;
+				}
+				break;
+			case "string":
+			case "char": {
+				if (char === "\\") index += 1;
+				else if (char === '"' && mode === "string") mode = "code";
+				else if (char === "'" && mode === "char") mode = "code";
+				break;
+			}
+			case "raw":
+				if (source.startsWith(rawDelimiter, index)) {
+					mode = "code";
+					index += rawDelimiter.length - 1;
+				}
+				break;
+			default:
+				break;
+		}
+	}
+	return unsafe;
 }
 
 function render(result, output, sourceMap, version) {

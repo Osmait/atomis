@@ -128,15 +128,23 @@ export function useVim(options: VimOptions) {
 
 	/**
 	 * Frees the chords the editor wants for itself, and teaches vim `:w`.
-	 * Called once the editor exists, since monaco-vim keeps these globally.
+	 * Called once the editor exists, since monaco-vim keeps these globally —
+	 * which is exactly why `:w` takes a REF to the runner: defineEx keeps
+	 * this closure for the page's whole life, while the runner is rebuilt
+	 * per session (it embeds the sessionId). A direct function here kept the
+	 * first session's runner, and `:w` after a workspace switch sent the old
+	 * sessionId — which the server answers by closing the socket.
 	 */
-	const setupVimKeys = useCallback((write: () => void): void => {
-		const vimCommands = VimMode as object as VimModeWithCommands;
-		for (const shortcut of ["<C-a>", "<C-c>", "<C-v>", "<C-x>"])
-			vimCommands.Vim.unmap(shortcut);
-		vimCommands.Vim.unmap("<C-c>", "insert");
-		vimCommands.Vim.defineEx("write", "w", write);
-	}, []);
+	const setupVimKeys = useCallback(
+		(writeRef: React.RefObject<() => void>): void => {
+			const vimCommands = VimMode as object as VimModeWithCommands;
+			for (const shortcut of ["<C-a>", "<C-c>", "<C-v>", "<C-x>"])
+				vimCommands.Vim.unmap(shortcut);
+			vimCommands.Vim.unmap("<C-c>", "insert");
+			vimCommands.Vim.defineEx("write", "w", () => writeRef.current());
+		},
+		[],
+	);
 
 	const dispose = useCallback((): void => {
 		adapterRef.current?.dispose();

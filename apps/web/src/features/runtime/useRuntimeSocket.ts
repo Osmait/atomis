@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type {
-	CreateSessionResponse,
-	Language,
-	RuntimeServerEvent,
+import {
+	MAX_SOURCE_BYTES,
+	type CreateSessionResponse,
+	type Language,
+	type RuntimeServerEvent,
 } from "@atomis/protocol";
 import type { LspClient } from "../editor/lsp/LspClient.js";
 import { websocketUrl } from "../../shared/api/client.js";
@@ -12,6 +13,26 @@ import type { Settings } from "../../shared/stores/settings.js";
 /** Longest gap between reconnection attempts. */
 const MAX_RETRY_MS = 10_000;
 
+/**
+ * Messages worth keeping while the socket is away. Edits and file
+ * operations are the user's work: dropped, the server compiles stale code
+ * after a reconnect and a file created offline "does not exist". Runs and
+ * cancels are moments, not state — replaying them would be wrong.
+ */
+const QUEUEABLE = new Set([
+	"document.update",
+	"file.create",
+	"file.rename",
+	"file.delete",
+]);
+const QUEUE_LIMIT = 256;
+
+interface QueuedMessage {
+	type?: string;
+	path?: string;
+	source?: string;
+}
+
 interface RuntimeSocketOptions {
 	session: CreateSessionResponse | undefined;
 	handleRuntimeEvent: (event: RuntimeServerEvent) => void;
@@ -19,6 +40,8 @@ interface RuntimeSocketOptions {
 	filesRef: ProjectFilesReader;
 	entryRef: React.RefObject<string>;
 	versionRef: React.RefObject<number>;
+	/** The shared-workspace revision our next write is built on, if any. */
+	revisionRef: React.RefObject<number | undefined>;
 	lspClientsRef: React.RefObject<Partial<Record<Language, LspClient>>>;
 	setStatus: (status: string) => void;
 }
@@ -40,20 +63,72 @@ export function useRuntimeSocket(options: RuntimeSocketOptions) {
 		filesRef,
 		entryRef,
 		versionRef,
+		revisionRef,
 		lspClientsRef,
 		setStatus,
 	} = options;
 	const runtimeRef = useRef<WebSocket | undefined>(undefined);
 	const [reconnect, setReconnect] = useState(0);
 	const retryRef = useRef(0);
+	const pendingRef = useRef<QueuedMessage[]>([]);
 	const retryTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
 		undefined,
 	);
 
-	const sendRuntime = useCallback((message: object): void => {
-		if (runtimeRef.current?.readyState === WebSocket.OPEN)
-			runtimeRef.current.send(JSON.stringify(message));
-	}, []);
+	// A new session starts from nothing: pending traffic and backoff state
+	// belong to the one being left behind.
+	useEffect(() => {
+		retryRef.current = 0;
+		pendingRef.current = [];
+	}, [session]);
+
+	const sendRuntime = useCallback(
+		(message: object): void => {
+			const typed = message as QueuedMessage;
+			if (typed.type === "document.update") {
+				const source = typed.source ?? "";
+				// The server closes the socket outright past its frame limit,
+				// and the reconnect would push the same oversized source
+				// again: a silent forever-loop. Refuse here, visibly.
+				if (
+					source.length > MAX_SOURCE_BYTES / 3 &&
+					new TextEncoder().encode(source).length > MAX_SOURCE_BYTES
+				) {
+					setStatus(
+						"File exceeds 1 MiB — edits stay local until it shrinks",
+					);
+					return;
+				}
+			}
+			const socket = runtimeRef.current;
+			if (socket?.readyState === WebSocket.OPEN) {
+				socket.send(JSON.stringify(message));
+				return;
+			}
+			// Away (screen lock, restart mid-flight): edits and file
+			// operations queue and replay on reattach, in order, with the
+			// versions and base revisions they were built with — a stale
+			// base surfaces as a conflict instead of a silent overwrite.
+			if (!QUEUEABLE.has(typed.type ?? "")) return;
+			const pending = pendingRef.current;
+			if (typed.type === "document.update") {
+				const index = pending.findIndex(
+					(queued) =>
+						queued.type === "document.update" && queued.path === typed.path,
+				);
+				if (index >= 0) {
+					pending[index] = typed;
+					return;
+				}
+			}
+			if (pending.length >= QUEUE_LIMIT) {
+				setStatus("Offline queue full — oldest offline edit dropped");
+				pending.shift();
+			}
+			pending.push(typed);
+		},
+		[setStatus],
+	);
 
 	useEffect(() => {
 		if (!session) return;
@@ -68,14 +143,27 @@ export function useRuntimeSocket(options: RuntimeSocketOptions) {
 				sessionId: session.sessionId,
 				...settingsRef.current,
 			});
+			// Everything that happened while the socket was away, in order:
+			// creates before the edits that need them, versions ascending.
+			const pending = pendingRef.current;
+			pendingRef.current = [];
+			for (const queued of pending) socket.send(JSON.stringify(queued));
+			const entryQueued = pending.some(
+				(queued) =>
+					queued.type === "document.update" &&
+					queued.path === entryRef.current,
+			);
 			const mainSource =
 				filesRef.current.find((file) => file.path === entryRef.current)
 					?.source ?? session.initialSource;
 			// On a first connect the server is at version 1 with the initial
 			// source; on a reattach it may have missed edits made while the
-			// socket was down, so push what is on screen either way. The
-			// version only ever moves forward, so the server accepts it.
-			if (reattached || mainSource !== session.initialSource) {
+			// socket was down, so push what is on screen unless the queue
+			// already carried it. The version only moves forward, and the
+			// base revision comes along so a shared workspace can refuse a
+			// write built on what a peer has since replaced — losing THEIR
+			// work silently is exactly what the revisions exist to prevent.
+			if (!entryQueued && (reattached || mainSource !== session.initialSource)) {
 				const version = Math.max(versionRef.current + 1, 2);
 				versionRef.current = version;
 				sendRuntime({
@@ -84,6 +172,9 @@ export function useRuntimeSocket(options: RuntimeSocketOptions) {
 					version,
 					path: entryRef.current,
 					source: mainSource,
+					...(revisionRef.current === undefined
+						? {}
+						: { baseRevision: revisionRef.current }),
 				});
 			}
 		});
@@ -132,6 +223,7 @@ export function useRuntimeSocket(options: RuntimeSocketOptions) {
 		handleRuntimeEvent,
 		lspClientsRef,
 		reconnect,
+		revisionRef,
 		sendRuntime,
 		session,
 		setStatus,
@@ -142,9 +234,21 @@ export function useRuntimeSocket(options: RuntimeSocketOptions) {
 	/**
 	 * Drops the current connection. Used when the session underneath is
 	 * being replaced, so its events cannot reach the one that follows.
+	 * Disowning the socket FIRST matters: the close handler treats a socket
+	 * it still owns as a crash, announces "reconnecting", and a retry
+	 * landing after the switch would reattach to the session being left —
+	 * pushing the old workspace's content into the new session's document.
 	 */
 	const closeRuntime = useCallback((): void => {
-		runtimeRef.current?.close();
+		const socket = runtimeRef.current;
+		runtimeRef.current = undefined;
+		retryRef.current = 0;
+		pendingRef.current = [];
+		if (retryTimerRef.current !== undefined) {
+			clearTimeout(retryTimerRef.current);
+			retryTimerRef.current = undefined;
+		}
+		socket?.close();
 	}, []);
 
 	return { sendRuntime, closeRuntime };

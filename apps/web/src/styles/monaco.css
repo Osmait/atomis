@@ -457,6 +457,22 @@
 	color: var(--green);
 }
 
+/* Recovery actions: the boot screen's Retry, the error boundary's Reload. */
+.startup button {
+	margin-top: 4px;
+	padding: 6px 20px;
+	border-radius: 6px;
+	font-size: 13px;
+	color: var(--text);
+	background: var(--surface);
+	box-shadow: inset 0 0 0 1px var(--surface0);
+	cursor: pointer;
+}
+
+.startup button:hover {
+	background: var(--surface0);
+}
+
 /* ── Responsive ────────────────────────────────────────── */
 
 @media (max-width: 780px) {

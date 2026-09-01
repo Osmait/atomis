@@ -14,6 +14,11 @@ describe("monacoLanguageFor", () => {
 		expect(monacoLanguageFor("main.zig")).toBe("zig");
 		expect(monacoLanguageFor("main.ts")).toBe("typescript");
 		expect(monacoLanguageFor("script.mjs")).toBe("javascript");
+		// `.cjs` was in the javascript regex but not in the ts pack's
+		// extensions, and the regex only runs once a pack matched — so a
+		// `.cjs` file edited as plaintext.
+		expect(languageForPath("script.cjs")).toBe("ts");
+		expect(monacoLanguageFor("script.cjs")).toBe("javascript");
 	});
 	it("covers asset types and falls back to plaintext", () => {
 		expect(monacoLanguageFor("config.json")).toBe("json");

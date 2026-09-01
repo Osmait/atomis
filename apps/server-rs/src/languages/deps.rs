@@ -19,8 +19,12 @@ pub struct DepsSupport {
     /// None where the toolchain has no remove command and Atomis edits the
     /// manifest itself (zig).
     pub remove: Option<&'static [&'static str]>,
-    /// Env for the add step, which is the only one allowed to reach the
-    /// network (the runners keep their offline flags for builds).
+    /// Env for the add step, which is the only step MEANT to reach the
+    /// network. Cargo and go builds are pinned offline by env/flags; zig
+    /// has no offline switch for `zig build`, so there the guarantee is
+    /// `zig fetch --save` warming the global cache at add time (and the
+    /// sandbox denying TCP where the kernel enforces it) — a cold cache
+    /// with the sandbox off can still make a zig build download.
     pub fetch_env: &'static [(&'static str, &'static str)],
     /// Some tools only resolve and record on add, leaving the download to
     /// the next build — which runs offline. This command, when present,
@@ -259,16 +263,19 @@ fn zon_without(text: &str, name: &str) -> Option<String> {
     let opener = format!(".{name} = .{{");
     let mut out = String::with_capacity(text.len());
     let mut skipping = false;
+    let mut removed = false;
     let mut depth = 0i32;
     for line in text.lines() {
         if !skipping && line.trim().starts_with(&opener) {
             skipping = true;
+            removed = true;
             depth = 1;
             continue;
         }
         if skipping {
-            depth += line.matches('{').count() as i32;
-            depth -= line.matches('}').count() as i32;
+            let (opens, closes) = braces_outside_strings(line);
+            depth += opens as i32;
+            depth -= closes as i32;
             if depth <= 0 {
                 skipping = false;
             }
@@ -277,7 +284,34 @@ fn zon_without(text: &str, name: &str) -> Option<String> {
         out.push_str(line);
         out.push('\n');
     }
-    (out != text).then_some(out)
+    // `removed`, not `out != text`: a manifest without a final newline
+    // differs from its round-trip even untouched, and reporting a removal
+    // that never happened tells the UI a dependency is gone while the
+    // build keeps using it.
+    removed.then_some(out)
+}
+
+/// Braces that structure the ZON, not the ones inside a string — a
+/// dependency URL with `{}` in it must not unbalance the block scan.
+fn braces_outside_strings(line: &str) -> (usize, usize) {
+    let mut opens = 0;
+    let mut closes = 0;
+    let mut in_string = false;
+    let mut escaped = false;
+    for c in line.chars() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match c {
+            '\\' if in_string => escaped = true,
+            '"' => in_string = !in_string,
+            '{' if !in_string => opens += 1,
+            '}' if !in_string => closes += 1,
+            _ => {}
+        }
+    }
+    (opens, closes)
 }
 
 fn strip_quotes(value: &str) -> String {
@@ -336,8 +370,10 @@ fn parse_cargo_toml(text: &str) -> Vec<Dependency> {
             version,
         });
     }
-    // A `[dependencies.x]` table may also appear after its own entry.
-    found.dedup_by(|left, right| left.name == right.name);
+    // A `[dependencies.x]` table may duplicate a plain entry — and not
+    // necessarily right next to it, which is all `dedup_by` ever removed.
+    let mut seen = std::collections::HashSet::new();
+    found.retain(|dependency| seen.insert(dependency.name.clone()));
     found
 }
 
@@ -555,6 +591,55 @@ require (
         assert!(manifest_without(Language::Zig, ZON, "absent").is_none());
         // Other languages have their own remove command.
         assert!(manifest_without(Language::Rust, ZON, "clap").is_none());
+    }
+
+    #[test]
+    fn a_missing_final_newline_is_not_a_removal() {
+        // The round-trip normalizes the trailing newline; that difference
+        // alone must not report "removed" for a name that was never there.
+        let unterminated = ZON.trim_end();
+        assert!(manifest_without(Language::Zig, unterminated, "absent").is_none());
+    }
+
+    #[test]
+    fn braces_inside_a_dependency_url_do_not_unbalance_the_scan() {
+        let zon = r#".{
+    .name = .demo,
+    .dependencies = .{
+        .weird = .{
+            .url = "https://example.com/archive/{v1.2}/weird.tar.gz",
+            .hash = "weird-1.0.0-AAAA",
+        },
+        .keeper = .{
+            .url = "git+https://example.com/keeper#abc",
+            .hash = "keeper-0.1.0-BBBB",
+        },
+    },
+    .paths = .{ "build.zig", "src" },
+}
+"#;
+        let without = manifest_without(Language::Zig, zon, "weird").expect("edited");
+        assert!(!without.contains("weird"));
+        // Pre-fix the `{v1.2}` in the URL pushed the depth up and the scan
+        // swallowed the next dependency whole.
+        assert!(without.contains(".keeper = .{"), "{without}");
+        assert!(without.contains(".paths = .{ \"build.zig\", \"src\" }"));
+    }
+
+    #[test]
+    fn duplicate_cargo_entries_collapse_even_far_apart() {
+        let toml = r#"[dependencies]
+serde = "1"
+anyhow = "1.0"
+
+[dependencies.serde]
+version = "1.0.200"
+features = ["derive"]
+"#;
+        let deps = parse_manifest(Language::Rust, toml);
+        let serde_rows = deps.iter().filter(|d| d.name == "serde").count();
+        assert_eq!(serde_rows, 1, "{deps:?}");
+        assert!(deps.iter().any(|d| d.name == "anyhow"));
     }
 
     #[test]

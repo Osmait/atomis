@@ -1,6 +1,10 @@
 import { useCallback, useRef, useState } from "react";
 import type { Monaco } from "@monaco-editor/react";
-import type { CreateSessionResponse, Language } from "@atomis/protocol";
+import {
+	MAX_PROJECT_FILES,
+	type CreateSessionResponse,
+	type Language,
+} from "@atomis/protocol";
 import type * as MonacoApi from "monaco-editor";
 import { ENTRY_FILES, languageForPath } from "../editor/languagePacks.js";
 import type { LspClient } from "../editor/lsp/LspClient.js";
@@ -43,6 +47,13 @@ interface ProjectFilesOptions {
 		MonacoApi.editor.IEditorDecorationsCollection | undefined
 	>;
 	setStatus: (status: string) => void;
+	/**
+	 * Drops a path's diagnostics at delete/rename time. The LSP's empty
+	 * publishDiagnostics arrives only after the file has left filesRef, so
+	 * it lands under a different key and the old entries stayed listed
+	 * forever.
+	 */
+	pruneDiagnosticsFor: (path: string) => void;
 }
 
 /**
@@ -66,6 +77,7 @@ export function useProjectFiles(options: ProjectFilesOptions) {
 		pinnedLogLocationRef,
 		logSourceDecorationsRef,
 		setStatus,
+		pruneDiagnosticsFor,
 	} = options;
 	const [activePath, setActivePath] = useState(entryRef.current);
 	const activePathRef = useRef(entryRef.current);
@@ -140,12 +152,20 @@ export function useProjectFiles(options: ProjectFilesOptions) {
 	const createFileNamed = useCallback(
 		(path: string): boolean => {
 			if (!session) return false;
+			// Everything the server would refuse is refused HERE, before the
+			// optimistic apply below touches the tree, the tabs and the
+			// active file — an optimistic file the server then rejects is a
+			// phantom the user edits into the void.
 			if (!isValidProjectPath(path)) {
 				setStatus("Invalid file path");
 				return false;
 			}
 			if (filesRef.current.some((file) => file.path === path)) {
 				setStatus(`File ${path} already exists`);
+				return false;
+			}
+			if (filesRef.current.length >= MAX_PROJECT_FILES) {
+				setStatus(`A project can contain at most ${MAX_PROJECT_FILES} files`);
 				return false;
 			}
 			const base = session.documentUri.slice(
@@ -248,6 +268,9 @@ export function useProjectFiles(options: ProjectFilesOptions) {
 			}
 			const oldLanguage = languageForPath(path);
 			if (oldLanguage) lspClientsRef.current[oldLanguage]?.close(current.uri);
+			// The old name's diagnostics go with it; the new name earns its
+			// own from the next publish/run.
+			pruneDiagnosticsFor(path);
 			const version = ++versionRef.current;
 			sendRuntime({
 				type: "file.rename",
@@ -258,7 +281,7 @@ export function useProjectFiles(options: ProjectFilesOptions) {
 			});
 			return true;
 		},
-		[filesRef, lspClientsRef, sendRuntime, session, setProjectFiles, setStatus, versionRef],
+		[filesRef, lspClientsRef, pruneDiagnosticsFor, sendRuntime, session, setProjectFiles, setStatus, versionRef],
 	);
 
 	const renameFile = useCallback((path: string): void => {
@@ -295,16 +318,25 @@ export function useProjectFiles(options: ProjectFilesOptions) {
 			if (!window.confirm(`Delete src/${path}?`)) return;
 			const current = filesRef.current.find((file) => file.path === path);
 			if (!current) return;
+			const wasActive = activePathRef.current === path;
 			setProjectFiles((previous) =>
 				previous.filter((file) => file.path !== path),
 			);
-			setOpenTabs((previous) => previous.filter((tab) => tab !== path));
-			if (activePathRef.current === path) {
+			setOpenTabs((previous) => {
+				const kept = previous.filter((tab) => tab !== path);
+				// Deleting the active file falls back to the entry, which
+				// must have a tab to land on — its own may have been closed.
+				if (wasActive && !kept.includes(entryRef.current))
+					kept.push(entryRef.current);
+				return kept;
+			});
+			if (wasActive) {
 				activePathRef.current = entryRef.current;
 				setActivePath(entryRef.current);
 			}
 			const language = languageForPath(path);
 			if (language) lspClientsRef.current[language]?.close(current.uri);
+			pruneDiagnosticsFor(path);
 			monacoRef.current?.editor
 				.getModel(monacoRef.current.Uri.parse(current.uri))
 				?.dispose();
@@ -316,7 +348,7 @@ export function useProjectFiles(options: ProjectFilesOptions) {
 				path,
 			});
 		},
-		[entryRef, filesRef, lspClientsRef, monacoRef, sendRuntime, session, setProjectFiles, versionRef],
+		[entryRef, filesRef, lspClientsRef, monacoRef, pruneDiagnosticsFor, sendRuntime, session, setProjectFiles, versionRef],
 	);
 
 	/** Session bootstrap: reset to the created session's entry file. */

@@ -42,6 +42,10 @@ fn writeAllFd3(bytes: []const u8) void {
 }
 
 pub inline fn logSource(comptime meta: LogMeta) void {
+    // A function instrumented here may be evaluated at comptime through
+    // its call site; emitting there is a compile error injected into valid
+    // code. Comptime evaluation simply observes nothing.
+    if (@inComptime()) return;
     var marker_buffer: [96]u8 = undefined;
     var marker_writer: std.Io.Writer = .fixed(&marker_buffer);
     marker_writer.print("\x1eATOMIS_LOG:{d}:{d}:{d}\x1f", .{ meta.file_id, meta.line, meta.column }) catch return;
@@ -101,6 +105,7 @@ fn renderPreview(writer: *std.Io.Writer, value_ptr: anytype) !void {
 }
 
 pub inline fn logSourceLoop(comptime meta: LogLoopMeta, value: anytype) void {
+    if (@inComptime()) return;
     switch (@typeInfo(@TypeOf(value))) {
         .comptime_int => {
             const materialized: i128 = value;
@@ -144,6 +149,7 @@ inline fn emitLogSourceLoop(comptime meta: LogLoopMeta, value_ptr: anytype) void
 }
 
 pub inline fn probe(comptime probe_id: []const u8, value: anytype, comptime meta: ProbeMeta) void {
+    if (@inComptime()) return;
     switch (@typeInfo(@TypeOf(value))) {
         .comptime_int => {
             const materialized: i128 = value;

@@ -83,7 +83,7 @@ class Collector(ast.NodeVisitor):
                 (
                     end_line,
                     end_col,
-                    '; __atomis_probe("%s", %d, %d, "%s", %s)'
+                    '; _atomis_probe("%s", %d, %d, "%s", %s)'
                     % (
                         probe_id,
                         name_node.lineno,
@@ -174,7 +174,7 @@ class Collector(ast.NodeVisitor):
                     (
                         end_line,
                         end_col,
-                        '; __atomis_log_loop(1, %d, %d, %d, %d, %d, "%s", %s)'
+                        '; _atomis_log_loop(1, %d, %d, %d, %d, %d, "%s", %s)'
                         % (
                             self.file_id,
                             node.lineno,
@@ -191,7 +191,7 @@ class Collector(ast.NodeVisitor):
                     (
                         end_line,
                         end_col,
-                        "; __atomis_log(1, %d, %d, %d)"
+                        "; _atomis_log(1, %d, %d, %d)"
                         % (self.file_id, node.lineno, node.col_offset + 1),
                     )
                 )
@@ -199,7 +199,7 @@ class Collector(ast.NodeVisitor):
 
 
 def instrument(source, uri, auto_inspect, manual_ids, file_id):
-    if "__atomis_probe(" in source or "__atomis_log" in source:
+    if "; _atomis_probe(\"" in source or "; _atomis_log(" in source or "; _atomis_log_loop(" in source:
         return {"generated": source, "probes": [], "parseDiagnostics": []}
     try:
         tree = ast.parse(source)
@@ -321,7 +321,7 @@ def main(argv):
     if os.path.getsize(options["input"]) > MAX_SOURCE_BYTES:
         print(f"pylive-instrument: {options['input']} exceeds 1 MiB", file=sys.stderr)
         return 1
-    with open(options["input"], encoding="utf-8") as handle:
+    with open(options["input"], encoding="utf-8-sig") as handle:
         source = handle.read()
     result = instrument(
         source,
