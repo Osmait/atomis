@@ -51,7 +51,10 @@ writeFileSync(tauriConf, `${JSON.stringify(conf, null, 2)}\n`);
 // plus the matching package entry in each Cargo.lock so builds stay clean.
 const cargoPackages = [
 	{ toml: "apps/server-rs/Cargo.toml", lock: "apps/server-rs/Cargo.lock", name: "atomis-server" },
-	{ toml: "apps/desktop/src-tauri/Cargo.toml", lock: "apps/desktop/src-tauri/Cargo.lock", name: "app" },
+	// The crate is `atomis` (tauri's scaffold default `app` was renamed);
+	// with the old name the lock replace never matched, and until it became
+	// an error every release shipped this lock one version behind.
+	{ toml: "apps/desktop/src-tauri/Cargo.toml", lock: "apps/desktop/src-tauri/Cargo.lock", name: "atomis" },
 ];
 for (const { toml, lock, name } of cargoPackages) {
 	const tomlPath = join(root, toml);
