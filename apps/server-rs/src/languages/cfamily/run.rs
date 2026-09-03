@@ -125,7 +125,7 @@ async fn runtime_pch(
     // workspace outlives clang upgrades, and clang refuses a foreign PCH
     // with an error the diagnostics regex cannot map to any source line.
     let stamp_path = target.join(format!("{}-runtime.pch.toolchain", config.runtime_header));
-    let stamp = compiler_stamp(config.compiler);
+    let stamp = runtime_pch_stamp(config.compiler, &header);
     let fresh = match (tokio::fs::metadata(&pch).await, tokio::fs::metadata(&header).await) {
         (Ok(built), Ok(source)) => match (built.modified(), source.modified()) {
             (Ok(built), Ok(source)) => built >= source,
@@ -190,6 +190,15 @@ fn compiler_stamp(compiler: &str) -> String {
         }
         None => "unknown".to_string(),
     }
+}
+
+/// The PCH records the path of the header it was built from. Persistent
+/// workspaces can outlive that path when Atomis moves between an AppImage and
+/// a repository/service install, so the header identity belongs in the cache
+/// stamp alongside the compiler identity.
+fn runtime_pch_stamp(compiler: &str, header: &std::path::Path) -> String {
+    let header = std::fs::canonicalize(header).unwrap_or_else(|_| header.to_path_buf());
+    format!("{}\n{}", compiler_stamp(compiler), header.display())
 }
 
 fn clang_project_path(file: &str) -> Option<String> {
@@ -831,4 +840,26 @@ async fn run_tests(
         leaked: 0,
         duration_ms: execution.duration_ms,
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::runtime_pch_stamp;
+    use std::path::Path;
+
+    #[test]
+    fn pch_stamp_changes_when_the_runtime_header_moves() {
+        let appimage = runtime_pch_stamp(
+            "compiler-that-does-not-exist",
+            Path::new(
+                "/tmp/.mount_atomis/usr/lib/atomis/resources/cfamily/runtime/atomis_runtime.hpp",
+            ),
+        );
+        let service = runtime_pch_stamp(
+            "compiler-that-does-not-exist",
+            Path::new("/home/user/atomis/cfamily/runtime/atomis_runtime.hpp"),
+        );
+
+        assert_ne!(appimage, service);
+    }
 }

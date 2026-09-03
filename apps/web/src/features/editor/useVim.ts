@@ -113,6 +113,25 @@ export function useVim(options: VimOptions) {
 		void editor.getAction("editor.action.formatDocument")?.run();
 	}, [editorRef]);
 
+	/** Gives the touch keyboard a real Escape key, including Vim modes. */
+	const escape = useCallback((): void => {
+		const editor = editorRef.current;
+		if (!editor) return;
+		const vimCommands = VimMode as object as VimModeWithCommands;
+		const adapter = adapterRef.current as VimAdapterState | null;
+		try {
+			if (adapter?.state?.vim?.insertMode)
+				vimCommands.Vim.exitInsertMode(adapter);
+			else if (adapter?.state?.vim?.visualMode)
+				vimCommands.Vim.exitVisualMode(adapter);
+		} catch {
+			// Vim may still be attaching; Monaco's own Escape actions still work.
+		}
+		editor.trigger("mobile-keyboard", "hideSuggestWidget", null);
+		editor.trigger("mobile-keyboard", "cancelSelection", null);
+		editor.focus();
+	}, [editorRef]);
+
 	/**
 	 * Applies a change that came from another device: no save, because the
 	 * value arrived from the store that would be saved to.
@@ -163,6 +182,7 @@ export function useVim(options: VimOptions) {
 		setupVimKeys,
 		attachVim: attach,
 		formatAndNormal,
+		escape,
 		disposeVim: dispose,
 	};
 }

@@ -46,8 +46,8 @@ function makeFixture() {
 		"apps/desktop/src-tauri/tauri.conf.json": `${JSON.stringify({ version: "1.2.3" }, null, 2)}\n`,
 		"apps/server-rs/Cargo.toml": CARGO_TOML("atomis-server"),
 		"apps/server-rs/Cargo.lock": CARGO_LOCK("atomis-server"),
-		"apps/desktop/src-tauri/Cargo.toml": CARGO_TOML("app"),
-		"apps/desktop/src-tauri/Cargo.lock": CARGO_LOCK("app"),
+		"apps/desktop/src-tauri/Cargo.toml": CARGO_TOML("atomis"),
+		"apps/desktop/src-tauri/Cargo.lock": CARGO_LOCK("atomis"),
 	};
 	for (const [path, content] of Object.entries(files)) {
 		mkdirSync(join(root, dirname(path)), { recursive: true });
@@ -84,7 +84,7 @@ test("a patch bump rewrites every manifest and both sides of each cargo pair", (
 	}
 	for (const [toml, lock, name] of [
 		["apps/server-rs/Cargo.toml", "apps/server-rs/Cargo.lock", "atomis-server"],
-		["apps/desktop/src-tauri/Cargo.toml", "apps/desktop/src-tauri/Cargo.lock", "app"],
+		["apps/desktop/src-tauri/Cargo.toml", "apps/desktop/src-tauri/Cargo.lock", "atomis"],
 	]) {
 		assert.match(readFileSync(join(root, toml), "utf8"), /^version = "1\.2\.4"$/m, toml);
 		assert.match(

@@ -3,6 +3,10 @@ import type React from "react";
 import type * as MonacoApi from "monaco-editor";
 
 import { EditorChrome } from "../../app/EditorChrome.js";
+import {
+	MobileEditorControls,
+	type MobileEditorControlsProps,
+} from "./MobileEditorControls.js";
 import { defineEditorThemes } from "./theme.js";
 import { registerAllLanguages } from "./languagePacks.js";
 import { fontStack } from "../../shared/lib/fonts.js";
@@ -12,6 +16,8 @@ import type { Palette } from "../../shared/lib/themes.js";
 interface EditorPaneProps {
 	/** Everything the toolbar row above the editor needs. */
 	chrome: React.ComponentProps<typeof EditorChrome> | undefined;
+	/** Touch-only keys shown immediately above the software keyboard. */
+	mobileControls: MobileEditorControlsProps;
 	appearance: Appearance;
 	palette: Palette;
 	zen: boolean;
@@ -67,6 +73,7 @@ export function EditorPane(props: EditorPaneProps): React.JSX.Element {
 					options={options}
 				/>
 			</div>
+			<MobileEditorControls {...props.mobileControls} />
 		</section>
 	);
 }

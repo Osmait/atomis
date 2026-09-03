@@ -195,9 +195,13 @@ export function useEditorMount({
 			setTimeout(() => runRef.current(), 0);
 		});
 
-		// Nothing else claims the caret on load, so the window opens with
-		// no place to type. The editor is what you came for.
-		editor.focus();
+		// Desktop users arrive with a physical keyboard, so put the caret where
+		// they can type immediately. A phone browser only opens its software
+		// keyboard when focus begins inside a user gesture. Focusing Monaco
+		// during mount leaves its hidden input already active, so the later tap
+		// has no focus transition and iOS keeps the keyboard closed. Let Monaco
+		// perform that first focus from the tap on touch-primary devices.
+		if (!window.matchMedia("(pointer: coarse)").matches) editor.focus();
 	},
 		[
 			activePathRef,
