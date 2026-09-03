@@ -1,6 +1,7 @@
 import type React from "react";
 import activity from "lucide-static/icons/activity.svg?raw";
 import chevronDown from "lucide-static/icons/chevron-down.svg?raw";
+import chevronLeft from "lucide-static/icons/chevron-left.svg?raw";
 import chevronRight from "lucide-static/icons/chevron-right.svg?raw";
 import chevronUp from "lucide-static/icons/chevron-up.svg?raw";
 import chevronsUpDown from "lucide-static/icons/chevrons-up-down.svg?raw";
@@ -36,6 +37,7 @@ import x from "lucide-static/icons/x.svg?raw";
 const ICONS = {
 	activity,
 	"chevron-down": chevronDown,
+	"chevron-left": chevronLeft,
 	"chevron-right": chevronRight,
 	"chevron-up": chevronUp,
 	"chevrons-up-down": chevronsUpDown,

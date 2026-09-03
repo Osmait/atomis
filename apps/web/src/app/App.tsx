@@ -152,6 +152,7 @@ export function App(): React.JSX.Element {
 		setupVimKeys,
 		attachVim,
 		formatAndNormal,
+		escape,
 		disposeVim,
 	} = useVim({ editorRef });
 
@@ -1044,6 +1045,26 @@ export function App(): React.JSX.Element {
 								: undefined
 						}
 						language={editorLanguage}
+						mobileControls={{
+							editorRef,
+							onEscape: escape,
+							onOpenCommands: () => setPaletteOpen(true),
+							onOpenSettings: () => setSettingsOpen(true),
+							onRun: run,
+							onStop: stop,
+							onToggleFiles: () =>
+								updateLayout({
+									treeOpen: !layoutRef.current.treeOpen,
+									zen: false,
+								}),
+							onToggleTerminal: () =>
+								updateLayout({
+									termOpen: !layoutRef.current.termOpen,
+									zen: false,
+								}),
+							runDisabled,
+							running: active,
+						}}
 						onChange={onChange}
 						onMount={handleMount}
 						palette={palette}

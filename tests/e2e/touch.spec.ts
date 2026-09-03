@@ -27,9 +27,23 @@ test("the essential controls are on screen at this size", async ({ page }) => {
 	// Without these there is no way to run anything by hand, which is what
 	// having no keyboard makes essential rather than convenient.
 	await expect(page.locator(".editor-chrome")).toBeVisible();
+	await expect(
+		page.getByRole("toolbar", { name: "Mobile editor controls" }),
+	).toBeVisible();
 	await expect(page.locator(".run-button")).toBeVisible();
 	await expect(page.locator(".global-status")).toBeVisible();
 	await expect(page.locator(".side-panel")).toBeVisible();
+});
+
+test("a tap focuses the editor input for the software keyboard", async ({
+	page,
+}) => {
+	await openReady(page);
+	const editorInput = page.getByRole("textbox", { name: "Editor content" });
+
+	await expect(editorInput).not.toBeFocused();
+	await page.locator(".monaco-editor .view-lines").tap();
+	await expect(editorInput).toBeFocused();
 });
 
 test("the terminal menu opens where you can see and touch it", async ({
@@ -71,6 +85,7 @@ test("controls are big enough to hit with a finger", async ({ page }) => {
 		const wanted = [
 			".run-button",
 			".chrome-icon",
+			".mobile-key",
 			".tab-add",
 			".term-menu-btn",
 			".auto-text",
@@ -127,9 +142,35 @@ test("no control covers another, and nothing spills sideways", async ({
 
 test("you can run a program with nothing but taps", async ({ page }) => {
 	await openReady(page);
-	// No keyboard: the Run button is the whole story.
-	await page.locator(".run-button").tap();
+	await page.getByRole("button", { name: "Open Ctrl commands" }).tap();
+	await page
+		.getByRole("toolbar", { name: "Mobile editor controls" })
+		.getByRole("button", { name: "Run", exact: true })
+		.tap();
 	await expect(page.locator(".state-succeeded")).toBeVisible();
 	await expect(page.locator(".inline-value").first()).toBeVisible();
 	await expect(page.locator(".inline-value.stale")).toHaveCount(0);
+});
+
+test("the mobile keys keep editing focus and expose app commands", async ({
+	page,
+}) => {
+	await openReady(page);
+	const editorInput = page.getByRole("textbox", { name: "Editor content" });
+	await page.locator(".monaco-editor .view-lines").tap();
+
+	await page.getByRole("button", { name: "Tab", exact: true }).tap();
+	await expect(editorInput).toBeFocused();
+	await page.getByRole("button", { name: "Move cursor left" }).tap();
+	await expect(editorInput).toBeFocused();
+
+	await page.getByRole("button", { name: "Open Ctrl commands" }).tap();
+	await expect(
+		page.getByRole("button", { name: "Close Ctrl commands" }),
+	).toHaveAttribute("aria-pressed", "true");
+	await page
+		.getByRole("toolbar", { name: "Mobile editor controls" })
+		.getByRole("button", { name: "Commands", exact: true })
+		.tap();
+	await expect(page.getByRole("dialog", { name: "Find file" })).toBeVisible();
 });

@@ -29,7 +29,10 @@ fn go_env(root: &std::path::Path) -> Vec<(String, String)> {
             "GOCACHE".into(),
             root.join(".gocache").to_string_lossy().into_owned(),
         ),
-        ("GOFLAGS".into(), "-mod=mod".into()),
+        // Sessions can live below a parent Git worktree whose status is not
+        // readable from the sandbox. Build metadata is irrelevant for these
+        // temporary binaries, so do not let VCS stamping block compilation.
+        ("GOFLAGS".into(), "-mod=mod -buildvcs=false".into()),
         ("GOPROXY".into(), "off".into()),
         ("GO111MODULE".into(), "on".into()),
         ("CGO_ENABLED".into(), "0".into()),
@@ -472,4 +475,19 @@ async fn run_tests(
         leaked: 0,
         duration_ms: execution.duration_ms,
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::go_env;
+
+    #[test]
+    fn temporary_builds_disable_vcs_stamping() {
+        let env = go_env(std::path::Path::new("/tmp/atomis-go"));
+        let goflags = env
+            .iter()
+            .find_map(|(name, value)| (name == "GOFLAGS").then_some(value.as_str()));
+
+        assert_eq!(goflags, Some("-mod=mod -buildvcs=false"));
+    }
 }
