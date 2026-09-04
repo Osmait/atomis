@@ -13,6 +13,8 @@ import type {
 	Language,
 } from "@atomis/protocol";
 import type * as MonacoApi from "monaco-editor";
+import type { EditorContextMenuState } from "../features/editor/editorContextMenu.js";
+import { useEditorContextMenu } from "../features/editor/useEditorContextMenu.js";
 import { CommandPalette } from "./CommandPalette.js";
 import {
 	EditorContextMenu,
@@ -129,10 +131,8 @@ export function App(): React.JSX.Element {
 	>({});
 	const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 });
 	const [inlineLogs, setInlineLogs] = useState(loadInlineLogs);
-	const [editorContextMenu, setEditorContextMenu] = useState<{
-		x: number;
-		y: number;
-	}>();
+	const [editorContextMenu, setEditorContextMenu] =
+		useState<EditorContextMenuState>();
 	const [layout, setLayout] = useState<LayoutState>(loadLayout);
 	const [chrome, setChrome] = useState<ChromeSettings>(loadChrome);
 	const [paletteOpen, setPaletteOpen] = useState(false);
@@ -621,6 +621,7 @@ export function App(): React.JSX.Element {
 		setEditorContextMenu,
 		setStatus,
 	});
+	useEditorContextMenu({ editorRef, monacoRef, setEditorContextMenu });
 
 	const { highlightLogSource, onEntryClick, jumpToLine } = useSourceNavigation({
 		editorRef,
@@ -646,7 +647,6 @@ export function App(): React.JSX.Element {
 		inlineLogDecorationsRef,
 		setProjectFiles,
 		setCursorPosition,
-		setEditorContextMenu,
 		setPeek,
 		setFocusZone,
 		openInLsp,
@@ -1166,7 +1166,7 @@ export function App(): React.JSX.Element {
 			{editorContextMenu && (
 				<EditorContextMenu
 					menu={editorContextMenu}
-					onCopy={() => void copyFromEditor()}
+					onCopy={() => void copyFromEditor(editorContextMenu.copyText)}
 					onPaste={() => void pasteIntoEditor()}
 				/>
 			)}

@@ -67,4 +67,23 @@ describe("EditorContextMenu", () => {
 		expect(onCopy).toHaveBeenCalled();
 		expect(onPaste).toHaveBeenCalled();
 	});
+
+	it("names a contextual copy action and hides paste", () => {
+		const onCopy = vi.fn();
+		render(
+			<EditorContextMenu
+				menu={{
+					x: 5,
+					y: 5,
+					copyLabel: "Copy diagnostic",
+					allowPaste: false,
+				}}
+				onCopy={onCopy}
+				onPaste={vi.fn()}
+			/>,
+		);
+		fireEvent.click(screen.getByText("Copy diagnostic"));
+		expect(onCopy).toHaveBeenCalled();
+		expect(screen.queryByText("Paste")).toBeNull();
+	});
 });

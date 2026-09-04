@@ -1,10 +1,11 @@
 import { useCallback } from "react";
 import type * as MonacoApi from "monaco-editor";
+import type { EditorContextMenuState } from "./editorContextMenu.js";
 
 /** What copy and paste touch besides the editor itself. */
 export interface EditorClipboardDeps {
 	editorRef: React.RefObject<MonacoApi.editor.IStandaloneCodeEditor | undefined>;
-	setEditorContextMenu: (menu: { x: number; y: number } | undefined) => void;
+	setEditorContextMenu: (menu: EditorContextMenuState | undefined) => void;
 	setStatus: (status: string) => void;
 }
 
@@ -19,18 +20,21 @@ export function useEditorClipboard({
 	setEditorContextMenu,
 	setStatus,
 }: EditorClipboardDeps): {
-	copyFromEditor: () => Promise<void>;
+	copyFromEditor: (textOverride?: string) => Promise<void>;
 	pasteIntoEditor: () => Promise<void>;
 } {
-	const copyFromEditor = useCallback(async (): Promise<void> => {
+	const copyFromEditor = useCallback(async (textOverride?: string): Promise<void> => {
 		setEditorContextMenu(undefined);
 		const editor = editorRef.current;
-		const model = editor?.getModel();
-		const selection = editor?.getSelection();
-		if (!editor || !model || !selection) return;
-		const text = selection.isEmpty()
-			? model.getLineContent(selection.startLineNumber)
-			: model.getValueInRange(selection);
+		let text = textOverride;
+		if (text === undefined) {
+			const model = editor?.getModel();
+			const selection = editor?.getSelection();
+			if (!editor || !model || !selection) return;
+			text = selection.isEmpty()
+				? model.getLineContent(selection.startLineNumber)
+				: model.getValueInRange(selection);
+		}
 		try {
 			await navigator.clipboard.writeText(text);
 		} catch (error) {
@@ -38,7 +42,7 @@ export function useEditorClipboard({
 				`Copy failed: ${error instanceof Error ? error.message : String(error)}`,
 			);
 		}
-		editor.focus();
+		editor?.focus();
 	}, [editorRef, setEditorContextMenu, setStatus]);
 
 	const pasteIntoEditor = useCallback(async (): Promise<void> => {
