@@ -253,6 +253,37 @@ pub struct CreateSessionRequest {
     pub scaffold: Option<WorkspaceScaffold>,
     /// Attach to a persistent workspace instead of a throwaway session.
     pub workspace: Option<String>,
+    /// Restore a local mirror into a NEW scratch session only.
+    pub files: Option<Vec<SourceFile>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export, export_to = "../../../packages/protocol/src/generated/"))]
+pub struct SourceFile {
+    pub path: String,
+    pub source: String,
+}
+
+pub fn validate_source_files(files: &[SourceFile]) -> Result<(), String> {
+    if files.is_empty() || files.len() > MAX_PROJECT_FILES {
+        return Err("A project must contain 1..64 files".into());
+    }
+    let mut seen = std::collections::HashSet::new();
+    let mut bytes = 0;
+    for file in files {
+        valid_project_path(&file.path)?;
+        if !seen.insert(&file.path) { return Err("Duplicate file path".into()); }
+        if file.source.len() > MAX_SOURCE_BYTES { return Err("Source exceeds 1 MiB".into()); }
+        bytes += file.source.len();
+    }
+    if bytes > MAX_PROJECT_BYTES { return Err("Project source exceeds 8 MiB".into()); }
+    for file in files {
+        if files.iter().any(|other| other.path.starts_with(&format!("{}/", file.path))) {
+            return Err("A file cannot also be a directory".into());
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -344,6 +375,9 @@ pub enum RuntimeClientMessage {
         version: u64,
         path: String,
         source: String,
+        #[serde(default, rename = "baseRevision")]
+        #[cfg_attr(test, ts(optional, type = "number"))]
+        base_revision: Option<u64>,
     },
     #[serde(rename = "file.rename")]
     FileRename {
@@ -354,6 +388,9 @@ pub enum RuntimeClientMessage {
         path: String,
         #[serde(rename = "newPath")]
         new_path: String,
+        #[serde(default, rename = "baseRevision")]
+        #[cfg_attr(test, ts(optional, type = "number"))]
+        base_revision: Option<u64>,
     },
     #[serde(rename = "file.delete")]
     FileDelete {
@@ -362,6 +399,20 @@ pub enum RuntimeClientMessage {
         #[cfg_attr(test, ts(type = "number"))]
         version: u64,
         path: String,
+        #[serde(default, rename = "baseRevision")]
+        #[cfg_attr(test, ts(optional, type = "number"))]
+        base_revision: Option<u64>,
+    },
+    #[serde(rename = "workspace.reset")]
+    WorkspaceReset {
+        #[serde(rename = "sessionId")]
+        session_id: String,
+        #[cfg_attr(test, ts(type = "number"))]
+        version: u64,
+        scaffold: WorkspaceScaffold,
+        #[serde(default, rename = "baseRevision")]
+        #[cfg_attr(test, ts(optional, type = "number"))]
+        base_revision: Option<u64>,
     },
     #[serde(rename = "run.request")]
     RunRequest {
@@ -448,6 +499,7 @@ impl RuntimeClientMessage {
             | RuntimeClientMessage::FileCreate { session_id, .. }
             | RuntimeClientMessage::FileRename { session_id, .. }
             | RuntimeClientMessage::FileDelete { session_id, .. }
+            | RuntimeClientMessage::WorkspaceReset { session_id, .. }
             | RuntimeClientMessage::RunRequest { session_id, .. }
             | RuntimeClientMessage::RunCancel { session_id }
             | RuntimeClientMessage::SettingsUpdate { session_id, .. }
@@ -522,7 +574,8 @@ impl RuntimeClientMessage {
                 check_version(*version)?;
                 valid_project_path(path)
             }
-            RuntimeClientMessage::RunRequest { version, .. } => check_version(*version),
+            RuntimeClientMessage::RunRequest { version, .. }
+            | RuntimeClientMessage::WorkspaceReset { version, .. } => check_version(*version),
             RuntimeClientMessage::RunCancel { .. } => Ok(()),
             RuntimeClientMessage::SettingsUpdate {
                 debounce_ms,
@@ -605,6 +658,17 @@ pub type PreferencesPatch = std::collections::BTreeMap<String, Option<String>>;
 #[cfg_attr(test, ts(export, export_to = "../../../packages/protocol/src/generated/"))]
 #[serde(tag = "type")]
 pub enum ServerEvent {
+    #[serde(rename = "document.saved", rename_all = "camelCase")]
+    DocumentSaved {
+        #[cfg_attr(test, ts(type = "number"))]
+        document_version: u64,
+    },
+    #[serde(rename = "project.changed", rename_all = "camelCase")]
+    ProjectChanged {
+        files: Vec<ProjectFile>,
+        #[cfg_attr(test, ts(type = "number"))]
+        revision: u64,
+    },
     #[serde(rename = "run.state", rename_all = "camelCase")]
     RunStateEvent {
         #[cfg_attr(test, ts(type = "number"))]

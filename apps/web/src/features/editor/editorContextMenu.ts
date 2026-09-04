@@ -1,7 +1,10 @@
+import type * as MonacoApi from "monaco-editor";
+
 export interface EditorContextMenuState {
 	x: number;
 	y: number;
 	copyText?: string;
+	copyEditor?: MonacoApi.editor.ICodeEditor;
 	copyLabel?: string;
 	allowPaste?: boolean;
 }
@@ -20,6 +23,9 @@ const COPY_TARGETS: ReadonlyArray<{
 	{ selector: ".inline-value", label: "Copy value" },
 	{ selector: ".inline-log", label: "Copy log" },
 	{ selector: ".monaco-hover", label: "Copy hover" },
+	{ selector: ".marker-widget", label: "Copy diagnostic" },
+	{ selector: ".reference-zone-widget .ref-tree .monaco-list-row", label: "Copy reference" },
+	{ selector: ".parameter-hints-widget", label: "Copy signature" },
 ];
 
 function asElement(target: EventTarget | null): Element | null {
@@ -89,4 +95,18 @@ export function getMonacoEditorTarget(
 ): HTMLElement | null {
 	const editor = asElement(target)?.closest(".monaco-editor");
 	return editor instanceof HTMLElement ? editor : null;
+}
+
+/** Snapshot model text before the menu moves focus away from this editor. */
+export function getEditorCopyText(
+	editor: MonacoApi.editor.ICodeEditor,
+	position?: MonacoApi.IPosition | null,
+): string | undefined {
+	const model = editor.getModel();
+	const selection = editor.getSelection();
+	if (!model || !selection) return undefined;
+	if (!selection.isEmpty() && (!position || selection.containsPosition(position))) {
+		return model.getValueInRange(selection);
+	}
+	return model.getLineContent(position?.lineNumber ?? selection.startLineNumber);
 }

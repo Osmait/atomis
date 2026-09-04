@@ -4,8 +4,8 @@
 // the entry file was re-pushed and every other file's edits (and every
 // file created offline) were silently gone, so the next run compiled code
 // the editor no longer showed.
-import { describe, expect, test, vi } from "vitest";
-import { act, renderHook } from "@testing-library/react";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { act, cleanup, renderHook } from "@testing-library/react";
 import type { CreateSessionResponse } from "@atomis/protocol";
 import { useRuntimeSocket } from "./useRuntimeSocket.js";
 
@@ -14,6 +14,7 @@ interface SentMessage {
 	path?: string;
 	source?: string;
 	baseRevision?: number;
+	version?: number;
 }
 
 class FakeWebSocket {
@@ -42,9 +43,18 @@ class FakeWebSocket {
 		this.readyState = FakeWebSocket.OPEN;
 		for (const handler of this.listeners.get("open") ?? []) handler({});
 	}
+	disconnects(): void {
+		this.readyState = 3;
+		for (const handler of this.listeners.get("close") ?? []) handler({});
+	}
+	receives(event: object): void {
+		for (const handler of this.listeners.get("message") ?? []) handler({data: JSON.stringify(event)});
+	}
 }
 
-function mount() {
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+function mount(onSessionExpired?: (unsaved: boolean) => Promise<void>) {
 	vi.stubGlobal("WebSocket", FakeWebSocket as never);
 	FakeWebSocket.instances = [];
 	const session = {
@@ -54,8 +64,7 @@ function mount() {
 	} as never as CreateSessionResponse;
 	const files = [{ path: "main.zig", uri: "u", source: "edited" }];
 	const revisionRef = { current: undefined as number | undefined };
-	const rendered = renderHook(() =>
-		useRuntimeSocket({
+	const options = {
 			session,
 			handleRuntimeEvent: () => {},
 			settingsRef: { current: { autoRun: true } as never },
@@ -65,8 +74,9 @@ function mount() {
 			revisionRef,
 			lspClientsRef: { current: {} },
 			setStatus: () => {},
-		}),
-	);
+			...(onSessionExpired ? { onSessionExpired } : {}),
+	};
+	const rendered = renderHook(() => useRuntimeSocket(options));
 	return { rendered, revisionRef, socket: () => FakeWebSocket.instances.at(-1) };
 }
 
@@ -74,6 +84,65 @@ const parsed = (socket: FakeWebSocket | undefined) =>
 	(socket?.sent ?? []).map((raw) => JSON.parse(raw) as SentMessage);
 
 describe("useRuntimeSocket", () => {
+	test("interleaved offline A-B-A edits flush in increasing version order", () => {
+		const { rendered, socket } = mount();
+		act(() => {
+			for (const [version, path, source] of [[3, "main.zig", "A1"], [4, "helper.zig", "B1"], [5, "main.zig", "A2"]])
+				rendered.result.current.sendRuntime({ type: "document.update", version, path, source });
+		});
+		act(() => socket()?.opens());
+		expect(parsed(socket()).filter(m => m.type === "document.update").map(m => [m.version, m.source])).toEqual([[4, "B1"], [5, "A2"]]);
+	});
+
+	test("coalescing never crosses a rename or delete/create boundary", () => {
+		const { rendered, socket } = mount();
+		act(() => {
+			for (const message of [
+				{ type: "document.update", version: 2, path: "helper.zig", source: "before rename" },
+				{ type: "file.rename", version: 3, path: "helper.zig", newPath: "renamed.zig" },
+				{ type: "file.create", version: 4, path: "helper.zig", source: "new file" },
+				{ type: "document.update", version: 5, path: "helper.zig", source: "new text" },
+			]) rendered.result.current.sendRuntime(message);
+		});
+		act(() => socket()?.opens());
+		expect(parsed(socket()).filter(m => m.path === "helper.zig").map(m => m.version)).toEqual([2, 3, 4, 5]);
+	});
+
+	test("an expired session triggers recovery with unacknowledged edits", async () => {
+		vi.useFakeTimers();
+		vi.stubGlobal("fetch", vi.fn().mockResolvedValue({status: 404}));
+		const recover = vi.fn().mockResolvedValue(undefined);
+		const { rendered, socket } = mount(recover);
+		act(() => socket()?.opens());
+		act(() => rendered.result.current.sendRuntime({type: "document.update", version: 9, path: "helper.zig", source: "keep me"}));
+		act(() => socket()?.disconnects());
+		await act(() => vi.advanceTimersByTimeAsync(1000));
+		expect(recover).toHaveBeenCalledWith(true);
+	});
+
+	test("acknowledged edits do not require a recovery copy", async () => {
+		vi.useFakeTimers();
+		vi.stubGlobal("fetch", vi.fn().mockResolvedValue({status: 404}));
+		const recover = vi.fn().mockResolvedValue(undefined);
+		const { socket } = mount(recover);
+		act(() => socket()?.opens());
+		act(() => socket()?.receives({type: "document.saved", documentVersion: 2}));
+		act(() => socket()?.disconnects());
+		await act(() => vi.advanceTimersByTimeAsync(1000));
+		expect(recover).toHaveBeenCalledWith(false);
+	});
+
+	test("a network failure retries instead of treating the session as expired", async () => {
+		vi.useFakeTimers();
+		vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+		const recover = vi.fn().mockResolvedValue(undefined);
+		const { socket } = mount(recover);
+		act(() => socket()?.opens());
+		act(() => socket()?.disconnects());
+		await act(() => vi.advanceTimersByTimeAsync(1000));
+		expect(recover).not.toHaveBeenCalled();
+		expect(FakeWebSocket.instances).toHaveLength(2);
+	});
 	test("messages sent while connecting queue and flush on open, in order", () => {
 		const { rendered, socket } = mount();
 		act(() => {
