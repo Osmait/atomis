@@ -3,7 +3,10 @@ import type { CreateSessionResponse, Language } from "@atomis/protocol";
 
 import { apiFetch } from "../../shared/api/client.js";
 import { WEB_LANGUAGE_PACKS } from "../editor/languagePacks.js";
-import { loadLanguage, loadScaffold } from "../../shared/stores/settings.js";
+import {
+	loadDefaultTemplate,
+	loadScaffold,
+} from "../../shared/stores/settings.js";
 import {
 	loadActiveWorkspace,
 	saveActiveWorkspace,
@@ -87,7 +90,7 @@ export function useSessionLifecycle(options: SessionLifecycleOptions) {
 				method: "POST",
 				headers: { "content-type": "application/json" },
 				body: JSON.stringify({
-					language: loadLanguage(),
+					language: loadDefaultTemplate(),
 					scaffold: loadScaffold(),
 					...(workspace ? { workspace } : {}),
 				}),

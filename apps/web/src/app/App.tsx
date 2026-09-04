@@ -87,16 +87,19 @@ import { useSourceNavigation } from "../features/editor/useSourceNavigation.js";
 import { useWorkspaces } from "../features/workspaces/useWorkspaces.js";
 import { useSessionLifecycle } from "../features/session/useSessionLifecycle.js";
 import {
+	DEFAULT_TEMPLATE_KEY,
 	INLINE_LOGS_KEY,
 	SETTINGS_KEY,
 	VALUE_FMT_KEY,
 	VIM_MODE_KEY,
+	loadDefaultTemplate,
 	loadEntrySource,
 	loadInlineLogs,
 	loadLayout,
 	loadSettings,
 	loadValueFmt,
 	loadVimMode,
+	saveDefaultTemplate,
 	saveEntrySource,
 	saveLayout,
 	saveScaffold,
@@ -115,6 +118,7 @@ export function App(): React.JSX.Element {
 	/** A workspace switch that failed — recoverable, unlike a failed boot. */
 	const [switchError, setSwitchError] = useState<string>();
 	const [settings, setSettings] = useState<Settings>(loadSettings);
+	const [defaultTemplate, setDefaultTemplate] = useState(loadDefaultTemplate);
 	const [valueFmt, setValueFmt] = useState<ValueFmt>(loadValueFmt);
 	const [settingsOpen, setSettingsOpen] = useState(false);
 	const [status, setStatus] = useState("Starting…");
@@ -177,6 +181,8 @@ export function App(): React.JSX.Element {
 			subscribeToPreferences((changed) => {
 				if (changed.has(SETTINGS_KEY)) setSettings(loadSettings());
 				if (changed.has(VALUE_FMT_KEY)) setValueFmt(loadValueFmt());
+				if (changed.has(DEFAULT_TEMPLATE_KEY))
+					setDefaultTemplate(loadDefaultTemplate());
 				if (changed.has(APPEARANCE_KEY)) setAppearance(loadAppearance());
 				if (changed.has(VIM_MODE_KEY)) syncVimEnabled(loadVimMode());
 				if (changed.has(INLINE_LOGS_KEY)) setInlineLogs(loadInlineLogs());
@@ -840,10 +846,7 @@ export function App(): React.JSX.Element {
 	}, []);
 
 	const clearWorkspace = useCallback((): void => {
-		const entry =
-			WEB_LANGUAGE_PACKS[
-				languageForPath(activePathRef.current) ?? activeLanguageRef.current
-			].entryFile;
+		const entry = WEB_LANGUAGE_PACKS[defaultTemplate].entryFile;
 		if (
 			!window.confirm(
 				`Clear the workspace? Only a fresh ${entry} will remain.`,
@@ -852,7 +855,7 @@ export function App(): React.JSX.Element {
 			return;
 		saveScaffold("minimal");
 		window.location.reload();
-	}, [activePathRef]);
+	}, [defaultTemplate]);
 
 	// Switching workspace swaps every file on disk, so the session is
 	// rebuilt — but in place: the page never reloads. Tear down what is
@@ -1266,10 +1269,15 @@ export function App(): React.JSX.Element {
 				})()}
 			{settingsOpen && (
 				<SettingsModal
+					defaultTemplate={defaultTemplate}
 					font={appearance.font}
 					onClose={() => {
 						setPreviewTheme(undefined);
 						setSettingsOpen(false);
+					}}
+					onDefaultTemplate={(template) => {
+						setDefaultTemplate(template);
+						saveDefaultTemplate(template);
 					}}
 					onFont={(font) => updateAppearance({ font })}
 					onSize={(fontSize) => updateAppearance({ fontSize })}
@@ -1313,12 +1321,12 @@ export function App(): React.JSX.Element {
 				<WorkspacePicker
 					activeId={session.workspace?.id}
 					busy={workspacesBusy}
-					language={activeLanguage}
+					language={defaultTemplate}
 					onClose={() => {
 						setWorkspacePickerOpen(false);
 						setSwitchError(undefined);
 					}}
-					onCreate={(name) => createNamedWorkspace(name, activeLanguage)}
+					onCreate={(name) => createNamedWorkspace(name, defaultTemplate)}
 					onDelete={(id) =>
 						deleteNamedWorkspace(id, id === session.workspace?.id)
 					}
