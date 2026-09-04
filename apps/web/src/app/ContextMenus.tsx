@@ -99,7 +99,12 @@ export function TreeContextMenu(props: TreeContextMenuProps): React.JSX.Element 
 }
 
 interface EditorContextMenuProps {
-	menu: { x: number; y: number };
+	menu: {
+		x: number;
+		y: number;
+		copyLabel?: string;
+		allowPaste?: boolean;
+	};
 	onCopy: () => void;
 	onPaste: () => void;
 }
@@ -119,11 +124,13 @@ export function EditorContextMenu(
 			role="menu"
 		>
 			<button role="menuitem" onClick={props.onCopy}>
-				Copy
+				{props.menu.copyLabel ?? "Copy"}
 			</button>
-			<button role="menuitem" onClick={props.onPaste}>
-				Paste
-			</button>
+			{props.menu.allowPaste !== false && (
+				<button role="menuitem" onClick={props.onPaste}>
+					Paste
+				</button>
+			)}
 		</div>
 	);
 }

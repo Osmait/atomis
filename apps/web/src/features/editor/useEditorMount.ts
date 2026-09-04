@@ -34,7 +34,6 @@ export interface EditorMountDeps {
 	>;
 	setProjectFiles: (update: (previous: ProjectFile[]) => ProjectFile[]) => void;
 	setCursorPosition: (position: { line: number; column: number }) => void;
-	setEditorContextMenu: (menu: { x: number; y: number } | undefined) => void;
 	setPeek: (
 		update: (
 			previous: { path: string; probeId: string } | null | undefined,
@@ -76,7 +75,6 @@ export function useEditorMount({
 	inlineLogDecorationsRef,
 	setProjectFiles,
 	setCursorPosition,
-	setEditorContextMenu,
 	setPeek,
 	setFocusZone,
 	openInLsp,
@@ -130,19 +128,6 @@ export function useEditorMount({
 				runRef.current();
 			}
 		});
-		const editorNode = editor.getContainerDomNode();
-		const showContextMenu = (event: MouseEvent): void => {
-			event.preventDefault();
-			event.stopPropagation();
-			setEditorContextMenu({
-				x: Math.min(event.clientX, window.innerWidth - 170),
-				y: Math.min(event.clientY, window.innerHeight - 90),
-			});
-		};
-		editorNode.addEventListener("contextmenu", showContextMenu, true);
-		editor.onDidDispose(() =>
-			editorNode.removeEventListener("contextmenu", showContextMenu, true),
-		);
 		setupVimKeys(runRef);
 		installVimExtensions();
 		attachVim();
@@ -150,6 +135,7 @@ export function useEditorMount({
 		editor.onMouseDown((mouse) => {
 			const element = mouse.target.element as HTMLElement | null;
 			if (
+				mouse.event.leftButton &&
 				element?.classList?.contains("inline-value") &&
 				mouse.target.position
 			) {
@@ -220,7 +206,6 @@ export function useEditorMount({
 			sendSettingsRef,
 			session,
 			setCursorPosition,
-			setEditorContextMenu,
 			setPeek,
 			setProjectFiles,
 			settingsRef,

@@ -285,6 +285,83 @@ test("Vim mode keeps native clipboard shortcuts", async ({
 	expect(pageErrors).toEqual([]);
 });
 
+test("contextual copy uses widget and reference text", async ({
+	page,
+	context,
+	baseURL,
+}) => {
+	await context.grantPermissions(["clipboard-read", "clipboard-write"], {
+		origin: baseURL ?? "http://127.0.0.1:5391",
+	});
+	await openClean(page);
+	await expect(page.locator(".state-succeeded")).toBeVisible();
+
+	const inlineValue = page.getByText("40 : i32", { exact: true });
+	await inlineValue.click({ button: "right" });
+	await expect(
+		page.getByRole("menuitem", { name: "Copy value", exact: true }),
+	).toBeVisible();
+	await expect(
+		page.getByRole("menuitem", { name: "Paste", exact: true }),
+	).toHaveCount(0);
+	await page.getByRole("menuitem", { name: "Copy value", exact: true }).click();
+	await expect
+		.poll(() => page.evaluate(() => navigator.clipboard.readText()))
+		.toBe("40 : i32");
+
+	await replaceEditor(
+		page,
+		"pub fn main() void {\n    const value = missing_name;\n    _ = value;\n}\n",
+	);
+	await expect(page.locator(".state-compile_error")).toBeVisible();
+	const diagnostic = page.locator(".error-lens-message-error").first();
+	await expect(diagnostic).toBeVisible();
+	await diagnostic.click({ button: "right" });
+	await page
+		.getByRole("menuitem", { name: "Copy diagnostic", exact: true })
+		.click();
+	await expect
+		.poll(() => page.evaluate(() => navigator.clipboard.readText()))
+		.toContain("missing_name");
+
+	await replaceEditor(
+		page,
+		`const std = @import("std");
+
+fn applyTax(price: i32, tax: i32) i32 {
+    return price + tax;
+}
+
+pub fn main() void {
+    const total = applyTax(40, 3);
+    std.debug.print("{}", .{total});
+}
+`,
+	);
+	await expect(page.locator(".state-succeeded")).toBeVisible();
+	const applyTax = page.locator('.view-line span:text-is("applyTax")').first();
+	await applyTax.hover();
+	const hover = page.locator(".monaco-hover:not(.hidden)").first();
+	await expect(hover).toContainText("applyTax", { timeout: 15_000 });
+	await hover.click({ button: "right" });
+	await page.getByRole("menuitem", { name: "Copy hover", exact: true }).click();
+	await expect
+		.poll(() => page.evaluate(() => navigator.clipboard.readText()))
+		.toContain("applyTax");
+
+	await applyTax.click();
+	await page.keyboard.press("Shift+F12");
+	const previewEditor = page.locator(".zone-widget .monaco-editor").first();
+	await expect(previewEditor).toBeVisible({ timeout: 15_000 });
+	await previewEditor.locator(".view-lines").click({ button: "right" });
+	await page
+		.getByRole("menuitem", { name: "Copy reference", exact: true })
+		.click();
+	await expect
+		.poll(() => page.evaluate(() => navigator.clipboard.readText()))
+		.toContain("applyTax");
+});
+
 test("ZLS completion opens Monaco suggestions with real std symbols", async ({
 	page,
 }) => {
