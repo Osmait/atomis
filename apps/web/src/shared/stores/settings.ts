@@ -52,7 +52,7 @@ export const SETTINGS_KEY = "atomis.settings.v1";
 const LAYOUT_KEY = "atomis.layout.v1";
 export const VALUE_FMT_KEY = "atomis.value-fmt.v1";
 export const VIM_MODE_KEY = "atomis.vim-mode.v1";
-const LANGUAGE_KEY = "atomis.language.v1";
+export const DEFAULT_TEMPLATE_KEY = "atomis.language.v1";
 const SCAFFOLD_KEY = "atomis.scaffold.v1";
 export const INLINE_LOGS_KEY = "atomis.inline-logs.v1";
 const SOURCE_KEY = "atomis.source.v1";
@@ -143,13 +143,14 @@ export function saveVimMode(enabled: boolean): void {
 	writeStoredItem(VIM_MODE_KEY, String(enabled));
 }
 
-export function loadLanguage(): Language {
-	const stored = readStoredItem(LANGUAGE_KEY);
+/** Language scaffold used only when creating a new workspace or scratch session. */
+export function loadDefaultTemplate(): Language {
+	const stored = readStoredItem(DEFAULT_TEMPLATE_KEY);
 	return stored && stored in WEB_LANGUAGE_PACKS ? (stored as Language) : "zig";
 }
 
-export function saveLanguage(language: Language): void {
-	writeStoredItem(LANGUAGE_KEY, language);
+export function saveDefaultTemplate(language: Language): void {
+	writeStoredItem(DEFAULT_TEMPLATE_KEY, language);
 }
 
 /**

@@ -6,6 +6,7 @@ import { act, renderHook } from "@testing-library/react";
 import {
 	MAX_PROJECT_FILES,
 	type CreateSessionResponse,
+	type Language,
 } from "@atomis/protocol";
 import { useProjectFiles } from "./useProjectFiles.js";
 import type { ProjectFile } from "../../shared/types.js";
@@ -16,6 +17,7 @@ function mount(initialFiles: ProjectFile[]) {
 		documentUri: "file:///ws/src/main.zig",
 	} as object as CreateSessionResponse;
 	const filesRef = { current: initialFiles };
+	const activeLanguageRef = { current: "zig" as Language };
 	const sent: { type?: string }[] = [];
 	const statuses: string[] = [];
 	const pruned: string[] = [];
@@ -25,7 +27,7 @@ function mount(initialFiles: ProjectFile[]) {
 			sendRuntime: (message) => sent.push(message as { type?: string }),
 			versionRef: { current: 1 },
 			entryRef: { current: "main.zig" },
-			activeLanguageRef: { current: "zig" },
+			activeLanguageRef,
 			filesRef,
 			setProjectFiles: (next) => {
 				filesRef.current =
@@ -40,7 +42,7 @@ function mount(initialFiles: ProjectFile[]) {
 			pruneDiagnosticsFor: (path) => pruned.push(path),
 		}),
 	);
-	return { rendered, filesRef, sent, statuses, pruned };
+	return { rendered, filesRef, activeLanguageRef, sent, statuses, pruned };
 }
 
 const file = (path: string): ProjectFile => ({
@@ -94,5 +96,22 @@ describe("useProjectFiles", () => {
 		expect(statuses.at(-1)).toBe("Invalid file path");
 		expect(filesRef.current).toHaveLength(1);
 		expect(sent).toHaveLength(0);
+	});
+
+	it("switches the active language without changing the default template", () => {
+		const store = new Map([["atomis.language.v1", "rust"]]);
+		vi.stubGlobal("localStorage", {
+			getItem: (key: string) => store.get(key) ?? null,
+			setItem: (key: string, value: string) => void store.set(key, value),
+		});
+		const { rendered, activeLanguageRef } = mount([
+			file("main.zig"),
+			file("main.go"),
+		]);
+
+		act(() => rendered.result.current.selectFile("main.go"));
+
+		expect(activeLanguageRef.current).toBe("go");
+		expect(store.get("atomis.language.v1")).toBe("rust");
 	});
 });

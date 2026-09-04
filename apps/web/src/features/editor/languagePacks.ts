@@ -9,6 +9,7 @@ import { registerZig } from "./languages/zigLanguage.js";
 
 export interface WebLanguagePack {
 	id: Language;
+	label: string;
 	extensions: readonly string[];
 	entryFile: string;
 	/** Monaco language id used for models and providers */
@@ -22,6 +23,7 @@ export interface WebLanguagePack {
 export const WEB_LANGUAGE_PACKS: Record<Language, WebLanguagePack> = {
 	zig: {
 		id: "zig",
+		label: "Zig",
 		extensions: [".zig"],
 		entryFile: "main.zig",
 		monacoId: "zig",
@@ -32,6 +34,7 @@ export const WEB_LANGUAGE_PACKS: Record<Language, WebLanguagePack> = {
 	},
 	rust: {
 		id: "rust",
+		label: "Rust",
 		extensions: [".rs"],
 		entryFile: "main.rs",
 		monacoId: "rust",
@@ -42,6 +45,7 @@ export const WEB_LANGUAGE_PACKS: Record<Language, WebLanguagePack> = {
 	},
 	go: {
 		id: "go",
+		label: "Go",
 		extensions: [".go"],
 		entryFile: "main.go",
 		monacoId: "go",
@@ -52,6 +56,7 @@ export const WEB_LANGUAGE_PACKS: Record<Language, WebLanguagePack> = {
 	},
 	ts: {
 		id: "ts",
+		label: "TypeScript",
 		extensions: [".ts", ".js", ".mjs", ".cjs"],
 		entryFile: "main.ts",
 		monacoId: "typescript",
@@ -62,6 +67,7 @@ export const WEB_LANGUAGE_PACKS: Record<Language, WebLanguagePack> = {
 	},
 	py: {
 		id: "py",
+		label: "Python",
 		extensions: [".py"],
 		entryFile: "main.py",
 		monacoId: "python",
@@ -72,6 +78,7 @@ export const WEB_LANGUAGE_PACKS: Record<Language, WebLanguagePack> = {
 	},
 	c: {
 		id: "c",
+		label: "C",
 		extensions: [".c"],
 		entryFile: "main.c",
 		monacoId: "c",
@@ -82,6 +89,7 @@ export const WEB_LANGUAGE_PACKS: Record<Language, WebLanguagePack> = {
 	},
 	cpp: {
 		id: "cpp",
+		label: "C++",
 		extensions: [".cpp", ".cc"],
 		entryFile: "main.cpp",
 		monacoId: "cpp",

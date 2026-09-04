@@ -1,14 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+	DEFAULT_TEMPLATE_KEY,
 	DEFAULT_LAYOUT,
 	DEFAULT_SETTINGS,
 	flushEntrySourceNow,
+	loadDefaultTemplate,
 	loadEntrySource,
-	loadLanguage,
 	loadLayout,
 	loadSettings,
 	loadValueFmt,
 	loadVimMode,
+	saveDefaultTemplate,
 	saveEntrySource,
 	saveSettings,
 } from "./settings.js";
@@ -32,7 +34,7 @@ describe("persistence loaders", () => {
 		expect(loadAppearance()).toEqual(DEFAULT_APPEARANCE);
 		expect(loadValueFmt()).toBe("dec");
 		expect(loadVimMode()).toBe(true);
-		expect(loadLanguage()).toBe("zig");
+		expect(loadDefaultTemplate()).toBe("zig");
 	});
 
 	it("fall back to defaults on corrupt JSON", () => {
@@ -56,7 +58,7 @@ describe("persistence loaders", () => {
 		expect(loadLayout()).toEqual({ ...DEFAULT_LAYOUT, dock: "bottom" });
 		expect(loadValueFmt()).toBe("hex");
 		expect(loadVimMode()).toBe(false);
-		expect(loadLanguage()).toBe("rust");
+		expect(loadDefaultTemplate()).toBe("rust");
 	});
 
 	it("reject out-of-catalog appearance and language values", () => {
@@ -73,7 +75,14 @@ describe("persistence loaders", () => {
 		});
 		expect(loadAppearance()).toEqual(DEFAULT_APPEARANCE);
 		expect(loadValueFmt()).toBe("dec");
-		expect(loadLanguage()).toBe("zig");
+		expect(loadDefaultTemplate()).toBe("zig");
+	});
+
+	it("persists the chosen default template", () => {
+		const store = stubStorage();
+		saveDefaultTemplate("go");
+		expect(store.get(DEFAULT_TEMPLATE_KEY)).toBe("go");
+		expect(loadDefaultTemplate()).toBe("go");
 	});
 
 	it("never persist manual probes", () => {

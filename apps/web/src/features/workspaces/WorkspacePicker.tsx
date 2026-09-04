@@ -2,6 +2,7 @@ import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import type { Language, WorkspaceMeta } from "@atomis/protocol";
 import { Lucide } from "../../shared/ui/Lucide.js";
+import { WEB_LANGUAGE_PACKS } from "../editor/languagePacks.js";
 
 interface WorkspacePickerProps {
 	workspaces: WorkspaceMeta[];
@@ -34,6 +35,7 @@ function ago(timestamp: number): string {
 export function WorkspacePicker(
 	props: WorkspacePickerProps,
 ): React.JSX.Element {
+	const template = WEB_LANGUAGE_PACKS[props.language];
 	const [name, setName] = useState("");
 	const [renaming, setRenaming] = useState<string | undefined>(undefined);
 	const [renameValue, setRenameValue] = useState("");
@@ -65,7 +67,7 @@ export function WorkspacePicker(
 					<input
 						ref={inputRef}
 						aria-label="New workspace name"
-						placeholder="name a new workspace…"
+						placeholder={`name a new ${template.label} workspace…`}
 						value={name}
 						onChange={(event) => setName(event.target.value)}
 						onKeyDown={(event) => {

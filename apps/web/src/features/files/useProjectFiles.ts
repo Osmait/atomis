@@ -12,7 +12,6 @@ import {
 	isValidProjectPath,
 	normalizeFolderName,
 } from "../../shared/lib/paths.js";
-import { saveLanguage } from "../../shared/stores/settings.js";
 import { closeTab as computeCloseTab } from "../../shared/lib/tabs.js";
 import type { LogSourceLocation, ProjectFile, ProjectFilesReader } from "../../shared/types.js";
 
@@ -110,10 +109,7 @@ export function useProjectFiles(options: ProjectFilesOptions) {
 			pinnedLogLocationRef.current = undefined;
 			logSourceDecorationsRef.current?.clear();
 			const language = languageForPath(path);
-			if (language) {
-				activeLanguageRef.current = language;
-				saveLanguage(language);
-			}
+			if (language) activeLanguageRef.current = language;
 			setTimeout(() => {
 				const model = monacoRef.current?.editor.getModel(
 					monacoRef.current.Uri.parse(file.uri),

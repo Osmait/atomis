@@ -1,5 +1,7 @@
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
+import type { Language } from "@atomis/protocol";
+import { WEB_LANGUAGE_PACKS } from "../editor/languagePacks.js";
 import { VALUE_FMTS, type ValueFmt } from "../../shared/lib/lowlevel.js";
 import { Lucide } from "../../shared/ui/Lucide.js";
 
@@ -41,6 +43,8 @@ type TabId = (typeof TABS)[number]["id"];
 
 interface SettingsModalProps {
 	toggles: Toggle[];
+	defaultTemplate: Language;
+	onDefaultTemplate: (language: Language) => void;
 	valueFmt: ValueFmt;
 	onValueFmt: (fmt: ValueFmt) => void;
 	theme: AppTheme;
@@ -142,6 +146,8 @@ function ToggleRow({ toggle }: { toggle: Toggle }): React.JSX.Element {
  */
 export function SettingsModal({
 	toggles,
+	defaultTemplate,
+	onDefaultTemplate,
 	valueFmt,
 	onValueFmt,
 	theme,
@@ -262,12 +268,39 @@ export function SettingsModal({
 					)}
 
 					{tab === "editor" && (
-						<section className="settings-section">
-							<div className="settings-title">Editor</div>
-							{groupToggles("editor").map((toggle) => (
-								<ToggleRow key={toggle.label} toggle={toggle} />
-							))}
-						</section>
+						<>
+							<section className="settings-section">
+								<div className="settings-title">Default template</div>
+								<p className="settings-description">
+									Used for new scratch sessions and named workspaces. Existing
+									files stay unchanged.
+								</p>
+								<div
+									aria-label="Default template"
+									className="template-grid"
+									role="group"
+								>
+									{Object.values(WEB_LANGUAGE_PACKS).map((template) => (
+										<button
+											aria-pressed={defaultTemplate === template.id}
+											className={defaultTemplate === template.id ? "active" : ""}
+											key={template.id}
+											onClick={() => onDefaultTemplate(template.id)}
+											title={`Start new workspaces with ${template.label}`}
+										>
+											<span className="template-name">{template.label}</span>
+											<code>{template.entryFile}</code>
+										</button>
+									))}
+								</div>
+							</section>
+							<section className="settings-section">
+								<div className="settings-title">Editor</div>
+								{groupToggles("editor").map((toggle) => (
+									<ToggleRow key={toggle.label} toggle={toggle} />
+								))}
+							</section>
+						</>
 					)}
 
 					{tab === "appearance" && (

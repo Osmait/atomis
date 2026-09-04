@@ -12,7 +12,7 @@
 }
 
 .settings-modal {
-	width: 480px;
+	width: min(480px, calc(100vw - 24px));
 	max-height: 74vh;
 	overflow: auto;
 	background: var(--surface);
@@ -60,6 +60,66 @@
 	letter-spacing: 0.12em;
 	text-transform: uppercase;
 	color: var(--overlay);
+}
+
+.settings-description {
+	margin: -4px 0 0;
+	color: var(--dim);
+	font-size: 11.5px;
+	line-height: 1.5;
+}
+
+.template-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+	gap: 6px;
+}
+
+.template-grid button {
+	min-height: 48px;
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 8px;
+	padding: 8px;
+	border-radius: 5px;
+	color: var(--overlay);
+	box-shadow: inset 0 0 0 1px var(--surface0);
+	text-align: left;
+}
+
+.template-grid button:hover {
+	color: var(--text);
+	box-shadow: inset 0 0 0 1px var(--mauve-border);
+}
+
+.template-grid button:focus-visible {
+	outline: 1px solid var(--mauve);
+	outline-offset: 2px;
+}
+
+.template-grid button.active {
+	background: var(--mauve-dim);
+	box-shadow: inset 0 0 0 1px var(--mauve-border);
+}
+
+.template-name {
+	overflow: hidden;
+	color: var(--subtext);
+	font-size: 12px;
+	font-weight: 600;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.template-grid button.active .template-name {
+	color: var(--text);
+}
+
+.template-grid code {
+	justify-self: end;
+	color: var(--dim);
+	font-size: 10.5px;
 }
 
 .settings-toggle {
