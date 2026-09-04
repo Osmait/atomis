@@ -7,6 +7,23 @@ A local-first **Zig, Rust, Go, TypeScript/JavaScript, Python, C and C++** playgr
 
 > **Sandboxed where the kernel allows it.** On Linux with Landlock (6.7+ for the network rules), every process a session spawns is confined to its own workspace with no TCP — toggle it in Settings → Sandbox, check `pnpm run doctor` for the level your kernel enforces. Everywhere else, and with the toggle off, code runs locally with your permissions: pause Auto Run before pasting untrusted code.
 
+## Preview
+
+<table>
+  <thead>
+    <tr>
+      <th width="70%">Desktop</th>
+      <th width="30%">Mobile</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><img src="docs/images/atomis-desktop.png" alt="Atomis desktop workspace with the file tree, Monaco editor, inline runtime values, tests, and terminal" /></td>
+      <td><img src="docs/images/atomis-mobile.png" alt="Atomis mobile workspace with the Monaco editor, touch controls, terminal, and status bar" /></td>
+    </tr>
+  </tbody>
+</table>
+
 ## Requirements
 
 - Linux or macOS
