@@ -76,7 +76,12 @@ pub async fn handle_runtime(state: Arc<AppState>, session: Arc<Session>, socket:
     // same workspace open, so it has to hear about them and about their
     // edits. A scratch session shares nothing and skips all of it.
     let workspace = session.workspace_id.clone();
+    // Subscribe before reading the initial catalog: a peer edit between
+    // the snapshot and subscription must still reach this connection.
+    let changes = state.collab.subscribe();
     if let Some(workspace) = workspace.as_deref() {
+        let lock = state.collab.edit_lock(workspace).await;
+        let _guard = lock.lock().await;
         let revision = state.collab.join(workspace, &session.id).await;
         let _ = outbox_tx.send(ServerEvent::DocumentChanged {
             path: String::new(),
@@ -87,15 +92,29 @@ pub async fn handle_runtime(state: Arc<AppState>, session: Arc<Session>, socket:
         let _ = outbox_tx.send(ServerEvent::WorkspacePeers {
             count: count as u32,
         });
+        if let Ok(snapshot) = session.refresh_files().await {
+            let _ = outbox_tx.send(ServerEvent::ProjectChanged { files: snapshot.files, revision });
+        }
     }
 
     let collab_forwarder = workspace.clone().map(|workspace| {
-        let mut changes = state.collab.subscribe();
+        let mut changes = changes;
         let outbox_tx = outbox_tx.clone();
         let own_id = session.id.clone();
+        let shared_state = Arc::clone(&state);
+        let peer_session = Arc::clone(&session);
         tokio::spawn(async move {
             loop {
                 match changes.recv().await {
+                    Ok(crate::domain::collab::WorkspaceChange::Files { workspace: which, origin }) => {
+                        if which != workspace || origin == own_id { continue; }
+                        let lock = shared_state.collab.edit_lock(&workspace).await;
+                        let _guard = lock.lock().await;
+                        if let Ok(snapshot) = peer_session.refresh_files().await {
+                            let revision = shared_state.collab.revision(&workspace).await;
+                            if outbox_tx.send(ServerEvent::ProjectChanged { files: snapshot.files, revision }).is_err() { break; }
+                        }
+                    }
                     Ok(crate::domain::collab::WorkspaceChange::Peers {
                         workspace: which,
                         count,
@@ -534,6 +553,51 @@ async fn handle_message(
     deps: &DepsControl,
     message: RuntimeClientMessage,
 ) -> Result<(), String> {
+    let mutation = match &message {
+        RuntimeClientMessage::DocumentUpdate { version, path, source, base_revision, .. } =>
+            Some((*version, path.clone(), Some(source.clone()), *base_revision)),
+        RuntimeClientMessage::FileCreate { version, path, base_revision, .. }
+        | RuntimeClientMessage::FileRename { version, path, base_revision, .. }
+        | RuntimeClientMessage::FileDelete { version, path, base_revision, .. } =>
+            Some((*version, path.clone(), None, *base_revision)),
+        RuntimeClientMessage::WorkspaceReset { version, base_revision, .. } =>
+            Some((*version, String::new(), None, *base_revision)),
+        _ => None,
+    };
+    let lock = match session.workspace_id.as_deref() {
+        Some(workspace) if mutation.is_some() || matches!(message, RuntimeClientMessage::RunRequest { .. }) =>
+            Some(collab.edit_lock(workspace).await),
+        _ => None,
+    };
+    let _guard = match &lock { Some(lock) => Some(lock.lock().await), None => None };
+    if let Some(workspace) = session.workspace_id.as_deref() {
+        if let Some((_, path, _, base)) = &mutation {
+            if let Err(conflict) = collab.check_writer_base(workspace, &session.id, *base).await {
+                let _ = outbox.send(ServerEvent::DocumentConflict { path: path.clone(), revision: conflict.current });
+                return Ok(());
+            }
+        }
+        if lock.is_some() { session.refresh_files().await?; }
+    }
+    handle_message_inner(session, scheduler, outbox, deps, message).await?;
+    if let Some((version, path, source, base)) = mutation {
+        if let Some(workspace) = session.workspace_id.as_deref() {
+            let revision = match source {
+                Some(source) => collab.record_edit(workspace, &session.id, &path, &source, base).await,
+                None => collab.record_files(workspace, &session.id, base).await,
+            }.map_err(|_| "Workspace revision changed while locked")?;
+            let _ = outbox.send(ServerEvent::DocumentChanged { path: String::new(), source: String::new(), revision });
+        }
+        let _ = outbox.send(ServerEvent::DocumentSaved { document_version: version });
+    }
+    Ok(())
+}
+
+async fn handle_message_inner(
+    session: &Arc<Session>, scheduler: &Arc<RunScheduler>,
+    outbox: &tokio::sync::mpsc::UnboundedSender<ServerEvent>, deps: &DepsControl,
+    message: RuntimeClientMessage,
+) -> Result<(), String> {
     match message {
         RuntimeClientMessage::DepsList { .. } => {
             send_deps_catalog(session, outbox).await;
@@ -549,48 +613,9 @@ async fn handle_message(
             version,
             path,
             source,
-            base_revision,
             ..
         } => {
-            // In a shared workspace the file on disk is not ours alone. A
-            // write built on a revision that has moved is refused rather
-            // than applied: silently replacing the other device's work is
-            // what this exists to stop. Order matters just as much: the
-            // store persists BEFORE anything is recorded or broadcast, so a
-            // write the store refuses (a raced delete, an oversized
-            // project) is never one the peers already applied.
-            let snapshot = if let Some(workspace) = session.workspace_id.as_deref() {
-                let lock = collab.edit_lock(workspace).await;
-                let _guard = lock.lock().await;
-                if let Err(conflict) = collab.check_base(workspace, base_revision).await {
-                    let _ = outbox.send(ServerEvent::DocumentConflict {
-                        path,
-                        revision: conflict.current,
-                    });
-                    return Ok(());
-                }
-                let snapshot = session.update(version, &path, &source).await?;
-                // Cannot conflict while the guard is held: only record_edit
-                // bumps the revision, and every recording holds this lock.
-                if let Ok(revision) = collab
-                    .record_edit(workspace, &session.id, &path, &source, base_revision)
-                    .await
-                {
-                    // The writer skips its own broadcast, so this is the
-                    // only way it learns the revision it just created —
-                    // without it every write after the first carries a
-                    // base that has moved and is refused. An empty path
-                    // is a revision and nothing else, same as on join.
-                    let _ = outbox.send(ServerEvent::DocumentChanged {
-                        path: String::new(),
-                        source: String::new(),
-                        revision,
-                    });
-                }
-                snapshot
-            } else {
-                session.update(version, &path, &source).await?
-            };
+            let snapshot = session.update(version, &path, &source).await?;
             after_store_change(session, scheduler, outbox, &snapshot, &path, false).await;
             Ok(())
         }
@@ -617,6 +642,12 @@ async fn handle_message(
         RuntimeClientMessage::FileDelete { version, path, .. } => {
             let snapshot = session.delete_file(version, &path).await?;
             after_store_change(session, scheduler, outbox, &snapshot, &path, true).await;
+            Ok(())
+        }
+        RuntimeClientMessage::WorkspaceReset { version, scaffold, .. } => {
+            scheduler.cancel().await;
+            let snapshot = session.reset_files(version, scaffold).await?;
+            after_store_change(session, scheduler, outbox, &snapshot, packs::pack(session.language).entry_file, true).await;
             Ok(())
         }
         RuntimeClientMessage::RunRequest {

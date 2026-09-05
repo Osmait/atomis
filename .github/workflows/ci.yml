@@ -5,10 +5,16 @@
 name: CI
 
 on:
+  # Skip documentation-only diffs, but keep new code directories, app assets,
+  # tests, dependencies and CI/build configuration covered by default.
+  # Do not make these filtered checks required without adding a docs-only gate:
+  # GitHub leaves required checks pending when the whole workflow is skipped.
   push:
     branches: [main, rust-backend]
+    paths-ignore: ["docs/**", "**/*.md", "LICENSE"]
   pull_request:
     branches: [main]
+    paths-ignore: ["docs/**", "**/*.md", "LICENSE"]
 
 concurrency:
   group: ci-${{ github.ref }}

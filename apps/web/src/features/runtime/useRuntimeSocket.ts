@@ -6,7 +6,7 @@ import {
 	type RuntimeServerEvent,
 } from "@atomis/protocol";
 import type { LspClient } from "../editor/lsp/LspClient.js";
-import { websocketUrl } from "../../shared/api/client.js";
+import { apiFetch, websocketUrl } from "../../shared/api/client.js";
 import type { ProjectFilesReader } from "../../shared/types.js";
 import type { Settings } from "../../shared/stores/settings.js";
 
@@ -24,6 +24,7 @@ const QUEUEABLE = new Set([
 	"file.create",
 	"file.rename",
 	"file.delete",
+	"workspace.reset",
 ]);
 const QUEUE_LIMIT = 256;
 
@@ -31,6 +32,9 @@ interface QueuedMessage {
 	type?: string;
 	path?: string;
 	source?: string;
+	newPath?: string;
+	version?: number;
+	baseRevision?: number;
 }
 
 interface RuntimeSocketOptions {
@@ -44,6 +48,7 @@ interface RuntimeSocketOptions {
 	revisionRef: React.RefObject<number | undefined>;
 	lspClientsRef: React.RefObject<Partial<Record<Language, LspClient>>>;
 	setStatus: (status: string) => void;
+	onSessionExpired?: (unsaved: boolean) => Promise<void>;
 }
 
 /**
@@ -66,11 +71,14 @@ export function useRuntimeSocket(options: RuntimeSocketOptions) {
 		revisionRef,
 		lspClientsRef,
 		setStatus,
+		onSessionExpired,
 	} = options;
 	const runtimeRef = useRef<WebSocket | undefined>(undefined);
 	const [reconnect, setReconnect] = useState(0);
 	const retryRef = useRef(0);
 	const pendingRef = useRef<QueuedMessage[]>([]);
+	const unacknowledgedRef = useRef(new Map<number, QueuedMessage>());
+	const recoveringRef = useRef(false);
 	const retryTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
 		undefined,
 	);
@@ -80,11 +88,18 @@ export function useRuntimeSocket(options: RuntimeSocketOptions) {
 	useEffect(() => {
 		retryRef.current = 0;
 		pendingRef.current = [];
+		unacknowledgedRef.current.clear();
 	}, [session]);
 
 	const sendRuntime = useCallback(
 		(message: object): void => {
-			const typed = message as QueuedMessage;
+			const typed = { ...message } as QueuedMessage;
+			if (QUEUEABLE.has(typed.type ?? "") && typed.baseRevision === undefined && revisionRef.current !== undefined)
+				typed.baseRevision = revisionRef.current;
+			// Even an update refused locally is unsaved work that recovery
+			// must preserve (or report as too large), never silently discard.
+			if (QUEUEABLE.has(typed.type ?? "") && typed.version !== undefined)
+				unacknowledgedRef.current.set(typed.version, typed);
 			if (typed.type === "document.update") {
 				const source = typed.source ?? "";
 				// The server closes the socket outright past its frame limit,
@@ -102,7 +117,7 @@ export function useRuntimeSocket(options: RuntimeSocketOptions) {
 			}
 			const socket = runtimeRef.current;
 			if (socket?.readyState === WebSocket.OPEN) {
-				socket.send(JSON.stringify(message));
+				socket.send(JSON.stringify(typed));
 				return;
 			}
 			// Away (screen lock, restart mid-flight): edits and file
@@ -112,13 +127,16 @@ export function useRuntimeSocket(options: RuntimeSocketOptions) {
 			if (!QUEUEABLE.has(typed.type ?? "")) return;
 			const pending = pendingRef.current;
 			if (typed.type === "document.update") {
-				const index = pending.findIndex(
-					(queued) =>
-						queued.type === "document.update" && queued.path === typed.path,
-				);
-				if (index >= 0) {
-					pending[index] = typed;
-					return;
+				// Coalesce only within the suffix of edits, never across a
+				// create/rename/delete. Move the replacement to the end so
+				// interleaved A-B-A edits retain ascending versions.
+				for (let index = pending.length - 1; index >= 0; index--) {
+					const queued = pending[index];
+					if (queued?.type !== "document.update") break;
+					if (queued.path !== typed.path) continue;
+					if (queued.version !== undefined) unacknowledgedRef.current.delete(queued.version);
+					pending.splice(index, 1);
+					break;
 				}
 			}
 			if (pending.length >= QUEUE_LIMIT) {
@@ -127,12 +145,13 @@ export function useRuntimeSocket(options: RuntimeSocketOptions) {
 			}
 			pending.push(typed);
 		},
-		[setStatus],
+		[revisionRef, setStatus],
 	);
 
 	useEffect(() => {
 		if (!session) return;
 		const socket = new WebSocket(websocketUrl("/ws/runtime", session));
+		let disposed = false;
 		runtimeRef.current = socket;
 		socket.addEventListener("open", () => {
 			const reattached = retryRef.current > 0;
@@ -163,7 +182,7 @@ export function useRuntimeSocket(options: RuntimeSocketOptions) {
 			// base revision comes along so a shared workspace can refuse a
 			// write built on what a peer has since replaced — losing THEIR
 			// work silently is exactly what the revisions exist to prevent.
-			if (!entryQueued && (reattached || mainSource !== session.initialSource)) {
+			if (!entryQueued && !session.workspace && (reattached || mainSource !== session.initialSource)) {
 				const version = Math.max(versionRef.current + 1, 2);
 				versionRef.current = version;
 				sendRuntime({
@@ -179,8 +198,26 @@ export function useRuntimeSocket(options: RuntimeSocketOptions) {
 			}
 		});
 		socket.addEventListener("message", (message) => {
+			if (disposed || runtimeRef.current !== socket) return;
 			try {
-				handleRuntimeEvent(JSON.parse(String(message.data)) as never);
+				const event = JSON.parse(String(message.data)) as RuntimeServerEvent;
+				if (event.type === "document.saved") {
+					const accepted = unacknowledgedRef.current.get(event.documentVersion);
+					for (const [version, pending] of unacknowledgedRef.current) {
+						if (version === event.documentVersion || (version < event.documentVersion &&
+							accepted?.type === "document.update" && pending.type === "document.update" && pending.path === accepted.path))
+							unacknowledgedRef.current.delete(version);
+					}
+					return;
+				}
+				if (event.type === "project.changed" && unacknowledgedRef.current.size > 0) {
+					// A peer catalog must not throw away our unconfirmed local work.
+					const dirty = new Set([...unacknowledgedRef.current.values()].flatMap(item =>
+						[item.path, item.newPath].filter((path): path is string => path !== undefined)));
+					const local = filesRef.current.filter(file => dirty.has(file.path));
+					event.files = [...event.files.filter(file => !dirty.has(file.path)), ...local];
+				}
+				handleRuntimeEvent(event);
 			} catch (error) {
 				setStatus(
 					`Runtime protocol error: ${error instanceof Error ? error.message : String(error)}`,
@@ -204,12 +241,27 @@ export function useRuntimeSocket(options: RuntimeSocketOptions) {
 			setStatus(
 				`Runtime disconnected — reconnecting in ${Math.round(delay / 1000)}s (attempt ${attempt})`,
 			);
-			retryTimerRef.current = setTimeout(
-				() => setReconnect((previous) => previous + 1),
-				delay,
-			);
+			retryTimerRef.current = setTimeout(() => {
+				void (async () => {
+					if (onSessionExpired) {
+						try {
+							const response = await apiFetch(`/api/sessions/${session.sessionId}?token=${encodeURIComponent(session.authToken)}`);
+							if (disposed) return;
+							if (response.status === 404 && !recoveringRef.current) {
+								recoveringRef.current = true;
+								try { await onSessionExpired(unacknowledgedRef.current.size > 0); return; }
+								finally { recoveringRef.current = false; }
+							}
+						} catch (error) {
+							if (!disposed) setStatus(`Recovery pending: ${error instanceof Error ? error.message : String(error)}`);
+						}
+					}
+					if (!disposed) setReconnect(previous => previous + 1);
+				})();
+			}, delay);
 		});
 		return () => {
+			disposed = true;
 			// Closing here stops the old session's events from reaching the
 			// new one; the server tears its side down on disconnect.
 			if (runtimeRef.current === socket) runtimeRef.current = undefined;
@@ -223,6 +275,7 @@ export function useRuntimeSocket(options: RuntimeSocketOptions) {
 		handleRuntimeEvent,
 		lspClientsRef,
 		reconnect,
+		onSessionExpired,
 		revisionRef,
 		sendRuntime,
 		session,
@@ -244,6 +297,7 @@ export function useRuntimeSocket(options: RuntimeSocketOptions) {
 		runtimeRef.current = undefined;
 		retryRef.current = 0;
 		pendingRef.current = [];
+		unacknowledgedRef.current.clear();
 		if (retryTimerRef.current !== undefined) {
 			clearTimeout(retryTimerRef.current);
 			retryTimerRef.current = undefined;

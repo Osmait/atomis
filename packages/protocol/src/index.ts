@@ -304,6 +304,7 @@ export const runtimeClientMessageSchema = z.discriminatedUnion("type", [
 			version: z.number().int().positive(),
 			path: projectPathSchema,
 			source: z.string().max(MAX_SOURCE_BYTES),
+			baseRevision: z.number().int().nonnegative().optional(),
 		})
 		.strict(),
 	z
@@ -313,6 +314,7 @@ export const runtimeClientMessageSchema = z.discriminatedUnion("type", [
 			version: z.number().int().positive(),
 			path: projectPathSchema,
 			newPath: projectPathSchema,
+			baseRevision: z.number().int().nonnegative().optional(),
 		})
 		.strict(),
 	z
@@ -321,8 +323,14 @@ export const runtimeClientMessageSchema = z.discriminatedUnion("type", [
 			sessionId,
 			version: z.number().int().positive(),
 			path: projectPathSchema,
+			baseRevision: z.number().int().nonnegative().optional(),
 		})
 		.strict(),
+	z.object({
+		type: z.literal("workspace.reset"), sessionId,
+		version: z.number().int().positive(), scaffold: z.enum(["minimal", "demo"]),
+		baseRevision: z.number().int().nonnegative().optional(),
+	}).strict(),
 	z
 		.object({
 			type: z.literal("run.request"),
@@ -356,6 +364,8 @@ export const runtimeClientMessageSchema = z.discriminatedUnion("type", [
 export type RuntimeClientMessage = z.infer<typeof runtimeClientMessageSchema>;
 
 export type RuntimeServerEvent =
+	| { type: "document.saved"; documentVersion: number }
+	| { type: "project.changed"; files: ProjectFile[]; revision: number }
 	| {
 			type: "deps.catalog";
 			language: Language;

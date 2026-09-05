@@ -104,7 +104,6 @@ import {
 	saveDefaultTemplate,
 	saveEntrySource,
 	saveLayout,
-	saveScaffold,
 	saveSettings,
 	saveValueFmt,
 	type LayoutState,
@@ -282,6 +281,7 @@ export function App(): React.JSX.Element {
 		[runtime.diagnostics],
 	);
 
+	const recoverSessionRef = useRef<(unsaved: boolean) => Promise<void>>(async () => {});
 	const { sendRuntime, closeRuntime } = useRuntimeSocket({
 		session,
 		handleRuntimeEvent,
@@ -292,6 +292,7 @@ export function App(): React.JSX.Element {
 		revisionRef,
 		lspClientsRef,
 		setStatus,
+		onSessionExpired: useCallback((unsaved: boolean) => recoverSessionRef.current(unsaved), []),
 	});
 
 	const ensureLspClient = useCallback(
@@ -425,7 +426,9 @@ export function App(): React.JSX.Element {
 		closeOtherTabs,
 		setSrcCollapsed,
 		setTreeContextMenu,
+		reconcileCatalog,
 	} = project;
+	useEffect(() => reconcileCatalog(files), [files, reconcileCatalog]);
 
 	/**
 	 * A file another session sharing this workspace changed.
@@ -521,7 +524,8 @@ export function App(): React.JSX.Element {
 	// Opening a session is the same work on first load and on every
 	// workspace switch: tear the old one down, ask for a new one, and let
 	// the socket/LSP effects rebuild themselves around it.
-	const { switchToWorkspace, boot, retryBoot } = useSessionLifecycle({
+	const { switchToWorkspace, boot, retryBoot, recoverSession } = useSessionLifecycle({
+		filesRef,
 		activeLanguageRef,
 		// Also the start of every switch attempt, which is why it clears the
 		// previous attempt's error: the picker reopens with it on failure.
@@ -554,6 +558,7 @@ export function App(): React.JSX.Element {
 		settingsRef,
 		versionRef,
 	});
+	recoverSessionRef.current = recoverSession;
 
 	useEffect(boot, [boot]);
 
@@ -841,21 +846,21 @@ export function App(): React.JSX.Element {
 			)
 		)
 			return;
-		saveScaffold("demo");
-		window.location.reload();
-	}, []);
+		if (!session) return;
+		sendRuntime({ type: "workspace.reset", sessionId: session.sessionId, version: ++versionRef.current, scaffold: "demo" });
+	}, [sendRuntime, session]);
 
 	const clearWorkspace = useCallback((): void => {
-		const entry = WEB_LANGUAGE_PACKS[defaultTemplate].entryFile;
+		const entry = WEB_LANGUAGE_PACKS[session?.language ?? defaultTemplate].entryFile;
 		if (
 			!window.confirm(
 				`Clear the workspace? Only a fresh ${entry} will remain.`,
 			)
 		)
 			return;
-		saveScaffold("minimal");
-		window.location.reload();
-	}, [defaultTemplate]);
+		if (!session) return;
+		sendRuntime({ type: "workspace.reset", sessionId: session.sessionId, version: ++versionRef.current, scaffold: "minimal" });
+	}, [defaultTemplate, sendRuntime, session]);
 
 	// Switching workspace swaps every file on disk, so the session is
 	// rebuilt — but in place: the page never reloads. Tear down what is
@@ -1024,6 +1029,7 @@ export function App(): React.JSX.Element {
 
 				<div className="inner">
 					<EditorPane
+						readOnly={switching}
 						appearance={appearance}
 						chrome={
 							!zen && chrome.toolbar
@@ -1166,7 +1172,10 @@ export function App(): React.JSX.Element {
 			{editorContextMenu && (
 				<EditorContextMenu
 					menu={editorContextMenu}
-					onCopy={() => void copyFromEditor(editorContextMenu.copyText)}
+					onCopy={() => void copyFromEditor(
+						editorContextMenu.copyText,
+						editorContextMenu.copyEditor,
+					)}
 					onPaste={() => void pasteIntoEditor()}
 				/>
 			)}

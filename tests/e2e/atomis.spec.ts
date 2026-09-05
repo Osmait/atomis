@@ -362,6 +362,74 @@ pub fn main() void {
 		.toContain("applyTax");
 });
 
+test("copy preserves selected diagnostic text in the expanded error popup", async ({ page }) => {
+	await openClean(page);
+	await replaceEditor(page, "pub fn main() void {\n    const value = missing_name;\n    _ = value;\n}\n");
+	await expect(page.locator(".state-compile_error")).toBeVisible();
+	await page.getByRole("textbox", { name: "Editor content" }).focus();
+	await page.keyboard.press("F8");
+	const message = page.locator(".marker-widget .message").first();
+	await expect(message).toContainText("missing_name");
+	// A real mouse drag, not a synthetic DOM selection: the failure depended
+	// on focus moving between Monaco, its widget, and the custom menu.
+	const box = await message.boundingBox();
+	if (!box) throw new Error("Diagnostic has no visible bounds");
+	const y = box.y + box.height / 2;
+	await page.mouse.move(box.x + 10, y);
+	await page.mouse.down();
+	await page.mouse.move(box.x + 140, y, { steps: 20 });
+	await page.mouse.up();
+	const selected = await page.evaluate(() => window.getSelection()?.toString());
+	expect(selected?.trim().length).toBeGreaterThan(3);
+	await page.mouse.click(box.x + 40, y, { button: "right" });
+	await expect(page.getByRole("menuitem", { name: "Paste", exact: true })).toHaveCount(0);
+	await page.getByRole("menuitem", { name: "Copy diagnostic", exact: true }).click();
+	await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(selected?.trim());
+});
+
+test("copy uses the selected reference preview and clicked result, then keeps the main editor usable", async ({ page }) => {
+	await openClean(page);
+	await replaceEditor(page, `const std = @import("std");
+
+fn applyTax(price: i32, tax: i32) i32 {
+    return price + tax;
+}
+
+pub fn main() void {
+    const total = applyTax(40, 3);
+    std.debug.print("{}", .{total});
+}
+`);
+	await expect(page.locator(".state-succeeded")).toBeVisible();
+	await page.locator('.view-line span:text-is("applyTax")').first().click();
+	await page.keyboard.press("Shift+F12");
+	const preview = page.locator(".reference-zone-widget .preview .monaco-editor");
+	await expect(preview).toBeVisible();
+	const word = preview.getByText("return", { exact: true });
+	// Double-click navigates out of Monaco's reference peek. Select with
+	// the keyboard instead, then right-click inside that real selection.
+	await word.click();
+	await page.keyboard.press("Home");
+	for (let i = 0; i < 6; i++) await page.keyboard.press("Shift+ArrowRight");
+	await word.click({ button: "right" });
+	await page.getByRole("menuitem", { name: "Copy reference", exact: true }).click();
+	await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("return");
+	await expect(preview.getByRole("textbox")).toBeFocused();
+	// The result list is outside the embedded editor, and must not inherit
+	// the declaration selected in the main editor behind the peek.
+	const result = page.locator(".reference-zone-widget .ref-tree .monaco-list-row").filter({ hasText: "total = applyTax" });
+	const expected = (await result.innerText()).replaceAll("\u00A0", " ").trim();
+	await result.click({ button: "right" });
+	await expect(page.getByRole("menuitem", { name: "Paste", exact: true })).toHaveCount(0);
+	await page.getByRole("menuitem", { name: "Copy reference", exact: true }).click();
+	await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(expected);
+	await page.keyboard.press("Escape");
+	await expect(preview).toHaveCount(0);
+	await replaceEditor(page, 'const std = @import("std");\npub fn main() void {\n    const after_copy: i32 = 42;\n    std.debug.print("{}", .{after_copy});\n}\n');
+	await expect(page.locator(".view-lines")).toContainText("after_copy");
+	await expect(page.locator(".state-succeeded")).toBeVisible();
+});
+
 test("ZLS completion opens Monaco suggestions with real std symbols", async ({
 	page,
 }) => {

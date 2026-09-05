@@ -14,19 +14,19 @@ import type { Stream } from "./Stream";
 import type { TestCase } from "./TestCase";
 import type { TestStatus } from "./TestStatus";
 
-export type ServerEvent = { "type": "run.state", documentVersion: number, runId?: string, state: RunState, } | { "type": "workspace.peers", count: number, } | { "type": "document.changed", path: string, source: string, revision: number, } | { "type": "document.conflict", path: string, revision: number, } | { "type": "preferences.changed", 
+export type ServerEvent = { "type": "document.saved", documentVersion: number, } | { "type": "project.changed", files: Array<ProjectFile>, revision: number, } | { "type": "run.state", documentVersion: number, runId?: string, state: RunState, } | { "type": "workspace.peers", count: number, } | { "type": "document.changed", path: string, source: string, revision: number, } | { "type": "document.conflict", path: string, revision: number, } | { "type": "preferences.changed",
 /**
  * Only the keys that changed; a null value means the key was removed.
  */
-preferences: { [key in string]: string | null }, } | { "type": "project.files", documentVersion: number, files: Array<ProjectFile>, } | { "type": "deps.catalog", language: Language, 
+preferences: { [key in string]: string | null }, } | { "type": "project.files", documentVersion: number, files: Array<ProjectFile>, } | { "type": "deps.catalog", language: Language,
 /**
  * None when the language has no package manager Atomis drives.
  */
-supported: boolean, manifest?: string, inputHint?: string, 
+supported: boolean, manifest?: string, inputHint?: string,
 /**
  * Installing runs code written by the package author (npm).
  */
-runsUntrustedCode: boolean, dependencies: Array<Dependency>, } | { "type": "deps.state", state: DepsState, name?: string, error?: string, } | { "type": "deps.output", stream: Stream, chunk: string, } | { "type": "probe.catalog", documentVersion: number, probes: Array<ProbeDescriptor>, } | { "type": "test.catalog", documentVersion: number, tests: Array<TestCase>, } | { "type": "test.result", documentVersion: number, runId: string, testId?: string, name: string, status: TestStatus, durationMs: number, message?: string, } | { "type": "test.summary", documentVersion: number, runId: string, passed: number, failed: number, skipped: number, leaked: number, durationMs: number, } | { "type": "probe_value", 
+runsUntrustedCode: boolean, dependencies: Array<Dependency>, } | { "type": "deps.state", state: DepsState, name?: string, error?: string, } | { "type": "deps.output", stream: Stream, chunk: string, } | { "type": "probe.catalog", documentVersion: number, probes: Array<ProbeDescriptor>, } | { "type": "test.catalog", documentVersion: number, tests: Array<TestCase>, } | { "type": "test.result", documentVersion: number, runId: string, testId?: string, name: string, status: TestStatus, durationMs: number, message?: string, } | { "type": "test.summary", documentVersion: number, runId: string, passed: number, failed: number, skipped: number, leaked: number, durationMs: number, } | { "type": "probe_value",
 /**
  * Always 1; the client narrows on it.
  */

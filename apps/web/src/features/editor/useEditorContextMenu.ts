@@ -4,6 +4,7 @@ import type { Monaco } from "@monaco-editor/react";
 import type { EditorContextMenuState } from "./editorContextMenu.js";
 import {
 	getContextualEditorCopy,
+	getEditorCopyText,
 	getMonacoEditorTarget,
 	isNestedMonacoEditor,
 } from "./editorContextMenu.js";
@@ -35,28 +36,33 @@ export function useEditorContextMenu({
 				.getEditors()
 				.find(
 					(candidate: MonacoApi.editor.ICodeEditor) =>
-						candidate.getContainerDomNode() === clickedEditorNode,
+						candidate.getDomNode() === clickedEditorNode,
 				);
-			if (clickedEditor) {
-				editorRef.current =
-					clickedEditor as MonacoApi.editor.IStandaloneCodeEditor;
-			}
 			const contextualCopy = getContextualEditorCopy(event.target);
-			const copyLabel = nestedEditor
-				? "Copy reference"
-				: contextualCopy?.label;
+			// Never redirect the app's main editor ref to a disposable peek editor.
+			// A missing preview must not silently copy from the main model either.
+			const copyEditor = clickedEditor ??
+				(editorRef.current?.getDomNode() === clickedEditorNode
+					? editorRef.current
+					: undefined);
+			const copyText = contextualCopy?.text ?? (copyEditor
+				? getEditorCopyText(
+					copyEditor,
+					copyEditor.getTargetAtClientPoint(event.clientX, event.clientY)?.position,
+				)
+				: undefined);
+			if (copyText === undefined) return;
+			const copyLabel = contextualCopy?.label ??
+				(nestedEditor ? "Copy reference" : undefined);
 			event.preventDefault();
 			event.stopPropagation();
 			setEditorContextMenu({
 				x: Math.min(event.clientX, window.innerWidth - 170),
 				y: Math.min(event.clientY, window.innerHeight - 90),
 				allowPaste: !nestedEditor && !contextualCopy,
+				copyText,
+				...(copyEditor ? { copyEditor } : {}),
 				...(copyLabel ? { copyLabel } : {}),
-				...(!nestedEditor && contextualCopy
-					? {
-							copyText: contextualCopy.text,
-						}
-					: {}),
 			});
 		};
 		window.addEventListener("contextmenu", showContextMenu, true);

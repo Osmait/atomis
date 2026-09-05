@@ -120,6 +120,15 @@ export function useRuntimeEvents(options: RuntimeEventsOptions) {
 
 	const handleRuntimeEvent = useCallback(
 		(event: RuntimeServerEvent): void => {
+			if (event.type === "document.saved") return;
+			if (event.type === "project.changed") {
+				if (event.revision < (revisionRef.current ?? 0)) return;
+				revisionRef.current = event.revision;
+				setRevision(event.revision);
+				setProjectFiles(event.files);
+				setStale(true);
+				return;
+			}
 			// Not session state: a setting someone changed on another device.
 			// It carries no documentVersion, so handle it before the gate.
 			if (event.type === "preferences.changed") {
@@ -134,6 +143,7 @@ export function useRuntimeEvents(options: RuntimeEventsOptions) {
 				return;
 			}
 			if (event.type === "document.changed") {
+				if (event.revision < (revisionRef.current ?? 0)) return;
 				revisionRef.current = event.revision;
 				setRevision(event.revision);
 				// The join announcement carries the revision and no file.

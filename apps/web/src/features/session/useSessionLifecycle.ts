@@ -12,7 +12,7 @@ import {
 	saveActiveWorkspace,
 } from "../../shared/stores/workspaces.js";
 import type { LspClient } from "../editor/lsp/LspClient.js";
-import type { ProjectFile } from "../../shared/types.js";
+import type { ProjectFile, ProjectFilesReader } from "../../shared/types.js";
 import type { Settings } from "../../shared/stores/settings.js";
 
 interface SessionLifecycleOptions {
@@ -25,6 +25,7 @@ interface SessionLifecycleOptions {
 	settingsRef: React.RefObject<Settings>;
 	lspClientsRef: React.RefObject<Partial<Record<Language, LspClient>>>;
 	setProjectFiles: (files: ProjectFile[]) => void;
+	filesRef: ProjectFilesReader;
 	setSettings: (update: (previous: Settings) => Settings) => void;
 	setStartupError: (message: string | undefined) => void;
 	/**
@@ -63,6 +64,7 @@ export function useSessionLifecycle(options: SessionLifecycleOptions) {
 		settingsRef,
 		lspClientsRef,
 		setProjectFiles,
+		filesRef,
 		setSettings,
 		setStartupError,
 		onSwitchFailed,
@@ -83,6 +85,24 @@ export function useSessionLifecycle(options: SessionLifecycleOptions) {
 	 * going back to it must be a real reopen, not a no-op.
 	 */
 	const lastOpenFailedRef = useRef(false);
+	const recoveryRef = useRef<Promise<void> | undefined>(undefined);
+	const operationRef = useRef(0);
+	const adoptSession = useCallback((created: CreateSessionResponse): void => {
+		lastOpenFailedRef.current = false;
+		sessionRef.current = created;
+		const entry = WEB_LANGUAGE_PACKS[created.language].entryFile;
+		entryRef.current = entry;
+		activeLanguageRef.current = created.language;
+		versionRef.current = 1;
+		resetToEntry(entry);
+		setProjectFiles(created.files ?? [{ path: entry, uri: created.documentUri, source: created.initialSource }]);
+		setSession(created);
+		if (created.sandboxSupport === "unsupported") setSettings(previous => {
+			const next = { ...previous, sandbox: false };
+			settingsRef.current = next;
+			return next;
+		});
+	}, [activeLanguageRef, entryRef, resetToEntry, sessionRef, setProjectFiles, setSession, setSettings, settingsRef, versionRef]);
 
 	const requestSession = useCallback(
 		(workspace: string | undefined): Promise<Response> =>
@@ -100,6 +120,7 @@ export function useSessionLifecycle(options: SessionLifecycleOptions) {
 
 	const openSession = useCallback(
 		async (workspace: string | undefined): Promise<void> => {
+			const operation = ++operationRef.current;
 			// A previous session means this is a switch, not the boot.
 			const isSwitch = sessionRef.current !== undefined;
 			try {
@@ -113,56 +134,73 @@ export function useSessionLifecycle(options: SessionLifecycleOptions) {
 				if (!response.ok)
 					throw new Error(`Session creation failed (${response.status})`);
 				const created = (await response.json()) as CreateSessionResponse;
-				lastOpenFailedRef.current = false;
-				sessionRef.current = created;
-				const entry = WEB_LANGUAGE_PACKS[created.language].entryFile;
-				entryRef.current = entry;
-				activeLanguageRef.current = created.language;
-				resetToEntry(entry);
-				const projectFiles = (
-					created as CreateSessionResponse & { files?: ProjectFile[] }
-				).files ?? [
-					{
-						path: entry,
-						uri: created.documentUri,
-						source: created.initialSource,
-					},
-				];
-				setProjectFiles(projectFiles);
-				setSession(created);
-				// The kernel decides whether the sandbox can be honoured;
-				// a stored preference never turns it on where it cannot run.
-				if (created.sandboxSupport === "unsupported")
-					setSettings((previous) => {
-						const next = { ...previous, sandbox: false };
-						settingsRef.current = next;
-						return next;
-					});
+				if (operation !== operationRef.current) return;
+				adoptSession(created);
 			} catch (error) {
+				if (operation !== operationRef.current) return;
 				lastOpenFailedRef.current = true;
 				const message =
 					error instanceof Error ? error.message : String(error);
 				if (isSwitch) onSwitchFailed(message);
 				else setStartupError(message);
 			} finally {
-				setSwitching(false);
+				if (operation === operationRef.current) setSwitching(false);
 			}
 		},
 		[
-			activeLanguageRef,
-			entryRef,
+			adoptSession,
 			onSwitchFailed,
 			requestSession,
-			resetToEntry,
 			sessionRef,
-			setProjectFiles,
-			setSession,
-			setSettings,
 			setStartupError,
 			setSwitching,
-			settingsRef,
 		],
 	);
+
+	/** Recover only after the API confirms expiry; failed attempts leave the
+	 * complete local mirror intact. A dirty persistent session gets a copy,
+	 * never an unconditional overwrite of another device's work. */
+	const recoverSession = useCallback((unsaved: boolean): Promise<void> => {
+		if (recoveryRef.current) return recoveryRef.current;
+		const previous = sessionRef.current;
+		if (!previous) return Promise.resolve();
+		const operation = ++operationRef.current;
+		const attempt = async (): Promise<void> => {
+			setSwitching(true);
+			setStatus("Restoring session…");
+			const files = filesRef.current.map(({ path, source }) => ({ path, source }));
+			try {
+				let workspace = previous.workspace?.id;
+				if (workspace && unsaved) {
+					const response = await apiFetch("/api/workspaces", {
+						method: "POST", headers: { "content-type": "application/json" },
+						body: JSON.stringify({ name: `${previous.workspace?.name ?? "Workspace"} (recovered)`, language: previous.language, files }),
+					});
+					if (!response.ok) throw new Error(`Could not preserve recovery workspace (${response.status})`);
+					workspace = ((await response.json()) as { workspace: { id: string } }).workspace.id;
+				}
+				const response = await apiFetch("/api/sessions", {
+					method: "POST", headers: { "content-type": "application/json" },
+					body: JSON.stringify({ language: previous.language, ...(workspace ? { workspace } : { files }) }),
+				});
+				if (!response.ok) throw new Error(`Session recovery failed (${response.status})`);
+				const created = (await response.json()) as CreateSessionResponse;
+				// A user switching workspace during the request owns the newer session.
+				if (sessionRef.current !== previous || operation !== operationRef.current) return;
+				for (const client of Object.values(lspClientsRef.current)) client?.dispose();
+				lspClientsRef.current = {};
+				closeRuntime();
+				resetRuntime();
+				setCapabilities({});
+				setPeek(null);
+				saveActiveWorkspace(created.workspace?.id);
+				adoptSession(created);
+				setStatus(previous.workspace && unsaved ? "Local edits preserved in a recovery workspace" : "Session restored");
+			} finally { if (operation === operationRef.current) setSwitching(false); }
+		};
+		recoveryRef.current = attempt().finally(() => { recoveryRef.current = undefined; });
+		return recoveryRef.current;
+	}, [adoptSession, closeRuntime, filesRef, lspClientsRef, resetRuntime, sessionRef, setCapabilities, setPeek, setStatus, setSwitching]);
 
 	const switchToWorkspace = useCallback(
 		(id: string | undefined): void => {
@@ -223,5 +261,5 @@ export function useSessionLifecycle(options: SessionLifecycleOptions) {
 		void openSession(loadActiveWorkspace());
 	}, [openSession, setStartupError, setStatus]);
 
-	return { openSession, switchToWorkspace, boot, retryBoot };
+	return { openSession, switchToWorkspace, boot, retryBoot, recoverSession };
 }

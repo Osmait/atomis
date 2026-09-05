@@ -62,6 +62,14 @@ pub(crate) async fn create_session(
                 .into_response()
         }
     };
+    if let Some(files) = &request.files {
+        if request.workspace.is_some() {
+            return (StatusCode::BAD_REQUEST, Json(json!({ "error": "Recovery cannot overwrite an existing workspace" }))).into_response();
+        }
+        if let Err(error) = protocol::validate_source_files(files) {
+            return (StatusCode::BAD_REQUEST, Json(json!({ "error": error }))).into_response();
+        }
+    }
     match state
         .sessions
         .create(
@@ -71,7 +79,10 @@ pub(crate) async fn create_session(
         )
         .await
     {
-        Ok(response) => Json(response).into_response(),
+        Ok(response) => match restore_new_session(&state, response, request.files.as_deref()).await {
+            Ok(response) => Json(response).into_response(),
+            Err(error) => internal(error),
+        },
         Err(error) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({ "error": error })),
@@ -85,6 +96,32 @@ pub(crate) struct CreateWorkspaceRequest {
     name: Option<String>,
     language: Option<Language>,
     scaffold: Option<protocol::WorkspaceScaffold>,
+    files: Option<Vec<protocol::SourceFile>>,
+}
+
+async fn restore_new_session(
+    state: &AppState, mut response: protocol::CreateSessionResponse,
+    files: Option<&[protocol::SourceFile]>,
+) -> Result<protocol::CreateSessionResponse, String> {
+    if let Some(files) = files {
+        let session = state.sessions.authenticate(&response.session_id, &response.auth_token).await.ok_or("Session vanished")?;
+        match session.replace_files(1, files).await {
+            Ok(snapshot) => { response.files = snapshot.files; response.initial_source = snapshot.source; }
+            Err(error) => { state.sessions.destroy(&response.session_id).await; return Err(error); }
+        }
+    }
+    Ok(response)
+}
+
+/// Lets a reconnect distinguish a network failure from an expired session.
+pub(crate) async fn session_alive(
+    State(state): State<Arc<AppState>>, Path(id): Path<String>,
+    headers: HeaderMap, Query(query): Query<WsQuery>,
+) -> Response {
+    if !allowed_read(&state, &headers) { return StatusCode::FORBIDDEN.into_response(); }
+    if state.sessions.authenticate(&id, &query.token).await.is_some() {
+        Json(json!({ "alive": true })).into_response()
+    } else { StatusCode::NOT_FOUND.into_response() }
 }
 
 #[derive(serde::Deserialize)]
@@ -120,6 +157,11 @@ pub(crate) async fn create_workspace(
         )
             .into_response();
     };
+    if let Some(files) = &request.files {
+        if let Err(error) = protocol::validate_source_files(files) {
+            return (StatusCode::BAD_REQUEST, Json(json!({ "error": error }))).into_response();
+        }
+    }
     let Some(name) = crate::domain::workspace::sanitize_name(request.name.as_deref().unwrap_or("")) else {
         return (
             StatusCode::BAD_REQUEST,
@@ -155,7 +197,12 @@ pub(crate) async fn create_workspace(
         .await
     {
         Ok(created) => {
-            state.sessions.destroy(&created.session_id).await;
+            let session_id = created.session_id.clone();
+            if let Err(error) = restore_new_session(&state, created, request.files.as_deref()).await {
+                let _ = tokio::fs::remove_dir_all(&dir).await;
+                return internal(error);
+            }
+            state.sessions.destroy(&session_id).await;
             Json(json!({ "workspace": meta })).into_response()
         }
         Err(error) => {

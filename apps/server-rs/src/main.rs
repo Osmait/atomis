@@ -22,6 +22,7 @@ use http::routes::{
     create_session, create_workspace, delete_workspace, doctor_route,
     get_preferences, health, list_workspaces, put_preferences, rename_workspace,
     ws_lsp_route, ws_runtime_route,
+    session_alive,
 };
 use state::AppState;
 
@@ -111,10 +112,11 @@ async fn main() {
     let mut app = Router::new()
         .route("/api/health", get(health))
         .route("/api/doctor", get(doctor_route))
-        .route("/api/sessions", post(create_session))
+        .route("/api/sessions", post(create_session).layer(axum::extract::DefaultBodyLimit::max(protocol::MAX_PROJECT_BYTES * 6 + 65536)))
+        .route("/api/sessions/{id}", get(session_alive))
         .route(
             "/api/workspaces",
-            get(list_workspaces).post(create_workspace),
+            get(list_workspaces).post(create_workspace).layer(axum::extract::DefaultBodyLimit::max(protocol::MAX_PROJECT_BYTES * 6 + 65536)),
         )
         .route(
             "/api/workspaces/{id}",
