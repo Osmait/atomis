@@ -13,6 +13,16 @@
 //   node scripts/loadtest.mjs [--languages zig,py] [--stages 1,2,4,8]
 //       [--stage-seconds 45] [--think-ms 3000] [--runs 8] [--lsp]
 //       [--cpus 2] [--memory 2G] [--out bench/load-latest.json]
+//       [--server <binary>] [--perf <perf.data>] [--perf-period-us 5000]
+//
+// --perf records the whole process tree with `perf record` (DWARF call
+// graphs, user space only) for flame graphs: the server and every compiler,
+// program and language server it starts. It samples every N µs of each
+// thread's CPU time rather than at a frequency: perf's frequency mode starts
+// every new thread at the shortest period, so the many short-lived processes
+// here (a linker with a thread per core, alive 10 ms) came out with hundreds
+// of samples each and dwarfed everything that actually used the CPU. Pair it with a server built with
+// symbols and frame pointers (see docs/railway.md, "Profiling").
 //
 // Like bench.mjs it starts a server it owns, with its own preferences,
 // workspaces and session directory — never the running instance, whose
@@ -50,6 +60,9 @@ const CPUS = flag("--cpus", "");
 const MEMORY = flag("--memory", "");
 const OUT = flag("--out", "bench/load-latest.json");
 const WITH_LSP = has("--lsp");
+const SERVER = flag("--server", join(root, "apps/server-rs/target/release/atomis-server"));
+const PERF = flag("--perf", "");
+const PERF_PERIOD_NS = String(Number(flag("--perf-period-us", "5000")) * 1000);
 const HEADERS = { origin: BASE };
 
 const ENTRY = { zig: "zig", ts: "ts", py: "py", go: "go", rust: "rs", c: "c", cpp: "cpp" };
@@ -154,7 +167,10 @@ async function startServer() {
 			"--unit",
 			unit,
 			...properties,
-			join(root, "apps/server-rs/target/release/atomis-server"),
+			...(PERF
+				? ["perf", "record", "--quiet", "-e", "task-clock:u", "-c", PERF_PERIOD_NS, "--call-graph", "dwarf,16384", "-o", PERF, "--"]
+				: []),
+			SERVER,
 		],
 		{
 			env: {
@@ -490,7 +506,7 @@ async function stage(sampler, concurrency, languages) {
 
 // ── main ─────────────────────────────────────────────────────────────────
 
-if (!existsSync(join(root, "apps/server-rs/target/release/atomis-server"))) {
+if (!existsSync(SERVER)) {
 	console.error("No release server: run `pnpm build` first.");
 	process.exit(1);
 }
@@ -577,7 +593,13 @@ try {
 	};
 } finally {
 	sampler.stop();
-	server.kill("SIGTERM");
+	// Under perf, perf is the process here: SIGINT makes it stop the server
+	// and finish writing the profile, which must be waited for.
+	server.kill(PERF ? "SIGINT" : "SIGTERM");
+	if (PERF)
+		await new Promise((resolve) => {
+			server.once("exit", resolve);
+		});
 }
 
 const outPath = isAbsolute(OUT) ? OUT : join(root, OUT);

@@ -109,3 +109,31 @@ histogram_quantile(0.95, sum by (le, language) (rate(atomis_run_duration_seconds
 atomis_cgroup_memory_bytes
 sum by (language) (atomis_lsp_servers)
 ```
+
+## Profiling
+
+`perf` flame graphs of the server and every process it starts, under the
+same load test. Needs `perf` and a user-space profiling permission
+(`kernel.perf_event_paranoid` ≤ 2, the default on most distributions).
+
+```bash
+# A server with symbols and frame pointers, beside the normal build.
+CARGO_TARGET_DIR=apps/server-rs/target-prof CARGO_PROFILE_RELEASE_STRIP=false \
+  CARGO_PROFILE_RELEASE_DEBUG=line-tables-only RUSTFLAGS="-C force-frame-pointers=yes" \
+  cargo build --release --manifest-path apps/server-rs/Cargo.toml
+
+node scripts/loadtest.mjs --server apps/server-rs/target-prof/release/atomis-server \
+  --perf /tmp/atomis.data --perf-period-us 1000 --stages 4,8 --stage-seconds 45
+perf script -i /tmp/atomis.data -F comm,pid,tid,time,event,ip,sym,dso > /tmp/script.txt
+python3 scripts/fold-perf.py /tmp/script.txt /tmp/steady.folded --from 0.28 --to 0.95
+python3 scripts/flame-report.py /tmp/flame.html "Steady load=/tmp/steady.folded"
+```
+
+Samples are taken per millisecond of each thread's CPU, not at a
+frequency: perf's frequency mode starts every new thread at its shortest
+period, and the short-lived, many-threaded processes here (a linker with a
+thread per core, alive 10 ms) then outnumber everything that really used
+the CPU. Samples taken inside the kernel have no user stack; `fold-perf.py`
+keeps them as `[kernel]` under their process instead of dropping them. Pick
+`--from/--to` from the load test's timeseries phases to separate the cold
+start from steady load.
