@@ -6,6 +6,7 @@ use std::net::SocketAddr;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
+use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::Router;
 
@@ -25,6 +26,45 @@ use http::routes::{
     ws_lsp_route, ws_runtime_route,
 };
 use state::AppState;
+
+/// Caching for the built UI. Everything under /assets/ is named by its
+/// content hash, so a browser may keep it forever and never ask again; the
+/// pages that reference those names must be checked on every visit, or a
+/// deploy would keep serving the old UI. Without either header browsers
+/// guessed, and revalidated all fourteen files on each visit for a while
+/// after every deploy: a round trip each, which over a phone link is the
+/// load. API and socket routes are left alone.
+async fn cache_headers(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let path = request.uri().path().to_owned();
+    let mut response = next.run(request).await;
+    if path.starts_with("/api/") || path.starts_with("/ws/") || !response.status().is_success() {
+        return response;
+    }
+    let is_html = response
+        .headers()
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.starts_with("text/html"));
+    // A missing asset reaches the single-page fallback and would come back
+    // as index.html — cached forever under that name, from a page left
+    // open across a deploy. It is a 404.
+    if path.starts_with("/assets/") && is_html {
+        return axum::http::StatusCode::NOT_FOUND.into_response();
+    }
+    let policy = if path.starts_with("/assets/") {
+        "public, max-age=31536000, immutable"
+    } else {
+        "no-cache"
+    };
+    response
+        .headers_mut()
+        .entry(axum::http::header::CACHE_CONTROL)
+        .or_insert(axum::http::HeaderValue::from_static(policy));
+    response
+}
 
 /// Resolves when the process that spawned us is gone.
 ///
@@ -175,7 +215,9 @@ async fn main() {
                     .precompressed_br()
                     .precompressed_gzip(),
             );
-        app = app.fallback_service(serve);
+        app = app
+            .fallback_service(serve)
+            .layer(axum::middleware::from_fn(cache_headers));
     }
 
     let app = app.with_state(Arc::clone(&state));
