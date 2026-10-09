@@ -143,7 +143,7 @@ pub async fn run_doctor() -> Vec<DoctorCheck> {
         ("Python", "python3", "3.9+ (optional, enables Python sessions)"),
         (
             "Python",
-            "pyright-langserver",
+            "pyright",
             "any (optional, enables Python editor features)",
         ),
         ("C/C++", "clang", "15+ (optional, enables C sessions)"),

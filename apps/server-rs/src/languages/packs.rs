@@ -271,11 +271,15 @@ pub static PACKS: [LanguagePack; 7] = [
             compatible: python_compatible,
             expected: "Python 3.9+",
         },
+        // `pyright-langserver` has no --version: without --stdio it exits
+        // with an error, so probing it marked Python's editor features
+        // unavailable on every machine. `pyright` ships in the same package
+        // and answers with the version both of them are.
         lsp: Some(ToolCheck {
-            command: "pyright-langserver",
+            command: "pyright",
             args: &["--version"],
             compatible: any_digit,
-            expected: "pyright-langserver",
+            expected: "pyright",
         }),
         lsp_command: Some("pyright-langserver"),
         execute: crate::languages::py::boxed_run,
