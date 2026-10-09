@@ -18,24 +18,25 @@ use crate::util::{now_ms, random_uuid};
 pub type Outbox = UnboundedSender<ServerEvent>;
 
 /// How many runs may compile or execute at once, across every session:
-/// `ATOMIS_MAX_CONCURRENT_RUNS`, or one per CPU this process may use (a
-/// container's CPU quota included).
+/// `ATOMIS_MAX_CONCURRENT_RUNS`, unlimited when unset or `0`.
 ///
-/// Unbounded, sixteen people on two vCPUs meant sixteen compilers sharing
-/// them — every run slowed down together, the slowest took 40 s, and the
-/// memory of all of them at once (a Zig build alone is ~430 MB) reached the
-/// container's limit. Queued, each run gets a whole CPU and the memory
-/// ceiling follows the CPU count instead of the number of people.
-fn run_slots(raw: Option<&str>, cpus: usize) -> usize {
+/// A hard ceiling for small plans, off by default because measuring it
+/// argued against it: on 2 vCPUs with 8 people, one slot per CPU tripled
+/// the median run (a 40 ms Python run queued behind 1-2 s Zig builds,
+/// where the scheduler used to interleave them) and still did not beat
+/// unlimited at the tail. What had pushed memory to the container's limit
+/// under load was every new session rebuilding Go's standard library,
+/// fixed by sharing its cache; unlimited now peaks under 1 GB with 16.
+fn run_slots(raw: Option<&str>) -> usize {
     raw.and_then(|value| value.trim().parse::<usize>().ok())
         .filter(|slots| *slots > 0)
-        .unwrap_or(cpus.max(1))
+        .unwrap_or(tokio::sync::Semaphore::MAX_PERMITS)
 }
 
 static RUN_SLOTS: std::sync::LazyLock<tokio::sync::Semaphore> = std::sync::LazyLock::new(|| {
-    let cpus = std::thread::available_parallelism().map_or(2, usize::from);
-    let slots = run_slots(std::env::var("ATOMIS_MAX_CONCURRENT_RUNS").ok().as_deref(), cpus);
-    tokio::sync::Semaphore::new(slots)
+    tokio::sync::Semaphore::new(run_slots(
+        std::env::var("ATOMIS_MAX_CONCURRENT_RUNS").ok().as_deref(),
+    ))
 });
 
 /// What actually executes a run. Injected so the scheduler's gating —
@@ -537,12 +538,13 @@ mod tests {
     }
 
     #[test]
-    fn run_slots_follow_the_cpus_unless_configured() {
-        assert_eq!(run_slots(None, 4), 4);
-        assert_eq!(run_slots(Some("2"), 16), 2);
-        // Zero would queue every run forever; it means "use the default".
-        assert_eq!(run_slots(Some("0"), 4), 4);
-        assert_eq!(run_slots(None, 0), 1);
+    fn runs_are_unlimited_unless_a_ceiling_is_configured() {
+        let unlimited = tokio::sync::Semaphore::MAX_PERMITS;
+        assert_eq!(run_slots(None), unlimited);
+        assert_eq!(run_slots(Some(" 4 ")), 4);
+        // Zero would queue every run forever; it means "no ceiling".
+        assert_eq!(run_slots(Some("0")), unlimited);
+        assert_eq!(run_slots(Some("many")), unlimited);
     }
 
     #[tokio::test]

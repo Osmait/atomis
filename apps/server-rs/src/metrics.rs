@@ -241,7 +241,7 @@ pub fn render(gauges: &Gauges) -> String {
 
     header(&mut out, "atomis_runs_in_flight", "gauge", "Runs currently compiling or executing.");
     let _ = writeln!(out, "atomis_runs_in_flight {}", metrics.runs_in_flight.load(Ordering::Relaxed));
-    header(&mut out, "atomis_runs_queued", "gauge", "Runs waiting for a free slot (ATOMIS_MAX_CONCURRENT_RUNS).");
+    header(&mut out, "atomis_runs_queued", "gauge", "Runs waiting for a free slot, when ATOMIS_MAX_CONCURRENT_RUNS sets a ceiling.");
     let _ = writeln!(out, "atomis_runs_queued {}", metrics.runs_queued.load(Ordering::Relaxed));
     header(&mut out, "atomis_sessions", "gauge", "Live sessions, including those in their reconnect grace.");
     let _ = writeln!(out, "atomis_sessions {}", gauges.sessions);

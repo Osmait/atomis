@@ -22,7 +22,7 @@ Resource knobs, all optional:
 | Variable | Default | Effect |
 |---|---|---|
 | `ATOMIS_LSP_IDLE_SECS` | `600` | stop a language server its editor has not used for this long; the next edit starts a new one. `0` keeps them while the tab is open |
-| `ATOMIS_MAX_CONCURRENT_RUNS` | CPUs available | runs beyond this wait in a queue instead of sharing the CPUs and the memory limit |
+| `ATOMIS_MAX_CONCURRENT_RUNS` | unlimited | a hard ceiling on runs at once; the rest queue. Measured on 2 vCPU it raised the median run (cheap runs wait behind Zig builds), so set it only to bound memory on a very small plan |
 | `ATOMIS_GOPLS_MEMLIMIT` | `128MiB` | gopls's soft memory limit (`GOMEMLIMIT`); `off` leaves Go's default |
 
 The image runs as uid 10001, and Railway mounts volumes owned by root. If the
@@ -79,7 +79,7 @@ curl -H "Authorization: Bearer $ATOMIS_TOKEN" https://<service>.up.railway.app/a
 | `atomis_run_duration_seconds{language}` | histogram | request-to-result wall time |
 | `atomis_run_phase_seconds_total{language,phase}` | counter | instrument / compile / execute time as the runner reports it |
 | `atomis_runs_in_flight` | gauge | runs compiling or executing right now |
-| `atomis_runs_queued` | gauge | runs waiting for a slot; persistently above zero means the service needs more vCPU |
+| `atomis_runs_queued` | gauge | runs waiting for a slot, only with `ATOMIS_MAX_CONCURRENT_RUNS` set |
 | `atomis_sessions` | gauge | live sessions, including those in their reconnect grace |
 | `atomis_lsp_servers{language}` | gauge | language server processes alive |
 | `atomis_cgroup_cpu_seconds_total` | counter | the container's CPU, as billed |
