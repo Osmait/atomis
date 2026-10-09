@@ -530,8 +530,8 @@ impl RuntimeClientMessage {
                 manual_probe_ids,
                 ..
             } => {
-                if !(300..=500).contains(debounce_ms) {
-                    return Err("debounceMs outside 300..500".into());
+                if !(100..=500).contains(debounce_ms) {
+                    return Err("debounceMs outside 100..500".into());
                 }
                 if !(100..=10_000).contains(timeout_ms) {
                     return Err("timeoutMs outside 100..10000".into());

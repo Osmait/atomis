@@ -23,7 +23,10 @@ export interface Settings {
 export const DEFAULT_SETTINGS: Settings = {
 	autoRun: true,
 	autoInspect: true,
-	debounceMs: 400,
+	// The pause after the last keystroke before Auto Run fires. Most of the
+	// wait between typing and seeing a value once runs got fast (a warm Zig
+	// run is ~40 ms): 400 ms of it was this.
+	debounceMs: 150,
 	timeoutMs: 2000,
 	manualProbeIds: [],
 	// The session response reports what the kernel supports; until then
@@ -64,7 +67,13 @@ const SOURCE_KEY = "atomis.source.v1";
  * from another app version — would make the server refuse the WHOLE
  * settings.update on every connection, forever.
  */
-const DEBOUNCE_MS_RANGE = [300, 500] as const;
+const DEBOUNCE_MS_RANGE = [100, 500] as const;
+/**
+ * The previous default. Nothing in the UI sets the debounce, so a stored
+ * 400 is that default saved along with the rest, not a choice: read it as
+ * "use the current default", or every existing device keeps the old wait.
+ */
+const LEGACY_DEFAULT_DEBOUNCE_MS = 400;
 const TIMEOUT_MS_RANGE = [100, 10_000] as const;
 
 function clampRange(
@@ -81,7 +90,11 @@ function sanitizeStoredSettings(raw: Partial<Settings>): Partial<Settings> {
 	if (typeof raw.autoInspect === "boolean") out.autoInspect = raw.autoInspect;
 	if (typeof raw.sandbox === "boolean") out.sandbox = raw.sandbox;
 	if (typeof raw.network === "boolean") out.network = raw.network;
-	if (typeof raw.debounceMs === "number" && Number.isFinite(raw.debounceMs))
+	if (
+		typeof raw.debounceMs === "number" &&
+		Number.isFinite(raw.debounceMs) &&
+		raw.debounceMs !== LEGACY_DEFAULT_DEBOUNCE_MS
+	)
 		out.debounceMs = clampRange(raw.debounceMs, DEBOUNCE_MS_RANGE);
 	if (typeof raw.timeoutMs === "number" && Number.isFinite(raw.timeoutMs))
 		out.timeoutMs = clampRange(raw.timeoutMs, TIMEOUT_MS_RANGE);

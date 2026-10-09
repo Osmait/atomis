@@ -259,7 +259,7 @@ const settings = z
 	.object({
 		autoRun: z.boolean(),
 		autoInspect: z.boolean(),
-		debounceMs: z.number().int().min(300).max(500),
+		debounceMs: z.number().int().min(100).max(500),
 		timeoutMs: z.number().int().min(100).max(10_000),
 		manualProbeIds: z.array(z.string().min(1).max(128)).max(1000),
 		/** Confine spawned processes to the workspace (Linux/Landlock). */
