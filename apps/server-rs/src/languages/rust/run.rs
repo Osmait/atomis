@@ -26,14 +26,69 @@ use crate::languages::runtime::{cancelled_outcome, reset_generated, Events, Runn
 const COMPILE_TIMEOUT_MS: u64 = 60_000;
 
 fn cargo_env(root: &std::path::Path) -> Vec<(String, String)> {
+    cargo_env_in(root, "target")
+}
+
+/// Cargo locks its target directory for the whole build, so two builds
+/// meant to overlap need one each.
+fn cargo_env_in(root: &std::path::Path, target: &str) -> Vec<(String, String)> {
     vec![
         ("CARGO_NET_OFFLINE".into(), "true".into()),
         (
             "CARGO_TARGET_DIR".into(),
-            root.join("target").to_string_lossy().into_owned(),
+            root.join(target).to_string_lossy().into_owned(),
         ),
         ("CARGO_TERM_COLOR".into(), "never".into()),
     ]
+}
+
+/// A background build that is killed with the run that started it: a run
+/// that ends early (a compile error, a superseding edit) does not leave a
+/// cargo building tests nobody will run.
+struct TestBuild(tokio::task::JoinHandle<supervisor::ProcessResult>);
+
+impl Drop for TestBuild {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+/// Starts `cargo test --no-run` for the visible source right away. It only
+/// reads `src/` — the uninstrumented `atomis-check` binary — so it can
+/// build while the program is instrumented, compiled and run, instead of
+/// after: that wait was ~70 ms of every warm Rust run with tests.
+fn start_test_build(
+    session: &Session,
+    settings: &SessionSettings,
+    cancel: &CancellationToken,
+) -> TestBuild {
+    let root = session.root.clone();
+    let sandbox = session.sandbox(settings);
+    let cancel = cancel.clone();
+    TestBuild(tokio::spawn(async move {
+        supervisor::run(
+            "cargo",
+            &[
+                "test".into(),
+                "--bin".into(),
+                "atomis-check".into(),
+                "--no-run".into(),
+                "--message-format=json".into(),
+                "--quiet".into(),
+                "--offline".into(),
+            ],
+            RunOptions {
+                cwd: root.clone(),
+                limits: ProcessLimits::new(COMPILE_TIMEOUT_MS, 8 * 1024 * 1024, 512 * 1024),
+                cancel,
+                probe_fd: false,
+                env: cargo_env_in(&root, "target-tests"),
+                sandbox,
+                callbacks: StreamCallbacks::default(),
+            },
+        )
+        .await
+    }))
 }
 
 // ── test discovery (RustTestDiscovery.ts) ──
@@ -328,6 +383,7 @@ pub async fn run(
 
     emit(RunnerEvent::State(RunState::Instrumenting));
     let test_catalog = discover_rust_tests(&snapshot.files);
+    let mut test_build = (!test_catalog.is_empty()).then(|| start_test_build(session, settings, &cancel));
     emit(RunnerEvent::TestCatalog(test_catalog.clone()));
     let _ = reset_generated(&session.root).await;
     let instrumenter = packs::instrumenter_path(Language::Rust);
@@ -476,7 +532,7 @@ pub async fn run(
                 source: Some("runtime".to_string()),
             }],
         });
-        run_tests(session, settings, &test_catalog, &cancel, &events).await;
+        run_tests(session, settings, &test_catalog, test_build.take(), &cancel, &events).await;
         metrics.reason = Some("abnormal exit".to_string());
         return RunnerOutcome {
             result: metrics,
@@ -487,7 +543,7 @@ pub async fn run(
         owner: "runtime".to_string(),
         diagnostics: Vec::new(),
     });
-    run_tests(session, settings, &test_catalog, &cancel, &events).await;
+    run_tests(session, settings, &test_catalog, test_build.take(), &cancel, &events).await;
     RunnerOutcome {
         result: metrics,
         terminal_state: TerminalState::Succeeded,
@@ -498,35 +554,18 @@ async fn run_tests(
     session: &Session,
     settings: &SessionSettings,
     catalog: &[TestCase],
+    build: Option<TestBuild>,
     cancel: &CancellationToken,
     events: &Events,
 ) {
+    let Some(mut build) = build else { return };
     if catalog.is_empty() || cancel.is_cancelled() {
         return;
     }
     let _ = events.send(RunnerEvent::State(RunState::Testing));
-    let build = supervisor::run(
-        "cargo",
-        &[
-            "test".into(),
-            "--bin".into(),
-            "atomis-check".into(),
-            "--no-run".into(),
-            "--message-format=json".into(),
-            "--quiet".into(),
-            "--offline".into(),
-        ],
-        RunOptions {
-            cwd: session.root.clone(),
-            limits: ProcessLimits::new(COMPILE_TIMEOUT_MS, 8 * 1024 * 1024, 512 * 1024),
-            cancel: cancel.clone(),
-            probe_fd: false,
-            env: cargo_env(&session.root),
-            sandbox: session.sandbox(settings),
-            callbacks: StreamCallbacks::default(),
-        },
-    )
-    .await;
+    let Ok(build) = (&mut build.0).await else {
+        return;
+    };
     if build.cancelled || cancel.is_cancelled() {
         return;
     }
