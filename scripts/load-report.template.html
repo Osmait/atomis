@@ -264,6 +264,10 @@ const css = (name) => `var(${name})`;
 // Language servers stop this long after their editor goes quiet; before
 // that existed, they lived until the tab closed (plus the 2-minute grace).
 const LSP_IDLE_HOURS = 10 / 60;
+// A Zig session keeps two incremental compile servers (program and tests),
+// ~120 MB each, for as long as its language servers live. Only in results
+// taken after they existed (those whose Zig runs are incremental-fast).
+const ZIG_COMPILE_SERVERS_MB = 240;
 const RECONNECT_GRACE_HOURS = 2 / 60;
 
 // ── the model ────────────────────────────────────────────────────────────
@@ -279,7 +283,8 @@ function estimate(s, D = { U, S, reaper: true }) {
   const runSeconds = mean((l) => U.profile[l].warmRunP50Ms / 1000);
   const runAnonMb = mean((l) => U.profile[l].peakAnonMb);
   const lspOf = (l) => U.lsp?.languages?.[l];
-  const lspMb = s.lsp ? langs.reduce((t, l) => t + Math.max(0, lspOf(l)?.heldAnonMb ?? 0), 0) : 0;
+  const zigServers = langs.includes("zig") && (U.profile.zig?.warmRunP50Ms ?? Infinity) < 200 ? ZIG_COMPILE_SERVERS_MB : 0;
+  const lspMb = (s.lsp ? langs.reduce((t, l) => t + Math.max(0, lspOf(l)?.heldAnonMb ?? 0), 0) : 0) + zigServers;
   const lspCpu = s.lsp ? langs.reduce((t, l) => t + (lspOf(l)?.cpuSeconds ?? 0), 0) : 0;
   const coldCpu = mean((l) => U.profile[l].coldCpuSeconds);
 
@@ -387,7 +392,7 @@ function render() {
 
   const rows = [
     ["cpu", "CPU", "--s1", `${fmtN(e.cpuSeconds / 3600, 1)} vCPU-hours · ${fmtN(e.runs)} runs × ${fmtN(e.cpuPerRun, 2)} CPU-s`],
-    ["ram", "Memory", "--s2", `${fmtN(e.gbMinutes / 60, 0)} GB-hours · ${fmtN(e.awakeHours)} h awake, ${fmtN(e.lspMb)} MB of language servers per person`],
+    ["ram", "Memory", "--s2", `${fmtN(e.gbMinutes / 60, 0)} GB-hours · ${fmtN(e.awakeHours)} h awake, ${fmtN(e.lspMb)} MB of language and compile servers per person`],
     ["egress", "Network egress", "--s3", `${fmtN(e.egressGb, 2)} GB`],
     ["volume", "Volume", "--s4", `${state.volume} GB`],
   ];
@@ -634,6 +639,7 @@ function drawReadings() {
   const notes = [
     `CPU: runs per month × the mean CPU-seconds of a warm run in the selected languages, plus, once per person per active day, a cold first build and each language server's startup. Billed at $${PRICE.vcpuMin}/vCPU-minute.`,
     `Memory: the idle server (${fmtN((S ?? U).idle.memoryMb)} MB) for every hour the service is awake, the runs in flight while people are active (arrival rate × run time × peak memory per run), and each person's language servers for as long as they live: the active hours plus ${LSP_IDLE_HOURS * 60} minutes, after which an unused one stops. Before that existed, a tab left open kept them all day. Billed at $${PRICE.gbMin}/GB-minute.`,
+    `A Zig session also keeps two incremental compile servers (~${ZIG_COMPILE_SERVERS_MB} MB together) alive for as long as its language servers; they are what makes a warm Zig run take tens of milliseconds instead of hundreds.`,
     `Language server memory is what each holds right after its first indexing on a cold cache. gopls holds much less once its cache is warm (about 70 MB under the 128 MiB limit), which on Railway lives in the /data volume and survives deploys, so the Go line is pessimistic.`,
     `The gopls memory limit has a price on a cold cache: its first indexing took about three times the CPU (30 to 78 CPU-seconds here) because the collector works harder under the limit. That is a fraction of a cent, once per volume, against a few hundred MB held for every hour someone edits Go.`,
     `Serverless adds ${SLEEP_TAIL_HOURS * 60} minutes of awake time per active day, the time Railway waits before putting a quiet service to sleep. A sleeping service's first request wakes it and may take a few seconds.`,

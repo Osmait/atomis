@@ -24,6 +24,7 @@ Resource knobs, all optional:
 | `ATOMIS_LSP_IDLE_SECS` | `600` | stop a language server its editor has not used for this long; the next edit starts a new one. `0` keeps them while the tab is open |
 | `ATOMIS_MAX_CONCURRENT_RUNS` | unlimited | a hard ceiling on runs at once; the rest queue. Measured on 2 vCPU it raised the median run (cheap runs wait behind Zig builds), so set it only to bound memory on a very small plan |
 | `ATOMIS_GOPLS_MEMLIMIT` | `128MiB` | gopls's soft memory limit (`GOMEMLIMIT`); `off` leaves Go's default |
+| `ATOMIS_ZIG_INCREMENTAL` | on | `0` builds Zig with `zig build` every run instead of keeping incremental compile servers (~120 MB each, two per Zig session, stopped after 10 idle minutes) |
 
 The image runs as uid 10001, and Railway mounts volumes owned by root. If the
 first deploy logs a permission error under `/data`, set `RAILWAY_RUN_UID=0`.
@@ -58,8 +59,9 @@ What dominates the bill, from the measurements:
 - **Language servers**, while anyone is editing. rust-analyzer holds about
   half a GB, tsserver about 380 MB, the others under 150 MB; they stop ten
   minutes after their editor goes quiet.
-- **Runs**, in CPU-seconds each. Zig is the most expensive per run by an
-  order of magnitude; Python the cheapest.
+- **Runs**, in CPU-seconds each: a few hundredths for Zig (incremental) and
+  Python, a few tenths for TypeScript, Go, Rust and C/C++. A Zig session also
+  holds its compile servers, ~120 MB each, while it is in use.
 - **The idle server** is a few MB and close to zero CPU: with Serverless on,
   a personal instance spends most of the month asleep.
 
@@ -82,6 +84,7 @@ curl -H "Authorization: Bearer $ATOMIS_TOKEN" https://<service>.up.railway.app/a
 | `atomis_runs_queued` | gauge | runs waiting for a slot, only with `ATOMIS_MAX_CONCURRENT_RUNS` set |
 | `atomis_sessions` | gauge | live sessions, including those in their reconnect grace |
 | `atomis_lsp_servers{language}` | gauge | language server processes alive |
+| `atomis_zig_compile_servers` | gauge | Zig compilers kept running for incremental builds |
 | `atomis_cgroup_cpu_seconds_total` | counter | the container's CPU, as billed |
 | `atomis_cgroup_memory_bytes` | gauge | the container's memory, as billed |
 | `atomis_process_cpu_seconds_total` | counter | the server plus the children it has reaped |
