@@ -181,6 +181,7 @@ pub async fn run(
             command_prefix_args: vec![instrumenter.to_string_lossy().into_owned()],
             extra_args: &|_| Vec::new(),
             timeout_ms: 10_000,
+            worker: None,
         },
     )
     .await;

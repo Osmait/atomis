@@ -350,6 +350,7 @@ pub async fn run(
                 }
             },
             timeout_ms: 5000,
+            worker: None,
         },
     )
     .await;

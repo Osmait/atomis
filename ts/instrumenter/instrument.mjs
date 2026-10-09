@@ -263,7 +263,7 @@ export function instrument(source, uri, autoInspect, manualIds, fileId) {
 	return { generated, probes, parseDiagnostics: [] };
 }
 
-function render(result, output, sourceMap, version) {
+export function render(result, output, sourceMap, version) {
 	const payload = {
 		protocolVersion: 1,
 		documentVersion: version,

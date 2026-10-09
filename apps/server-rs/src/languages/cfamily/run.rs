@@ -372,6 +372,7 @@ pub async fn run(
             ],
             extra_args: &|_| Vec::new(),
             timeout_ms: 15_000,
+            worker: None,
         },
     )
     .await;

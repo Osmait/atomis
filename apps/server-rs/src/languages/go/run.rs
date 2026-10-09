@@ -237,6 +237,7 @@ pub async fn run(
             command_prefix_args: Vec::new(),
             extra_args: &|_| Vec::new(),
             timeout_ms: 5000,
+            worker: None,
         },
     )
     .await;

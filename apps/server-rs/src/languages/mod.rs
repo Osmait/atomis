@@ -8,6 +8,7 @@
 
 pub mod cfamily;
 pub mod common;
+pub mod instrument_worker;
 pub mod deps;
 pub mod doctor;
 pub mod go;
