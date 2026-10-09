@@ -1,0 +1,5089 @@
+{
+  "takenAt": "2026-10-09T20:59:02.629Z",
+  "commit": "5bc1512",
+  "host": {
+    "cpus": 12,
+    "cpuModel": "AMD Ryzen 5 5600X 6-Core Processor"
+  },
+  "limits": {
+    "cpus": null,
+    "memory": null
+  },
+  "config": {
+    "stages": [
+      1,
+      2,
+      4,
+      8,
+      16
+    ],
+    "stageSeconds": 60,
+    "thinkMs": 3000,
+    "profileRuns": 10
+  },
+  "idle": {
+    "memoryMb": 47.4,
+    "anonMb": 1.1,
+    "cores": 0
+  },
+  "retainedAfterLoadMb": 1777.8,
+  "retainedAfterLoadAnonMb": 12.1,
+  "profile": {
+    "zig": {
+      "coldRunMs": 7758.3,
+      "coldCpuSeconds": 11.319,
+      "coldOk": true,
+      "warmRunP50Ms": 665.4,
+      "warmRunP95Ms": 1118.6,
+      "cpuSecondsPerRun": 2.2311,
+      "peakMemoryMb": 561.6,
+      "peakAnonMb": 432,
+      "failures": 0,
+      "lastBreakdown": {
+        "instrumentationMs": 10,
+        "compilationMs": 612.7,
+        "executionMs": 8.6
+      }
+    },
+    "ts": {
+      "coldRunMs": 385.3,
+      "coldCpuSeconds": 0.607,
+      "coldOk": true,
+      "warmRunP50Ms": 266.2,
+      "warmRunP95Ms": 279.9,
+      "cpuSecondsPerRun": 0.4762,
+      "peakMemoryMb": 389.6,
+      "peakAnonMb": 61.5,
+      "failures": 0,
+      "lastBreakdown": {
+        "instrumentationMs": 121.1,
+        "compilationMs": 74.2,
+        "executionMs": 55.8
+      }
+    },
+    "py": {
+      "coldRunMs": 86.8,
+      "coldCpuSeconds": 0.088,
+      "coldOk": true,
+      "warmRunP50Ms": 42.7,
+      "warmRunP95Ms": 46.3,
+      "cpuSecondsPerRun": 0.0427,
+      "peakMemoryMb": 331.2,
+      "peakAnonMb": 3.3,
+      "failures": 0,
+      "lastBreakdown": {
+        "instrumentationMs": 24.3,
+        "compilationMs": 0,
+        "executionMs": 18.8
+      }
+    },
+    "go": {
+      "coldRunMs": 2761.6,
+      "coldCpuSeconds": 10.23,
+      "coldOk": true,
+      "warmRunP50Ms": 143,
+      "warmRunP95Ms": 155,
+      "cpuSecondsPerRun": 0.2722,
+      "peakMemoryMb": 534.3,
+      "peakAnonMb": 153.5,
+      "failures": 0,
+      "lastBreakdown": {
+        "instrumentationMs": 2.2,
+        "compilationMs": 133.1,
+        "executionMs": 2.1
+      }
+    },
+    "rust": {
+      "coldRunMs": 244.7,
+      "coldCpuSeconds": 0.397,
+      "coldOk": true,
+      "warmRunP50Ms": 153,
+      "warmRunP95Ms": 163.5,
+      "cpuSecondsPerRun": 0.1931,
+      "peakMemoryMb": 462.5,
+      "peakAnonMb": 82.6,
+      "failures": 0,
+      "lastBreakdown": {
+        "instrumentationMs": 1.7,
+        "compilationMs": 80.1,
+        "executionMs": 1.7
+      }
+    },
+    "cpp": {
+      "coldRunMs": 550.2,
+      "coldCpuSeconds": 0.55,
+      "coldOk": true,
+      "warmRunP50Ms": 228.5,
+      "warmRunP95Ms": 247,
+      "cpuSecondsPerRun": 0.2283,
+      "peakMemoryMb": 410.3,
+      "peakAnonMb": 29.4,
+      "failures": 0,
+      "lastBreakdown": {
+        "instrumentationMs": 45.4,
+        "compilationMs": 169.3,
+        "executionMs": 2.4
+      }
+    }
+  },
+  "lsp": {
+    "languages": {
+      "zig": {
+        "initializeMs": 50.2,
+        "readyMs": 150.2,
+        "ready": true,
+        "cpuSeconds": 7.76,
+        "heldAnonMb": 83.5,
+        "peakMemoryMb": 648
+      },
+      "ts": {
+        "initializeMs": 150.5,
+        "readyMs": 651.4,
+        "ready": true,
+        "cpuSeconds": 3.1,
+        "heldAnonMb": 379.9,
+        "peakMemoryMb": 956.2
+      },
+      "py": {
+        "initializeMs": 200.1,
+        "readyMs": 400.2,
+        "ready": true,
+        "cpuSeconds": 0.75,
+        "heldAnonMb": 95,
+        "peakMemoryMb": 1056.3
+      },
+      "go": {
+        "initializeMs": 50.1,
+        "readyMs": 200.3,
+        "ready": true,
+        "cpuSeconds": 77.74,
+        "heldAnonMb": 184.8,
+        "peakMemoryMb": 1563.1
+      },
+      "rust": {
+        "initializeMs": 50.2,
+        "readyMs": 100.6,
+        "ready": true,
+        "cpuSeconds": 4.36,
+        "heldAnonMb": 489.1,
+        "peakMemoryMb": 1948
+      },
+      "cpp": {
+        "initializeMs": 50.7,
+        "readyMs": 301.4,
+        "ready": true,
+        "cpuSeconds": 1.76,
+        "heldAnonMb": 144.7,
+        "peakMemoryMb": 2109.3
+      }
+    },
+    "totalHeldAnonMb": 1377
+  },
+  "stages": [
+    {
+      "concurrency": 1,
+      "runs": 14,
+      "runsPerMinute": 13.3,
+      "failures": 0,
+      "lost": 0,
+      "p50Ms": 569.2,
+      "p95Ms": 2304.9,
+      "p99Ms": 2304.9,
+      "avgCores": 0.505,
+      "cpuSecondsPerRun": 2.2689,
+      "peakMemoryMb": 615.8,
+      "peakAnonMb": 277,
+      "byLanguage": {
+        "zig": {
+          "runs": 14,
+          "p50Ms": 569.2,
+          "p95Ms": 2304.9
+        }
+      }
+    },
+    {
+      "concurrency": 2,
+      "runs": 44,
+      "runsPerMinute": 40.8,
+      "failures": 0,
+      "lost": 0,
+      "p50Ms": 322,
+      "p95Ms": 957.8,
+      "p99Ms": 2089.7,
+      "avgCores": 0.816,
+      "cpuSecondsPerRun": 1.2001,
+      "peakMemoryMb": 974.2,
+      "peakAnonMb": 304.5,
+      "byLanguage": {
+        "zig": {
+          "runs": 16,
+          "p50Ms": 659.5,
+          "p95Ms": 2089.7
+        },
+        "ts": {
+          "runs": 28,
+          "p50Ms": 283.1,
+          "p95Ms": 383.4
+        }
+      }
+    },
+    {
+      "concurrency": 4,
+      "runs": 68,
+      "runsPerMinute": 60.5,
+      "failures": 0,
+      "lost": 0,
+      "p50Ms": 268.5,
+      "p95Ms": 843.5,
+      "p99Ms": 2449,
+      "avgCores": 0.8,
+      "cpuSecondsPerRun": 0.793,
+      "peakMemoryMb": 1221.1,
+      "peakAnonMb": 210.7,
+      "byLanguage": {
+        "zig": {
+          "runs": 14,
+          "p50Ms": 762.9,
+          "p95Ms": 2449
+        },
+        "ts": {
+          "runs": 24,
+          "p50Ms": 287.9,
+          "p95Ms": 360.6
+        },
+        "py": {
+          "runs": 16,
+          "p50Ms": 49.5,
+          "p95Ms": 64.7
+        },
+        "go": {
+          "runs": 14,
+          "p50Ms": 165,
+          "p95Ms": 227
+        }
+      }
+    },
+    {
+      "concurrency": 8,
+      "runs": 161,
+      "runsPerMinute": 126.4,
+      "failures": 0,
+      "lost": 0,
+      "p50Ms": 302.4,
+      "p95Ms": 947.5,
+      "p99Ms": 1703,
+      "avgCores": 1.948,
+      "cpuSecondsPerRun": 0.9247,
+      "peakMemoryMb": 1642.4,
+      "peakAnonMb": 495.1,
+      "byLanguage": {
+        "zig": {
+          "runs": 41,
+          "p50Ms": 745.7,
+          "p95Ms": 1645.5
+        },
+        "ts": {
+          "runs": 36,
+          "p50Ms": 321.3,
+          "p95Ms": 823
+        },
+        "py": {
+          "runs": 21,
+          "p50Ms": 53.3,
+          "p95Ms": 82.1
+        },
+        "go": {
+          "runs": 16,
+          "p50Ms": 204,
+          "p95Ms": 254.8
+        },
+        "rust": {
+          "runs": 21,
+          "p50Ms": 218.1,
+          "p95Ms": 280.2
+        },
+        "cpp": {
+          "runs": 26,
+          "p50Ms": 302.4,
+          "p95Ms": 371.5
+        }
+      }
+    },
+    {
+      "concurrency": 16,
+      "runs": 289,
+      "runsPerMinute": 265.9,
+      "failures": 0,
+      "lost": 0,
+      "p50Ms": 274.1,
+      "p95Ms": 1178.7,
+      "p99Ms": 4057.8,
+      "avgCores": 2.703,
+      "cpuSecondsPerRun": 0.61,
+      "peakMemoryMb": 2348.4,
+      "peakAnonMb": 766.6,
+      "byLanguage": {
+        "zig": {
+          "runs": 30,
+          "p50Ms": 1101.2,
+          "p95Ms": 4064.8
+        },
+        "ts": {
+          "runs": 55,
+          "p50Ms": 337.9,
+          "p95Ms": 669.1
+        },
+        "py": {
+          "runs": 71,
+          "p50Ms": 63,
+          "p95Ms": 130.4
+        },
+        "go": {
+          "runs": 50,
+          "p50Ms": 203.8,
+          "p95Ms": 483.6
+        },
+        "rust": {
+          "runs": 43,
+          "p50Ms": 273.9,
+          "p95Ms": 514.5
+        },
+        "cpp": {
+          "runs": 40,
+          "p50Ms": 310.3,
+          "p95Ms": 589.3
+        }
+      }
+    }
+  ],
+  "timeseries": [
+    {
+      "t": 1,
+      "phase": "startup",
+      "cores": 1.542,
+      "memoryMb": 233.2,
+      "anonMb": 188.5,
+      "pids": 26
+    },
+    {
+      "t": 2,
+      "phase": "startup",
+      "cores": 0.994,
+      "memoryMb": 239.2,
+      "anonMb": 194.1,
+      "pids": 26
+    },
+    {
+      "t": 3,
+      "phase": "startup",
+      "cores": 1.355,
+      "memoryMb": 284.3,
+      "anonMb": 229.7,
+      "pids": 26
+    },
+    {
+      "t": 4,
+      "phase": "idle",
+      "cores": 0.061,
+      "memoryMb": 47.4,
+      "anonMb": 1.1,
+      "pids": 14
+    },
+    {
+      "t": 5,
+      "phase": "idle",
+      "cores": 0,
+      "memoryMb": 47.4,
+      "anonMb": 1.1,
+      "pids": 14
+    },
+    {
+      "t": 6,
+      "phase": "idle",
+      "cores": 0,
+      "memoryMb": 47.4,
+      "anonMb": 1.1,
+      "pids": 14
+    },
+    {
+      "t": 7,
+      "phase": "idle",
+      "cores": 0,
+      "memoryMb": 47.4,
+      "anonMb": 1.1,
+      "pids": 14
+    },
+    {
+      "t": 8,
+      "phase": "idle",
+      "cores": 0,
+      "memoryMb": 47.3,
+      "anonMb": 1.1,
+      "pids": 14
+    },
+    {
+      "t": 9,
+      "phase": "idle",
+      "cores": 0,
+      "memoryMb": 47.3,
+      "anonMb": 1.1,
+      "pids": 14
+    },
+    {
+      "t": 10,
+      "phase": "idle",
+      "cores": 0,
+      "memoryMb": 47.3,
+      "anonMb": 1.1,
+      "pids": 14
+    },
+    {
+      "t": 11,
+      "phase": "idle",
+      "cores": 0,
+      "memoryMb": 47.3,
+      "anonMb": 1.1,
+      "pids": 14
+    },
+    {
+      "t": 12,
+      "phase": "idle",
+      "cores": 0,
+      "memoryMb": 47.3,
+      "anonMb": 1.1,
+      "pids": 14
+    },
+    {
+      "t": 13,
+      "phase": "idle",
+      "cores": 0,
+      "memoryMb": 47.3,
+      "anonMb": 1.1,
+      "pids": 14
+    },
+    {
+      "t": 14,
+      "phase": "idle",
+      "cores": 0,
+      "memoryMb": 47.3,
+      "anonMb": 1.1,
+      "pids": 13
+    },
+    {
+      "t": 15,
+      "phase": "idle",
+      "cores": 0,
+      "memoryMb": 47.3,
+      "anonMb": 1.1,
+      "pids": 13
+    },
+    {
+      "t": 16,
+      "phase": "idle",
+      "cores": 0,
+      "memoryMb": 47.3,
+      "anonMb": 1.1,
+      "pids": 13
+    },
+    {
+      "t": 17,
+      "phase": "idle",
+      "cores": 0,
+      "memoryMb": 47.3,
+      "anonMb": 1.1,
+      "pids": 13
+    },
+    {
+      "t": 18,
+      "phase": "idle",
+      "cores": 0,
+      "memoryMb": 47.3,
+      "anonMb": 1.1,
+      "pids": 13
+    },
+    {
+      "t": 19,
+      "phase": "idle",
+      "cores": 0,
+      "memoryMb": 47.4,
+      "anonMb": 1.1,
+      "pids": 14
+    },
+    {
+      "t": 20,
+      "phase": "idle",
+      "cores": 0,
+      "memoryMb": 47.4,
+      "anonMb": 1.1,
+      "pids": 14
+    },
+    {
+      "t": 21,
+      "phase": "idle",
+      "cores": 0,
+      "memoryMb": 47.4,
+      "anonMb": 1.1,
+      "pids": 14
+    },
+    {
+      "t": 22,
+      "phase": "idle",
+      "cores": 0,
+      "memoryMb": 47.4,
+      "anonMb": 1.1,
+      "pids": 14
+    },
+    {
+      "t": 23,
+      "phase": "idle",
+      "cores": 0,
+      "memoryMb": 47.4,
+      "anonMb": 1.1,
+      "pids": 14
+    },
+    {
+      "t": 24,
+      "phase": "profile:zig:cold",
+      "cores": 1.801,
+      "memoryMb": 279.8,
+      "anonMb": 189.6,
+      "pids": 28
+    },
+    {
+      "t": 25,
+      "phase": "profile:zig:cold",
+      "cores": 0.992,
+      "memoryMb": 284.5,
+      "anonMb": 194.5,
+      "pids": 28
+    },
+    {
+      "t": 26,
+      "phase": "profile:zig:cold",
+      "cores": 1.105,
+      "memoryMb": 310.2,
+      "anonMb": 214,
+      "pids": 28
+    },
+    {
+      "t": 27,
+      "phase": "profile:zig:cold",
+      "cores": 1.917,
+      "memoryMb": 381.6,
+      "anonMb": 267.8,
+      "pids": 28
+    },
+    {
+      "t": 28,
+      "phase": "profile:zig:cold",
+      "cores": 1.515,
+      "memoryMb": 546.9,
+      "anonMb": 416.6,
+      "pids": 55
+    },
+    {
+      "t": 29,
+      "phase": "profile:zig:cold",
+      "cores": 0.994,
+      "memoryMb": 553.5,
+      "anonMb": 424.4,
+      "pids": 55
+    },
+    {
+      "t": 30,
+      "phase": "profile:zig:cold",
+      "cores": 0.989,
+      "memoryMb": 561.6,
+      "anonMb": 432,
+      "pids": 55
+    },
+    {
+      "t": 31,
+      "phase": "profile:zig:warm",
+      "cores": 2.421,
+      "memoryMb": 162.9,
+      "anonMb": 2.5,
+      "pids": 17
+    },
+    {
+      "t": 32,
+      "phase": "profile:zig:warm",
+      "cores": 3.237,
+      "memoryMb": 347.1,
+      "anonMb": 163.5,
+      "pids": 45
+    },
+    {
+      "t": 33,
+      "phase": "profile:zig:warm",
+      "cores": 3.467,
+      "memoryMb": 216.5,
+      "anonMb": 16.2,
+      "pids": 22
+    },
+    {
+      "t": 34,
+      "phase": "profile:zig:warm",
+      "cores": 3.177,
+      "memoryMb": 398.2,
+      "anonMb": 164.9,
+      "pids": 45
+    },
+    {
+      "t": 35,
+      "phase": "profile:zig:warm",
+      "cores": 3.283,
+      "memoryMb": 270.3,
+      "anonMb": 17.7,
+      "pids": 22
+    },
+    {
+      "t": 36,
+      "phase": "profile:zig:warm",
+      "cores": 3.275,
+      "memoryMb": 452.5,
+      "anonMb": 168.9,
+      "pids": 45
+    },
+    {
+      "t": 37,
+      "phase": "profile:zig:warm",
+      "cores": 1.629,
+      "memoryMb": 434.3,
+      "anonMb": 140.6,
+      "pids": 45
+    },
+    {
+      "t": 38,
+      "phase": "profile:zig:warm",
+      "cores": 2.926,
+      "memoryMb": 478.8,
+      "anonMb": 163.1,
+      "pids": 45
+    },
+    {
+      "t": 39,
+      "phase": "profile:ts:warm",
+      "cores": 2.349,
+      "memoryMb": 338.6,
+      "anonMb": 11,
+      "pids": 24
+    },
+    {
+      "t": 40,
+      "phase": "profile:ts:warm",
+      "cores": 1.639,
+      "memoryMb": 389.6,
+      "anonMb": 61.5,
+      "pids": 25
+    },
+    {
+      "t": 41,
+      "phase": "profile:ts:warm",
+      "cores": 1.825,
+      "memoryMb": 381.7,
+      "anonMb": 53.9,
+      "pids": 25
+    },
+    {
+      "t": 42,
+      "phase": "profile:go:cold",
+      "cores": 1.479,
+      "memoryMb": 347.2,
+      "anonMb": 16.3,
+      "pids": 31
+    },
+    {
+      "t": 43,
+      "phase": "profile:go:cold",
+      "cores": 2.787,
+      "memoryMb": 491.7,
+      "anonMb": 117.8,
+      "pids": 50
+    },
+    {
+      "t": 44,
+      "phase": "profile:go:cold",
+      "cores": 4.392,
+      "memoryMb": 534.3,
+      "anonMb": 153.5,
+      "pids": 56
+    },
+    {
+      "t": 45,
+      "phase": "profile:go:warm",
+      "cores": 3.48,
+      "memoryMb": 420.1,
+      "anonMb": 46.9,
+      "pids": 46
+    },
+    {
+      "t": 46,
+      "phase": "profile:go:warm",
+      "cores": 1.874,
+      "memoryMb": 415.6,
+      "anonMb": 42.1,
+      "pids": 45
+    },
+    {
+      "t": 47,
+      "phase": "profile:rust:warm",
+      "cores": 1.444,
+      "memoryMb": 462.5,
+      "anonMb": 82.6,
+      "pids": 28
+    },
+    {
+      "t": 48,
+      "phase": "profile:cpp:cold",
+      "cores": 1.239,
+      "memoryMb": 396.1,
+      "anonMb": 19.9,
+      "pids": 25
+    },
+    {
+      "t": 49,
+      "phase": "profile:cpp:warm",
+      "cores": 0.999,
+      "memoryMb": 390.7,
+      "anonMb": 8.3,
+      "pids": 19
+    },
+    {
+      "t": 50,
+      "phase": "profile:cpp:warm",
+      "cores": 1.003,
+      "memoryMb": 410.3,
+      "anonMb": 29.4,
+      "pids": 20
+    },
+    {
+      "t": 51,
+      "phase": "profile:cpp:warm",
+      "cores": 0.781,
+      "memoryMb": 385,
+      "anonMb": 5.8,
+      "pids": 18
+    },
+    {
+      "t": 52,
+      "phase": "profile:cpp:warm",
+      "cores": 0,
+      "memoryMb": 385.2,
+      "anonMb": 5.8,
+      "pids": 18
+    },
+    {
+      "t": 53,
+      "phase": "profile:cpp:warm",
+      "cores": 0,
+      "memoryMb": 384.9,
+      "anonMb": 5.8,
+      "pids": 18
+    },
+    {
+      "t": 54,
+      "phase": "profile:cpp:warm",
+      "cores": 0,
+      "memoryMb": 384.9,
+      "anonMb": 5.8,
+      "pids": 18
+    },
+    {
+      "t": 55,
+      "phase": "profile:cpp:warm",
+      "cores": 0,
+      "memoryMb": 384.9,
+      "anonMb": 5.8,
+      "pids": 18
+    },
+    {
+      "t": 56,
+      "phase": "lsp:zig",
+      "cores": 3.209,
+      "memoryMb": 648,
+      "anonMb": 233.9,
+      "pids": 45
+    },
+    {
+      "t": 57,
+      "phase": "lsp:zig",
+      "cores": 2.47,
+      "memoryMb": 616.1,
+      "anonMb": 173.4,
+      "pids": 49
+    },
+    {
+      "t": 58,
+      "phase": "lsp:zig",
+      "cores": 2.077,
+      "memoryMb": 559.2,
+      "anonMb": 89.3,
+      "pids": 37
+    },
+    {
+      "t": 59,
+      "phase": "lsp:zig",
+      "cores": 0,
+      "memoryMb": 558.9,
+      "anonMb": 89.3,
+      "pids": 37
+    },
+    {
+      "t": 60,
+      "phase": "lsp:zig",
+      "cores": 0,
+      "memoryMb": 558.9,
+      "anonMb": 89.3,
+      "pids": 37
+    },
+    {
+      "t": 61,
+      "phase": "lsp:zig",
+      "cores": 0,
+      "memoryMb": 558.9,
+      "anonMb": 89.3,
+      "pids": 37
+    },
+    {
+      "t": 62,
+      "phase": "lsp:ts",
+      "cores": 2.427,
+      "memoryMb": 864.5,
+      "anonMb": 380.7,
+      "pids": 73
+    },
+    {
+      "t": 63,
+      "phase": "lsp:ts",
+      "cores": 0.675,
+      "memoryMb": 956,
+      "anonMb": 469.2,
+      "pids": 73
+    },
+    {
+      "t": 64,
+      "phase": "lsp:ts",
+      "cores": 0,
+      "memoryMb": 956.2,
+      "anonMb": 469.2,
+      "pids": 73
+    },
+    {
+      "t": 65,
+      "phase": "lsp:ts",
+      "cores": 0,
+      "memoryMb": 956,
+      "anonMb": 469.2,
+      "pids": 73
+    },
+    {
+      "t": 66,
+      "phase": "lsp:ts",
+      "cores": 0,
+      "memoryMb": 956,
+      "anonMb": 469.2,
+      "pids": 73
+    },
+    {
+      "t": 67,
+      "phase": "lsp:ts",
+      "cores": 0,
+      "memoryMb": 956,
+      "anonMb": 469.2,
+      "pids": 73
+    },
+    {
+      "t": 68,
+      "phase": "lsp:ts",
+      "cores": 0,
+      "memoryMb": 956,
+      "anonMb": 469.2,
+      "pids": 73
+    },
+    {
+      "t": 69,
+      "phase": "lsp:py",
+      "cores": 0.752,
+      "memoryMb": 1056.3,
+      "anonMb": 564.1,
+      "pids": 80
+    },
+    {
+      "t": 70,
+      "phase": "lsp:py",
+      "cores": 0.001,
+      "memoryMb": 1056,
+      "anonMb": 564.1,
+      "pids": 80
+    },
+    {
+      "t": 71,
+      "phase": "lsp:py",
+      "cores": 0,
+      "memoryMb": 1056,
+      "anonMb": 564.1,
+      "pids": 80
+    },
+    {
+      "t": 72,
+      "phase": "lsp:py",
+      "cores": 0,
+      "memoryMb": 1056,
+      "anonMb": 564.1,
+      "pids": 80
+    },
+    {
+      "t": 73,
+      "phase": "lsp:py",
+      "cores": 0,
+      "memoryMb": 1056,
+      "anonMb": 564.1,
+      "pids": 80
+    },
+    {
+      "t": 74,
+      "phase": "lsp:py",
+      "cores": 0,
+      "memoryMb": 1056,
+      "anonMb": 564.1,
+      "pids": 80
+    },
+    {
+      "t": 75,
+      "phase": "lsp:go",
+      "cores": 3.26,
+      "memoryMb": 1234.4,
+      "anonMb": 688.2,
+      "pids": 110
+    },
+    {
+      "t": 76,
+      "phase": "lsp:go",
+      "cores": 8.163,
+      "memoryMb": 1257.1,
+      "anonMb": 676.3,
+      "pids": 110
+    },
+    {
+      "t": 77,
+      "phase": "lsp:go",
+      "cores": 8.3,
+      "memoryMb": 1353.7,
+      "anonMb": 760.3,
+      "pids": 135
+    },
+    {
+      "t": 78,
+      "phase": "lsp:go",
+      "cores": 8.601,
+      "memoryMb": 1434.8,
+      "anonMb": 789.8,
+      "pids": 135
+    },
+    {
+      "t": 79,
+      "phase": "lsp:go",
+      "cores": 8.747,
+      "memoryMb": 1413.8,
+      "anonMb": 762.5,
+      "pids": 135
+    },
+    {
+      "t": 80,
+      "phase": "lsp:go",
+      "cores": 8.666,
+      "memoryMb": 1452.8,
+      "anonMb": 800.5,
+      "pids": 135
+    },
+    {
+      "t": 81,
+      "phase": "lsp:go",
+      "cores": 8.644,
+      "memoryMb": 1443,
+      "anonMb": 774.1,
+      "pids": 135
+    },
+    {
+      "t": 82,
+      "phase": "lsp:go",
+      "cores": 8.628,
+      "memoryMb": 1563.1,
+      "anonMb": 891,
+      "pids": 135
+    },
+    {
+      "t": 83,
+      "phase": "lsp:go",
+      "cores": 7.538,
+      "memoryMb": 1449.1,
+      "anonMb": 775.7,
+      "pids": 135
+    },
+    {
+      "t": 84,
+      "phase": "lsp:go",
+      "cores": 6.891,
+      "memoryMb": 1438.2,
+      "anonMb": 749,
+      "pids": 135
+    },
+    {
+      "t": 85,
+      "phase": "lsp:go",
+      "cores": 0.001,
+      "memoryMb": 1436.8,
+      "anonMb": 749,
+      "pids": 130
+    },
+    {
+      "t": 86,
+      "phase": "lsp:go",
+      "cores": 0.001,
+      "memoryMb": 1436.6,
+      "anonMb": 748.9,
+      "pids": 130
+    },
+    {
+      "t": 87,
+      "phase": "lsp:go",
+      "cores": 0,
+      "memoryMb": 1436.6,
+      "anonMb": 748.9,
+      "pids": 130
+    },
+    {
+      "t": 88,
+      "phase": "lsp:go",
+      "cores": 0,
+      "memoryMb": 1436.6,
+      "anonMb": 748.9,
+      "pids": 130
+    },
+    {
+      "t": 89,
+      "phase": "lsp:go",
+      "cores": 0,
+      "memoryMb": 1436.6,
+      "anonMb": 748.9,
+      "pids": 130
+    },
+    {
+      "t": 90.1,
+      "phase": "lsp:rust",
+      "cores": 0.848,
+      "memoryMb": 1560.9,
+      "anonMb": 854.9,
+      "pids": 173
+    },
+    {
+      "t": 91.1,
+      "phase": "lsp:rust",
+      "cores": 1.474,
+      "memoryMb": 1687.8,
+      "anonMb": 978.1,
+      "pids": 167
+    },
+    {
+      "t": 92.1,
+      "phase": "lsp:rust",
+      "cores": 1.614,
+      "memoryMb": 1902.8,
+      "anonMb": 1192.5,
+      "pids": 168
+    },
+    {
+      "t": 93.1,
+      "phase": "lsp:rust",
+      "cores": 0.421,
+      "memoryMb": 1947.7,
+      "anonMb": 1238.1,
+      "pids": 163
+    },
+    {
+      "t": 94.1,
+      "phase": "lsp:rust",
+      "cores": 0,
+      "memoryMb": 1948,
+      "anonMb": 1238.1,
+      "pids": 163
+    },
+    {
+      "t": 95.1,
+      "phase": "lsp:rust",
+      "cores": 0.001,
+      "memoryMb": 1947.7,
+      "anonMb": 1238.1,
+      "pids": 163
+    },
+    {
+      "t": 96.1,
+      "phase": "lsp:cpp",
+      "cores": 0.388,
+      "memoryMb": 2002.9,
+      "anonMb": 1290.5,
+      "pids": 174
+    },
+    {
+      "t": 97.1,
+      "phase": "lsp:cpp",
+      "cores": 1.371,
+      "memoryMb": 2109.3,
+      "anonMb": 1382.9,
+      "pids": 174
+    },
+    {
+      "t": 98.1,
+      "phase": "lsp:cpp",
+      "cores": 0.001,
+      "memoryMb": 2107.9,
+      "anonMb": 1382.9,
+      "pids": 173
+    },
+    {
+      "t": 99.1,
+      "phase": "lsp:cpp",
+      "cores": 0,
+      "memoryMb": 2107.9,
+      "anonMb": 1382.8,
+      "pids": 173
+    },
+    {
+      "t": 100.1,
+      "phase": "lsp:cpp",
+      "cores": 0,
+      "memoryMb": 2107.9,
+      "anonMb": 1382.8,
+      "pids": 173
+    },
+    {
+      "t": 101.1,
+      "phase": "lsp:cpp",
+      "cores": 0,
+      "memoryMb": 2107.9,
+      "anonMb": 1382.8,
+      "pids": 173
+    },
+    {
+      "t": 102.1,
+      "phase": "lsp:cpp",
+      "cores": 0,
+      "memoryMb": 2107.9,
+      "anonMb": 1382.8,
+      "pids": 173
+    },
+    {
+      "t": 103.1,
+      "phase": "lsp:grace",
+      "cores": 0.002,
+      "memoryMb": 2107.9,
+      "anonMb": 1382.8,
+      "pids": 173
+    },
+    {
+      "t": 104.1,
+      "phase": "lsp:grace",
+      "cores": 0.001,
+      "memoryMb": 2107.9,
+      "anonMb": 1382.8,
+      "pids": 173
+    },
+    {
+      "t": 105.1,
+      "phase": "lsp:grace",
+      "cores": 1.837,
+      "memoryMb": 2114.4,
+      "anonMb": 1389,
+      "pids": 173
+    },
+    {
+      "t": 106.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 2114.4,
+      "anonMb": 1389,
+      "pids": 173
+    },
+    {
+      "t": 107.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 2114.1,
+      "anonMb": 1389,
+      "pids": 172
+    },
+    {
+      "t": 108.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 2114.1,
+      "anonMb": 1389,
+      "pids": 172
+    },
+    {
+      "t": 109.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 2114.1,
+      "anonMb": 1389,
+      "pids": 172
+    },
+    {
+      "t": 110.1,
+      "phase": "lsp:grace",
+      "cores": 0.001,
+      "memoryMb": 2114.1,
+      "anonMb": 1389,
+      "pids": 172
+    },
+    {
+      "t": 111.1,
+      "phase": "lsp:grace",
+      "cores": 0.001,
+      "memoryMb": 2114.1,
+      "anonMb": 1389,
+      "pids": 172
+    },
+    {
+      "t": 112.1,
+      "phase": "lsp:grace",
+      "cores": 0.001,
+      "memoryMb": 2114.3,
+      "anonMb": 1389,
+      "pids": 172
+    },
+    {
+      "t": 113.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 2114.1,
+      "anonMb": 1389,
+      "pids": 172
+    },
+    {
+      "t": 114.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 2114.1,
+      "anonMb": 1389,
+      "pids": 172
+    },
+    {
+      "t": 115.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 2113.9,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 116.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 2113.9,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 117.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 2113.9,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 118.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 2113.8,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 119.1,
+      "phase": "lsp:grace",
+      "cores": 0.001,
+      "memoryMb": 2113.8,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 120.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 2113.8,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 121.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 2113.8,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 122.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 2114.1,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 123.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 2113.8,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 124.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 2113.8,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 125.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 2113.8,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 126.1,
+      "phase": "lsp:grace",
+      "cores": 0.001,
+      "memoryMb": 2114.1,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 127.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 2113.8,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 128.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 2113.8,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 129.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 2113.8,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 130.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 2113.8,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 131.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 2113.8,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 132.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 2113.8,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 133.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 2113.8,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 134.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 2113.8,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 135.1,
+      "phase": "lsp:grace",
+      "cores": 0.001,
+      "memoryMb": 2113.8,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 136.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 2113.8,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 137.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 2113.8,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 138.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 2113.8,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 139.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 2113.8,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 140.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 2113.8,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 141.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 2113.8,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 142.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 2113.8,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 143.1,
+      "phase": "lsp:grace",
+      "cores": 0.001,
+      "memoryMb": 2113.8,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 144.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 2113.8,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 145.1,
+      "phase": "lsp:grace",
+      "cores": 0.001,
+      "memoryMb": 2113.8,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 146.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 2113.8,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 147.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 2113.8,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 148.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 2113.8,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 149.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 2113.8,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 150.1,
+      "phase": "lsp:grace",
+      "cores": 0.001,
+      "memoryMb": 2114.1,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 151.1,
+      "phase": "lsp:grace",
+      "cores": 0.001,
+      "memoryMb": 2113.8,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 152.1,
+      "phase": "lsp:grace",
+      "cores": 0.001,
+      "memoryMb": 2113.8,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 153.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 2113.8,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 154.1,
+      "phase": "lsp:grace",
+      "cores": 0.001,
+      "memoryMb": 2113.8,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 155.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 2113.8,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 156.1,
+      "phase": "lsp:grace",
+      "cores": 0.001,
+      "memoryMb": 2113.8,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 157.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 2113.8,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 158.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 2113.8,
+      "anonMb": 1388.8,
+      "pids": 172
+    },
+    {
+      "t": 159.1,
+      "phase": "lsp:grace",
+      "cores": 0.026,
+      "memoryMb": 1887.2,
+      "anonMb": 1388.8,
+      "pids": 173
+    },
+    {
+      "t": 160.1,
+      "phase": "lsp:grace",
+      "cores": 0.001,
+      "memoryMb": 1887.2,
+      "anonMb": 1388.8,
+      "pids": 173
+    },
+    {
+      "t": 161.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1887.2,
+      "anonMb": 1388.8,
+      "pids": 173
+    },
+    {
+      "t": 162.1,
+      "phase": "lsp:grace",
+      "cores": 0.004,
+      "memoryMb": 1884.2,
+      "anonMb": 1388.8,
+      "pids": 173
+    },
+    {
+      "t": 163.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1883.9,
+      "anonMb": 1388.8,
+      "pids": 173
+    },
+    {
+      "t": 164.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1883.9,
+      "anonMb": 1388.8,
+      "pids": 173
+    },
+    {
+      "t": 165.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1883.9,
+      "anonMb": 1388.8,
+      "pids": 173
+    },
+    {
+      "t": 166.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1883.9,
+      "anonMb": 1388.8,
+      "pids": 173
+    },
+    {
+      "t": 167.1,
+      "phase": "lsp:grace",
+      "cores": 0.185,
+      "memoryMb": 1849.3,
+      "anonMb": 1356.5,
+      "pids": 173
+    },
+    {
+      "t": 168.1,
+      "phase": "lsp:grace",
+      "cores": 0.05,
+      "memoryMb": 1785.4,
+      "anonMb": 1302.5,
+      "pids": 173
+    },
+    {
+      "t": 169.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1785.3,
+      "anonMb": 1302.5,
+      "pids": 173
+    },
+    {
+      "t": 170.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1785.3,
+      "anonMb": 1302.5,
+      "pids": 173
+    },
+    {
+      "t": 171.1,
+      "phase": "lsp:grace",
+      "cores": 0.001,
+      "memoryMb": 1779.3,
+      "anonMb": 1302.5,
+      "pids": 173
+    },
+    {
+      "t": 172.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1779.3,
+      "anonMb": 1302.5,
+      "pids": 173
+    },
+    {
+      "t": 173.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1779.3,
+      "anonMb": 1302.5,
+      "pids": 173
+    },
+    {
+      "t": 174.1,
+      "phase": "lsp:grace",
+      "cores": 0.052,
+      "memoryMb": 1746.4,
+      "anonMb": 1270.2,
+      "pids": 173
+    },
+    {
+      "t": 175.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.2,
+      "pids": 173
+    },
+    {
+      "t": 176.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.2,
+      "pids": 173
+    },
+    {
+      "t": 177.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.2,
+      "pids": 173
+    },
+    {
+      "t": 178.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.2,
+      "pids": 173
+    },
+    {
+      "t": 179.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.2,
+      "pids": 173
+    },
+    {
+      "t": 180.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.2,
+      "pids": 173
+    },
+    {
+      "t": 181.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.2,
+      "pids": 172
+    },
+    {
+      "t": 182.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1746.5,
+      "anonMb": 1270.2,
+      "pids": 172
+    },
+    {
+      "t": 183.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.2,
+      "pids": 172
+    },
+    {
+      "t": 184.1,
+      "phase": "lsp:grace",
+      "cores": 0.001,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.2,
+      "pids": 172
+    },
+    {
+      "t": 185.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.2,
+      "pids": 172
+    },
+    {
+      "t": 186.1,
+      "phase": "lsp:grace",
+      "cores": 0.001,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.2,
+      "pids": 172
+    },
+    {
+      "t": 187.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.2,
+      "pids": 172
+    },
+    {
+      "t": 188.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.2,
+      "pids": 172
+    },
+    {
+      "t": 189.1,
+      "phase": "lsp:grace",
+      "cores": 0.001,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.2,
+      "pids": 172
+    },
+    {
+      "t": 190.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.2,
+      "pids": 172
+    },
+    {
+      "t": 191.1,
+      "phase": "lsp:grace",
+      "cores": 0.001,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.2,
+      "pids": 172
+    },
+    {
+      "t": 192.1,
+      "phase": "lsp:grace",
+      "cores": 0.001,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.2,
+      "pids": 172
+    },
+    {
+      "t": 193.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.2,
+      "pids": 172
+    },
+    {
+      "t": 194.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.2,
+      "pids": 172
+    },
+    {
+      "t": 195.1,
+      "phase": "lsp:grace",
+      "cores": 0.002,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.3,
+      "pids": 172
+    },
+    {
+      "t": 196.1,
+      "phase": "lsp:grace",
+      "cores": 0.001,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.3,
+      "pids": 172
+    },
+    {
+      "t": 197.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.3,
+      "pids": 172
+    },
+    {
+      "t": 198.1,
+      "phase": "lsp:grace",
+      "cores": 0.001,
+      "memoryMb": 1746.6,
+      "anonMb": 1270.3,
+      "pids": 172
+    },
+    {
+      "t": 199.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.3,
+      "pids": 172
+    },
+    {
+      "t": 200.1,
+      "phase": "lsp:grace",
+      "cores": 0.001,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.3,
+      "pids": 172
+    },
+    {
+      "t": 201.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.3,
+      "pids": 172
+    },
+    {
+      "t": 202.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.3,
+      "pids": 172
+    },
+    {
+      "t": 203.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.3,
+      "pids": 172
+    },
+    {
+      "t": 204.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.3,
+      "pids": 172
+    },
+    {
+      "t": 205.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.3,
+      "pids": 172
+    },
+    {
+      "t": 206.1,
+      "phase": "lsp:grace",
+      "cores": 0.001,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.3,
+      "pids": 172
+    },
+    {
+      "t": 207.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.3,
+      "pids": 172
+    },
+    {
+      "t": 208.1,
+      "phase": "lsp:grace",
+      "cores": 0.001,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.3,
+      "pids": 172
+    },
+    {
+      "t": 209.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.3,
+      "pids": 172
+    },
+    {
+      "t": 210.1,
+      "phase": "lsp:grace",
+      "cores": 0.001,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.3,
+      "pids": 172
+    },
+    {
+      "t": 211.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.3,
+      "pids": 172
+    },
+    {
+      "t": 212.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.3,
+      "pids": 172
+    },
+    {
+      "t": 213.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.3,
+      "pids": 172
+    },
+    {
+      "t": 214.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1746.6,
+      "anonMb": 1270.3,
+      "pids": 172
+    },
+    {
+      "t": 215.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.3,
+      "pids": 172
+    },
+    {
+      "t": 216.1,
+      "phase": "lsp:grace",
+      "cores": 0.001,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.3,
+      "pids": 172
+    },
+    {
+      "t": 217.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.3,
+      "pids": 172
+    },
+    {
+      "t": 218.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1746.6,
+      "anonMb": 1270.3,
+      "pids": 172
+    },
+    {
+      "t": 219.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.3,
+      "pids": 172
+    },
+    {
+      "t": 220.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.3,
+      "pids": 172
+    },
+    {
+      "t": 221.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.3,
+      "pids": 172
+    },
+    {
+      "t": 222.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 1746.3,
+      "anonMb": 1270.3,
+      "pids": 172
+    },
+    {
+      "t": 223.1,
+      "phase": "lsp:grace",
+      "cores": 0.222,
+      "memoryMb": 188,
+      "anonMb": 7.2,
+      "pids": 19
+    },
+    {
+      "t": 224.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 188,
+      "anonMb": 7.2,
+      "pids": 19
+    },
+    {
+      "t": 225.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 188,
+      "anonMb": 7.2,
+      "pids": 19
+    },
+    {
+      "t": 226.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 188,
+      "anonMb": 7.2,
+      "pids": 19
+    },
+    {
+      "t": 227.1,
+      "phase": "lsp:grace",
+      "cores": 0,
+      "memoryMb": 188,
+      "anonMb": 7.2,
+      "pids": 19
+    },
+    {
+      "t": 228.1,
+      "phase": "stage:1",
+      "cores": 2.059,
+      "memoryMb": 283.5,
+      "anonMb": 79.5,
+      "pids": 31
+    },
+    {
+      "t": 229.1,
+      "phase": "stage:1",
+      "cores": 1.714,
+      "memoryMb": 362.1,
+      "anonMb": 136.1,
+      "pids": 31
+    },
+    {
+      "t": 230.1,
+      "phase": "stage:1",
+      "cores": 2.581,
+      "memoryMb": 524,
+      "anonMb": 277,
+      "pids": 58
+    },
+    {
+      "t": 231.1,
+      "phase": "stage:1",
+      "cores": 2.093,
+      "memoryMb": 285.1,
+      "anonMb": 7.5,
+      "pids": 19
+    },
+    {
+      "t": 232.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 284.8,
+      "anonMb": 7.5,
+      "pids": 19
+    },
+    {
+      "t": 233.1,
+      "phase": "stage:1",
+      "cores": 1.307,
+      "memoryMb": 471.6,
+      "anonMb": 184.5,
+      "pids": 48
+    },
+    {
+      "t": 234.1,
+      "phase": "stage:1",
+      "cores": 0.758,
+      "memoryMb": 301.6,
+      "anonMb": 7.5,
+      "pids": 19
+    },
+    {
+      "t": 235.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 301.3,
+      "anonMb": 7.5,
+      "pids": 19
+    },
+    {
+      "t": 236.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 301.3,
+      "anonMb": 7.5,
+      "pids": 19
+    },
+    {
+      "t": 237.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 301.3,
+      "anonMb": 7.5,
+      "pids": 19
+    },
+    {
+      "t": 238.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 301.3,
+      "anonMb": 7.5,
+      "pids": 19
+    },
+    {
+      "t": 239.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 301.3,
+      "anonMb": 7.5,
+      "pids": 19
+    },
+    {
+      "t": 240.1,
+      "phase": "stage:1",
+      "cores": 0.244,
+      "memoryMb": 425.3,
+      "anonMb": 127.3,
+      "pids": 48
+    },
+    {
+      "t": 241.1,
+      "phase": "stage:1",
+      "cores": 1.82,
+      "memoryMb": 318.2,
+      "anonMb": 7.6,
+      "pids": 19
+    },
+    {
+      "t": 242.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 317.9,
+      "anonMb": 7.6,
+      "pids": 19
+    },
+    {
+      "t": 243.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 317.9,
+      "anonMb": 7.6,
+      "pids": 19
+    },
+    {
+      "t": 244.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 317.9,
+      "anonMb": 7.6,
+      "pids": 19
+    },
+    {
+      "t": 245.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 317.9,
+      "anonMb": 7.6,
+      "pids": 19
+    },
+    {
+      "t": 246.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 317.9,
+      "anonMb": 7.6,
+      "pids": 19
+    },
+    {
+      "t": 247.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 317.9,
+      "anonMb": 7.6,
+      "pids": 19
+    },
+    {
+      "t": 248.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 317.9,
+      "anonMb": 7.6,
+      "pids": 19
+    },
+    {
+      "t": 249.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 317.9,
+      "anonMb": 7.6,
+      "pids": 19
+    },
+    {
+      "t": 250.1,
+      "phase": "stage:1",
+      "cores": 1.991,
+      "memoryMb": 334.5,
+      "anonMb": 7.6,
+      "pids": 19
+    },
+    {
+      "t": 251.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 334.4,
+      "anonMb": 7.6,
+      "pids": 19
+    },
+    {
+      "t": 252.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 334.4,
+      "anonMb": 7.6,
+      "pids": 19
+    },
+    {
+      "t": 253.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 334.4,
+      "anonMb": 7.6,
+      "pids": 19
+    },
+    {
+      "t": 254.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 334.4,
+      "anonMb": 7.6,
+      "pids": 19
+    },
+    {
+      "t": 255.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 334.4,
+      "anonMb": 7.6,
+      "pids": 19
+    },
+    {
+      "t": 256.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 334.4,
+      "anonMb": 7.6,
+      "pids": 19
+    },
+    {
+      "t": 257.1,
+      "phase": "stage:1",
+      "cores": 1.897,
+      "memoryMb": 351.5,
+      "anonMb": 7.6,
+      "pids": 19
+    },
+    {
+      "t": 258.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 350.9,
+      "anonMb": 7.6,
+      "pids": 19
+    },
+    {
+      "t": 259.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 350.9,
+      "anonMb": 7.6,
+      "pids": 19
+    },
+    {
+      "t": 260.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 350.9,
+      "anonMb": 7.6,
+      "pids": 19
+    },
+    {
+      "t": 261.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 350.9,
+      "anonMb": 7.6,
+      "pids": 19
+    },
+    {
+      "t": 262.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 350.9,
+      "anonMb": 7.6,
+      "pids": 19
+    },
+    {
+      "t": 263.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 350.9,
+      "anonMb": 7.6,
+      "pids": 19
+    },
+    {
+      "t": 264.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 350.9,
+      "anonMb": 7.6,
+      "pids": 19
+    },
+    {
+      "t": 265.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 350.9,
+      "anonMb": 7.6,
+      "pids": 19
+    },
+    {
+      "t": 266.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 350.9,
+      "anonMb": 7.6,
+      "pids": 19
+    },
+    {
+      "t": 267.1,
+      "phase": "stage:1",
+      "cores": 0.809,
+      "memoryMb": 520.3,
+      "anonMb": 168.9,
+      "pids": 43
+    },
+    {
+      "t": 268.1,
+      "phase": "stage:1",
+      "cores": 1.094,
+      "memoryMb": 367.3,
+      "anonMb": 7.6,
+      "pids": 14
+    },
+    {
+      "t": 269.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 367.3,
+      "anonMb": 7.6,
+      "pids": 14
+    },
+    {
+      "t": 270.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 367.3,
+      "anonMb": 7.6,
+      "pids": 14
+    },
+    {
+      "t": 271.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 367.3,
+      "anonMb": 7.6,
+      "pids": 14
+    },
+    {
+      "t": 272.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 367.3,
+      "anonMb": 7.6,
+      "pids": 14
+    },
+    {
+      "t": 273.1,
+      "phase": "stage:1",
+      "cores": 3.04,
+      "memoryMb": 565.7,
+      "anonMb": 179.5,
+      "pids": 43
+    },
+    {
+      "t": 274.1,
+      "phase": "stage:1",
+      "cores": 0.79,
+      "memoryMb": 400.2,
+      "anonMb": 7.6,
+      "pids": 14
+    },
+    {
+      "t": 275.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 400.2,
+      "anonMb": 7.6,
+      "pids": 14
+    },
+    {
+      "t": 276.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 400.2,
+      "anonMb": 7.6,
+      "pids": 14
+    },
+    {
+      "t": 277.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 400.2,
+      "anonMb": 7.6,
+      "pids": 14
+    },
+    {
+      "t": 278.1,
+      "phase": "stage:1",
+      "cores": 1.883,
+      "memoryMb": 416.8,
+      "anonMb": 7.6,
+      "pids": 14
+    },
+    {
+      "t": 279.1,
+      "phase": "stage:1",
+      "cores": 1.911,
+      "memoryMb": 432.5,
+      "anonMb": 12.8,
+      "pids": 16
+    },
+    {
+      "t": 280.1,
+      "phase": "stage:1",
+      "cores": 0.02,
+      "memoryMb": 433.5,
+      "anonMb": 7.6,
+      "pids": 14
+    },
+    {
+      "t": 281.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 433.5,
+      "anonMb": 7.6,
+      "pids": 14
+    },
+    {
+      "t": 282.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 433.2,
+      "anonMb": 7.6,
+      "pids": 14
+    },
+    {
+      "t": 283.1,
+      "phase": "stage:1",
+      "cores": 1.121,
+      "memoryMb": 615.8,
+      "anonMb": 180,
+      "pids": 43
+    },
+    {
+      "t": 284.1,
+      "phase": "stage:1",
+      "cores": 2.728,
+      "memoryMb": 464.7,
+      "anonMb": 7.6,
+      "pids": 15
+    },
+    {
+      "t": 285.1,
+      "phase": "stage:1",
+      "cores": 0.012,
+      "memoryMb": 466.2,
+      "anonMb": 7.6,
+      "pids": 14
+    },
+    {
+      "t": 286.1,
+      "phase": "stage:1",
+      "cores": 0.067,
+      "memoryMb": 497.7,
+      "anonMb": 36.6,
+      "pids": 21
+    },
+    {
+      "t": 287.1,
+      "phase": "stage:1",
+      "cores": 1.824,
+      "memoryMb": 483.3,
+      "anonMb": 7.6,
+      "pids": 14
+    },
+    {
+      "t": 288.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 482.7,
+      "anonMb": 7.6,
+      "pids": 14
+    },
+    {
+      "t": 289.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 482.7,
+      "anonMb": 7.6,
+      "pids": 14
+    },
+    {
+      "t": 290.1,
+      "phase": "stage:1",
+      "cores": 0,
+      "memoryMb": 482.7,
+      "anonMb": 7.6,
+      "pids": 14
+    },
+    {
+      "t": 291.1,
+      "phase": "cooldown:1",
+      "cores": 0,
+      "memoryMb": 482.6,
+      "anonMb": 7.6,
+      "pids": 14
+    },
+    {
+      "t": 292.1,
+      "phase": "cooldown:1",
+      "cores": 0,
+      "memoryMb": 482.6,
+      "anonMb": 7.6,
+      "pids": 14
+    },
+    {
+      "t": 293.1,
+      "phase": "cooldown:1",
+      "cores": 0,
+      "memoryMb": 482.6,
+      "anonMb": 7.6,
+      "pids": 14
+    },
+    {
+      "t": 294.1,
+      "phase": "cooldown:1",
+      "cores": 0,
+      "memoryMb": 482.6,
+      "anonMb": 7.6,
+      "pids": 14
+    },
+    {
+      "t": 295.1,
+      "phase": "cooldown:1",
+      "cores": 0,
+      "memoryMb": 482.6,
+      "anonMb": 7.6,
+      "pids": 14
+    },
+    {
+      "t": 296.1,
+      "phase": "stage:2",
+      "cores": 2.789,
+      "memoryMb": 640,
+      "anonMb": 134.9,
+      "pids": 30
+    },
+    {
+      "t": 297.1,
+      "phase": "stage:2",
+      "cores": 3.133,
+      "memoryMb": 833.5,
+      "anonMb": 304.5,
+      "pids": 64
+    },
+    {
+      "t": 298.1,
+      "phase": "stage:2",
+      "cores": 0.629,
+      "memoryMb": 547.4,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 299.1,
+      "phase": "stage:2",
+      "cores": 0.457,
+      "memoryMb": 569.3,
+      "anonMb": 26.9,
+      "pids": 25
+    },
+    {
+      "t": 300.1,
+      "phase": "stage:2",
+      "cores": 0.093,
+      "memoryMb": 600,
+      "anonMb": 57.4,
+      "pids": 25
+    },
+    {
+      "t": 301.1,
+      "phase": "stage:2",
+      "cores": 0.451,
+      "memoryMb": 547.4,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 302.1,
+      "phase": "stage:2",
+      "cores": 0.073,
+      "memoryMb": 607.5,
+      "anonMb": 65.4,
+      "pids": 25
+    },
+    {
+      "t": 303.1,
+      "phase": "stage:2",
+      "cores": 0.379,
+      "memoryMb": 547.4,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 304.1,
+      "phase": "stage:2",
+      "cores": 0.776,
+      "memoryMb": 694.7,
+      "anonMb": 149.8,
+      "pids": 54
+    },
+    {
+      "t": 305.1,
+      "phase": "stage:2",
+      "cores": 2.051,
+      "memoryMb": 564.6,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 306.1,
+      "phase": "stage:2",
+      "cores": 0.432,
+      "memoryMb": 564.3,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 307.1,
+      "phase": "stage:2",
+      "cores": 0,
+      "memoryMb": 564.1,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 308.1,
+      "phase": "stage:2",
+      "cores": 1.264,
+      "memoryMb": 732.7,
+      "anonMb": 167.9,
+      "pids": 47
+    },
+    {
+      "t": 309.1,
+      "phase": "stage:2",
+      "cores": 1.044,
+      "memoryMb": 580.6,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 310.1,
+      "phase": "stage:2",
+      "cores": 0.73,
+      "memoryMb": 714.8,
+      "anonMb": 137.5,
+      "pids": 47
+    },
+    {
+      "t": 311.1,
+      "phase": "stage:2",
+      "cores": 1.87,
+      "memoryMb": 596.9,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 312.1,
+      "phase": "stage:2",
+      "cores": 0.551,
+      "memoryMb": 597.7,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 313.1,
+      "phase": "stage:2",
+      "cores": 0,
+      "memoryMb": 596.8,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 314.1,
+      "phase": "stage:2",
+      "cores": 0,
+      "memoryMb": 596.8,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 315.1,
+      "phase": "stage:2",
+      "cores": 2.102,
+      "memoryMb": 613.8,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 316.1,
+      "phase": "stage:2",
+      "cores": 0.815,
+      "memoryMb": 774.5,
+      "anonMb": 162.8,
+      "pids": 47
+    },
+    {
+      "t": 317.1,
+      "phase": "stage:2",
+      "cores": 1.849,
+      "memoryMb": 690.2,
+      "anonMb": 64.9,
+      "pids": 25
+    },
+    {
+      "t": 318.1,
+      "phase": "stage:2",
+      "cores": 0.876,
+      "memoryMb": 630.5,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 319.1,
+      "phase": "stage:2",
+      "cores": 1.036,
+      "memoryMb": 823.7,
+      "anonMb": 195.3,
+      "pids": 64
+    },
+    {
+      "t": 320.1,
+      "phase": "stage:2",
+      "cores": 2.209,
+      "memoryMb": 646.4,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 321.1,
+      "phase": "stage:2",
+      "cores": 0.51,
+      "memoryMb": 646.3,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 322.1,
+      "phase": "stage:2",
+      "cores": 0,
+      "memoryMb": 646.3,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 323.1,
+      "phase": "stage:2",
+      "cores": 0,
+      "memoryMb": 646.3,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 324.1,
+      "phase": "stage:2",
+      "cores": 0,
+      "memoryMb": 646.3,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 325.1,
+      "phase": "stage:2",
+      "cores": 0.579,
+      "memoryMb": 646.3,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 326.1,
+      "phase": "stage:2",
+      "cores": 1.333,
+      "memoryMb": 829.2,
+      "anonMb": 180.1,
+      "pids": 47
+    },
+    {
+      "t": 327.1,
+      "phase": "stage:2",
+      "cores": 0.861,
+      "memoryMb": 662.8,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 328.1,
+      "phase": "stage:2",
+      "cores": 1.905,
+      "memoryMb": 861,
+      "anonMb": 191.8,
+      "pids": 47
+    },
+    {
+      "t": 329.1,
+      "phase": "stage:2",
+      "cores": 0.337,
+      "memoryMb": 679.2,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 330.1,
+      "phase": "stage:2",
+      "cores": 0.384,
+      "memoryMb": 743.5,
+      "anonMb": 69.3,
+      "pids": 35
+    },
+    {
+      "t": 331.1,
+      "phase": "stage:2",
+      "cores": 0.592,
+      "memoryMb": 679.3,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 332.1,
+      "phase": "stage:2",
+      "cores": 2.211,
+      "memoryMb": 695.8,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 333.1,
+      "phase": "stage:2",
+      "cores": 2.08,
+      "memoryMb": 885.9,
+      "anonMb": 186.9,
+      "pids": 47
+    },
+    {
+      "t": 334.1,
+      "phase": "stage:2",
+      "cores": 0.549,
+      "memoryMb": 712.2,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 335.1,
+      "phase": "stage:2",
+      "cores": 1.535,
+      "memoryMb": 901,
+      "anonMb": 185.5,
+      "pids": 47
+    },
+    {
+      "t": 336.1,
+      "phase": "stage:2",
+      "cores": 1.172,
+      "memoryMb": 728.9,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 337.1,
+      "phase": "stage:2",
+      "cores": 0.516,
+      "memoryMb": 728.7,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 338.1,
+      "phase": "stage:2",
+      "cores": 0.505,
+      "memoryMb": 728.7,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 339.1,
+      "phase": "stage:2",
+      "cores": 0.513,
+      "memoryMb": 729,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 340.1,
+      "phase": "stage:2",
+      "cores": 0.488,
+      "memoryMb": 728.7,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 341.1,
+      "phase": "stage:2",
+      "cores": 1.242,
+      "memoryMb": 907.7,
+      "anonMb": 176.2,
+      "pids": 47
+    },
+    {
+      "t": 342.1,
+      "phase": "stage:2",
+      "cores": 1.032,
+      "memoryMb": 745.2,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 343.1,
+      "phase": "stage:2",
+      "cores": 0.44,
+      "memoryMb": 760.9,
+      "anonMb": 21.2,
+      "pids": 25
+    },
+    {
+      "t": 344.1,
+      "phase": "stage:2",
+      "cores": 0.041,
+      "memoryMb": 745.2,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 345.1,
+      "phase": "stage:2",
+      "cores": 0,
+      "memoryMb": 745.2,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 346.1,
+      "phase": "stage:2",
+      "cores": 0.807,
+      "memoryMb": 908,
+      "anonMb": 163.8,
+      "pids": 47
+    },
+    {
+      "t": 347.1,
+      "phase": "stage:2",
+      "cores": 2.034,
+      "memoryMb": 914.7,
+      "anonMb": 154.9,
+      "pids": 47
+    },
+    {
+      "t": 348.1,
+      "phase": "stage:2",
+      "cores": 1.64,
+      "memoryMb": 778.1,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 349.1,
+      "phase": "stage:2",
+      "cores": 0,
+      "memoryMb": 778.1,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 350.1,
+      "phase": "stage:2",
+      "cores": 0.489,
+      "memoryMb": 779.8,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 351.1,
+      "phase": "stage:2",
+      "cores": 2.511,
+      "memoryMb": 974.2,
+      "anonMb": 190.1,
+      "pids": 47
+    },
+    {
+      "t": 352.1,
+      "phase": "stage:2",
+      "cores": 0.882,
+      "memoryMb": 794.7,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 353.1,
+      "phase": "stage:2",
+      "cores": 0,
+      "memoryMb": 794.6,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 354.1,
+      "phase": "stage:2",
+      "cores": 0,
+      "memoryMb": 794.6,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 355.1,
+      "phase": "stage:2",
+      "cores": 0,
+      "memoryMb": 794.6,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 356.1,
+      "phase": "stage:2",
+      "cores": 0,
+      "memoryMb": 794.6,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 357.1,
+      "phase": "stage:2",
+      "cores": 0,
+      "memoryMb": 794.6,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 358.1,
+      "phase": "stage:2",
+      "cores": 0,
+      "memoryMb": 794.6,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 359.1,
+      "phase": "stage:2",
+      "cores": 0,
+      "memoryMb": 794.6,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 360.1,
+      "phase": "cooldown:2",
+      "cores": 0.001,
+      "memoryMb": 794.6,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 361.1,
+      "phase": "cooldown:2",
+      "cores": 0,
+      "memoryMb": 794.6,
+      "anonMb": 7.6,
+      "pids": 18
+    },
+    {
+      "t": 362.1,
+      "phase": "cooldown:2",
+      "cores": 0.001,
+      "memoryMb": 794.5,
+      "anonMb": 7.6,
+      "pids": 13
+    },
+    {
+      "t": 363.1,
+      "phase": "cooldown:2",
+      "cores": 0,
+      "memoryMb": 794.5,
+      "anonMb": 7.6,
+      "pids": 13
+    },
+    {
+      "t": 364.1,
+      "phase": "cooldown:2",
+      "cores": 0,
+      "memoryMb": 794.5,
+      "anonMb": 7.6,
+      "pids": 13
+    },
+    {
+      "t": 365.1,
+      "phase": "stage:4",
+      "cores": 1.063,
+      "memoryMb": 946.4,
+      "anonMb": 151.2,
+      "pids": 38
+    },
+    {
+      "t": 366.1,
+      "phase": "stage:4",
+      "cores": 3.741,
+      "memoryMb": 988.9,
+      "anonMb": 170.4,
+      "pids": 38
+    },
+    {
+      "t": 367.1,
+      "phase": "stage:4",
+      "cores": 2.22,
+      "memoryMb": 1020.1,
+      "anonMb": 180.2,
+      "pids": 49
+    },
+    {
+      "t": 368.1,
+      "phase": "stage:4",
+      "cores": 3.058,
+      "memoryMb": 872,
+      "anonMb": 8.2,
+      "pids": 19
+    },
+    {
+      "t": 369.1,
+      "phase": "stage:4",
+      "cores": 0,
+      "memoryMb": 871.8,
+      "anonMb": 8.2,
+      "pids": 19
+    },
+    {
+      "t": 370.1,
+      "phase": "stage:4",
+      "cores": 0,
+      "memoryMb": 871.8,
+      "anonMb": 8.2,
+      "pids": 19
+    },
+    {
+      "t": 371.1,
+      "phase": "stage:4",
+      "cores": 0.321,
+      "memoryMb": 872.8,
+      "anonMb": 8.2,
+      "pids": 19
+    },
+    {
+      "t": 372.1,
+      "phase": "stage:4",
+      "cores": 0,
+      "memoryMb": 872.1,
+      "anonMb": 8.2,
+      "pids": 19
+    },
+    {
+      "t": 373.1,
+      "phase": "stage:4",
+      "cores": 0,
+      "memoryMb": 872.1,
+      "anonMb": 8.2,
+      "pids": 19
+    },
+    {
+      "t": 374.1,
+      "phase": "stage:4",
+      "cores": 1.875,
+      "memoryMb": 1069.2,
+      "anonMb": 191.4,
+      "pids": 48
+    },
+    {
+      "t": 375.1,
+      "phase": "stage:4",
+      "cores": 0.364,
+      "memoryMb": 888.6,
+      "anonMb": 8.2,
+      "pids": 19
+    },
+    {
+      "t": 376.1,
+      "phase": "stage:4",
+      "cores": 2.225,
+      "memoryMb": 906.1,
+      "anonMb": 8.3,
+      "pids": 19
+    },
+    {
+      "t": 377.1,
+      "phase": "stage:4",
+      "cores": 0.29,
+      "memoryMb": 905.7,
+      "anonMb": 8.3,
+      "pids": 19
+    },
+    {
+      "t": 378.1,
+      "phase": "stage:4",
+      "cores": 0.551,
+      "memoryMb": 909,
+      "anonMb": 8.4,
+      "pids": 20
+    },
+    {
+      "t": 379.1,
+      "phase": "stage:4",
+      "cores": 0.395,
+      "memoryMb": 911.7,
+      "anonMb": 12.2,
+      "pids": 20
+    },
+    {
+      "t": 380.1,
+      "phase": "stage:4",
+      "cores": 2.78,
+      "memoryMb": 1000.4,
+      "anonMb": 83.9,
+      "pids": 42
+    },
+    {
+      "t": 381.1,
+      "phase": "stage:4",
+      "cores": 0.126,
+      "memoryMb": 922.2,
+      "anonMb": 8.3,
+      "pids": 19
+    },
+    {
+      "t": 382.1,
+      "phase": "stage:4",
+      "cores": 0.321,
+      "memoryMb": 947.9,
+      "anonMb": 30.4,
+      "pids": 26
+    },
+    {
+      "t": 383.1,
+      "phase": "stage:4",
+      "cores": 0.515,
+      "memoryMb": 922.5,
+      "anonMb": 8.3,
+      "pids": 19
+    },
+    {
+      "t": 384.1,
+      "phase": "stage:4",
+      "cores": 0,
+      "memoryMb": 922.5,
+      "anonMb": 8.3,
+      "pids": 19
+    },
+    {
+      "t": 385.1,
+      "phase": "stage:4",
+      "cores": 0,
+      "memoryMb": 922.5,
+      "anonMb": 8.3,
+      "pids": 19
+    },
+    {
+      "t": 386.1,
+      "phase": "stage:4",
+      "cores": 0.332,
+      "memoryMb": 924.2,
+      "anonMb": 8.5,
+      "pids": 20
+    },
+    {
+      "t": 387.1,
+      "phase": "stage:4",
+      "cores": 0.001,
+      "memoryMb": 922.8,
+      "anonMb": 8.3,
+      "pids": 19
+    },
+    {
+      "t": 388.1,
+      "phase": "stage:4",
+      "cores": 0,
+      "memoryMb": 922.8,
+      "anonMb": 8.3,
+      "pids": 19
+    },
+    {
+      "t": 389.1,
+      "phase": "stage:4",
+      "cores": 1.108,
+      "memoryMb": 1112.6,
+      "anonMb": 188.1,
+      "pids": 70
+    },
+    {
+      "t": 390.1,
+      "phase": "stage:4",
+      "cores": 2.239,
+      "memoryMb": 940.4,
+      "anonMb": 8.4,
+      "pids": 19
+    },
+    {
+      "t": 391.1,
+      "phase": "stage:4",
+      "cores": 0.46,
+      "memoryMb": 940.7,
+      "anonMb": 8.4,
+      "pids": 19
+    },
+    {
+      "t": 392.1,
+      "phase": "stage:4",
+      "cores": 0,
+      "memoryMb": 939.9,
+      "anonMb": 8.4,
+      "pids": 19
+    },
+    {
+      "t": 393.1,
+      "phase": "stage:4",
+      "cores": 0.558,
+      "memoryMb": 1093,
+      "anonMb": 155.9,
+      "pids": 48
+    },
+    {
+      "t": 394.1,
+      "phase": "stage:4",
+      "cores": 1.564,
+      "memoryMb": 956.4,
+      "anonMb": 8.4,
+      "pids": 19
+    },
+    {
+      "t": 395.1,
+      "phase": "stage:4",
+      "cores": 0.049,
+      "memoryMb": 956.4,
+      "anonMb": 8.4,
+      "pids": 19
+    },
+    {
+      "t": 396.1,
+      "phase": "stage:4",
+      "cores": 0,
+      "memoryMb": 956.4,
+      "anonMb": 8.4,
+      "pids": 19
+    },
+    {
+      "t": 397.1,
+      "phase": "stage:4",
+      "cores": 0.754,
+      "memoryMb": 957.3,
+      "anonMb": 8.4,
+      "pids": 19
+    },
+    {
+      "t": 398.1,
+      "phase": "stage:4",
+      "cores": 0.316,
+      "memoryMb": 989.3,
+      "anonMb": 37.8,
+      "pids": 26
+    },
+    {
+      "t": 399.1,
+      "phase": "stage:4",
+      "cores": 3.363,
+      "memoryMb": 1012.8,
+      "anonMb": 45.5,
+      "pids": 26
+    },
+    {
+      "t": 400.1,
+      "phase": "stage:4",
+      "cores": 3.207,
+      "memoryMb": 993.3,
+      "anonMb": 9.4,
+      "pids": 20
+    },
+    {
+      "t": 401.1,
+      "phase": "stage:4",
+      "cores": 0.068,
+      "memoryMb": 990.2,
+      "anonMb": 8.4,
+      "pids": 19
+    },
+    {
+      "t": 402.1,
+      "phase": "stage:4",
+      "cores": 0.79,
+      "memoryMb": 990.9,
+      "anonMb": 8.4,
+      "pids": 19
+    },
+    {
+      "t": 403.1,
+      "phase": "stage:4",
+      "cores": 0,
+      "memoryMb": 990.2,
+      "anonMb": 8.4,
+      "pids": 19
+    },
+    {
+      "t": 404.1,
+      "phase": "stage:4",
+      "cores": 1.209,
+      "memoryMb": 1195.8,
+      "anonMb": 207.3,
+      "pids": 64
+    },
+    {
+      "t": 405.1,
+      "phase": "stage:4",
+      "cores": 1.729,
+      "memoryMb": 1006.7,
+      "anonMb": 8.4,
+      "pids": 19
+    },
+    {
+      "t": 406.1,
+      "phase": "stage:4",
+      "cores": 2.603,
+      "memoryMb": 1221.1,
+      "anonMb": 208.1,
+      "pids": 48
+    },
+    {
+      "t": 407.1,
+      "phase": "stage:4",
+      "cores": 0.132,
+      "memoryMb": 1023.5,
+      "anonMb": 8.4,
+      "pids": 19
+    },
+    {
+      "t": 408.1,
+      "phase": "stage:4",
+      "cores": 0.384,
+      "memoryMb": 1024.6,
+      "anonMb": 8.4,
+      "pids": 19
+    },
+    {
+      "t": 409.1,
+      "phase": "stage:4",
+      "cores": 0.42,
+      "memoryMb": 1040.2,
+      "anonMb": 21.7,
+      "pids": 26
+    },
+    {
+      "t": 410.1,
+      "phase": "stage:4",
+      "cores": 0.545,
+      "memoryMb": 948.5,
+      "anonMb": 8.4,
+      "pids": 19
+    },
+    {
+      "t": 411.1,
+      "phase": "stage:4",
+      "cores": 0.035,
+      "memoryMb": 729.6,
+      "anonMb": 8.4,
+      "pids": 19
+    },
+    {
+      "t": 412.1,
+      "phase": "stage:4",
+      "cores": 0.514,
+      "memoryMb": 730,
+      "anonMb": 8.4,
+      "pids": 19
+    },
+    {
+      "t": 413.1,
+      "phase": "stage:4",
+      "cores": 2.25,
+      "memoryMb": 900.3,
+      "anonMb": 161.9,
+      "pids": 29
+    },
+    {
+      "t": 414.1,
+      "phase": "stage:4",
+      "cores": 1.93,
+      "memoryMb": 932.8,
+      "anonMb": 184,
+      "pids": 48
+    },
+    {
+      "t": 415.1,
+      "phase": "stage:4",
+      "cores": 0.7,
+      "memoryMb": 762.6,
+      "anonMb": 8.4,
+      "pids": 19
+    },
+    {
+      "t": 416.1,
+      "phase": "stage:4",
+      "cores": 2.118,
+      "memoryMb": 982.2,
+      "anonMb": 210.7,
+      "pids": 48
+    },
+    {
+      "t": 417.1,
+      "phase": "stage:4",
+      "cores": 0.107,
+      "memoryMb": 779.1,
+      "anonMb": 8.4,
+      "pids": 19
+    },
+    {
+      "t": 418.1,
+      "phase": "stage:4",
+      "cores": 0,
+      "memoryMb": 779.1,
+      "anonMb": 8.4,
+      "pids": 19
+    },
+    {
+      "t": 419.1,
+      "phase": "stage:4",
+      "cores": 0.056,
+      "memoryMb": 779.1,
+      "anonMb": 8.4,
+      "pids": 19
+    },
+    {
+      "t": 420.1,
+      "phase": "stage:4",
+      "cores": 0.277,
+      "memoryMb": 779.4,
+      "anonMb": 8.4,
+      "pids": 19
+    },
+    {
+      "t": 421.1,
+      "phase": "stage:4",
+      "cores": 1.278,
+      "memoryMb": 960.6,
+      "anonMb": 179.6,
+      "pids": 48
+    },
+    {
+      "t": 422.1,
+      "phase": "stage:4",
+      "cores": 1.409,
+      "memoryMb": 796.4,
+      "anonMb": 8.4,
+      "pids": 19
+    },
+    {
+      "t": 423.1,
+      "phase": "stage:4",
+      "cores": 0.468,
+      "memoryMb": 796.8,
+      "anonMb": 8.4,
+      "pids": 19
+    },
+    {
+      "t": 424.1,
+      "phase": "stage:4",
+      "cores": 0.564,
+      "memoryMb": 796,
+      "anonMb": 8.4,
+      "pids": 19
+    },
+    {
+      "t": 425.1,
+      "phase": "stage:4",
+      "cores": 0.539,
+      "memoryMb": 796.4,
+      "anonMb": 8.4,
+      "pids": 19
+    },
+    {
+      "t": 426.1,
+      "phase": "stage:4",
+      "cores": 0,
+      "memoryMb": 795.8,
+      "anonMb": 8.4,
+      "pids": 19
+    },
+    {
+      "t": 427.1,
+      "phase": "stage:4",
+      "cores": 0,
+      "memoryMb": 795.8,
+      "anonMb": 8.4,
+      "pids": 19
+    },
+    {
+      "t": 428.1,
+      "phase": "stage:4",
+      "cores": 0,
+      "memoryMb": 795.8,
+      "anonMb": 8.4,
+      "pids": 19
+    },
+    {
+      "t": 429.1,
+      "phase": "stage:4",
+      "cores": 0,
+      "memoryMb": 795.8,
+      "anonMb": 8.4,
+      "pids": 19
+    },
+    {
+      "t": 430.1,
+      "phase": "stage:4",
+      "cores": 0,
+      "memoryMb": 795.8,
+      "anonMb": 8.4,
+      "pids": 19
+    },
+    {
+      "t": 431.1,
+      "phase": "stage:4",
+      "cores": 0,
+      "memoryMb": 795.8,
+      "anonMb": 8.4,
+      "pids": 19
+    },
+    {
+      "t": 432.1,
+      "phase": "stage:4",
+      "cores": 0,
+      "memoryMb": 795.8,
+      "anonMb": 8.4,
+      "pids": 19
+    },
+    {
+      "t": 433.1,
+      "phase": "cooldown:4",
+      "cores": 0.001,
+      "memoryMb": 796,
+      "anonMb": 8.4,
+      "pids": 19
+    },
+    {
+      "t": 434.1,
+      "phase": "cooldown:4",
+      "cores": 0,
+      "memoryMb": 795.8,
+      "anonMb": 8.4,
+      "pids": 19
+    },
+    {
+      "t": 435.1,
+      "phase": "cooldown:4",
+      "cores": 0.001,
+      "memoryMb": 795.7,
+      "anonMb": 8.4,
+      "pids": 13
+    },
+    {
+      "t": 436.1,
+      "phase": "cooldown:4",
+      "cores": 0,
+      "memoryMb": 795.6,
+      "anonMb": 8.4,
+      "pids": 13
+    },
+    {
+      "t": 437.1,
+      "phase": "cooldown:4",
+      "cores": 0,
+      "memoryMb": 795.6,
+      "anonMb": 8.4,
+      "pids": 13
+    },
+    {
+      "t": 438.1,
+      "phase": "stage:8",
+      "cores": 6.13,
+      "memoryMb": 1148.3,
+      "anonMb": 321.8,
+      "pids": 76
+    },
+    {
+      "t": 439.1,
+      "phase": "stage:8",
+      "cores": 5.69,
+      "memoryMb": 1156.1,
+      "anonMb": 290.2,
+      "pids": 59
+    },
+    {
+      "t": 440.1,
+      "phase": "stage:8",
+      "cores": 5.151,
+      "memoryMb": 1168,
+      "anonMb": 264.9,
+      "pids": 69
+    },
+    {
+      "t": 441.1,
+      "phase": "stage:8",
+      "cores": 5.177,
+      "memoryMb": 1200.4,
+      "anonMb": 254.3,
+      "pids": 68
+    },
+    {
+      "t": 442.1,
+      "phase": "stage:8",
+      "cores": 1.932,
+      "memoryMb": 973.8,
+      "anonMb": 9.7,
+      "pids": 28
+    },
+    {
+      "t": 443.1,
+      "phase": "stage:8",
+      "cores": 0.22,
+      "memoryMb": 995.8,
+      "anonMb": 31,
+      "pids": 30
+    },
+    {
+      "t": 444.1,
+      "phase": "stage:8",
+      "cores": 1.874,
+      "memoryMb": 1175.4,
+      "anonMb": 210,
+      "pids": 64
+    },
+    {
+      "t": 445.1,
+      "phase": "stage:8",
+      "cores": 2.289,
+      "memoryMb": 1004.2,
+      "anonMb": 19.4,
+      "pids": 35
+    },
+    {
+      "t": 446.1,
+      "phase": "stage:8",
+      "cores": 2.891,
+      "memoryMb": 1006.8,
+      "anonMb": 9.7,
+      "pids": 28
+    },
+    {
+      "t": 447.1,
+      "phase": "stage:8",
+      "cores": 3.704,
+      "memoryMb": 1218,
+      "anonMb": 204.5,
+      "pids": 57
+    },
+    {
+      "t": 448.1,
+      "phase": "stage:8",
+      "cores": 0.547,
+      "memoryMb": 1034.8,
+      "anonMb": 15.5,
+      "pids": 29
+    },
+    {
+      "t": 449.1,
+      "phase": "stage:8",
+      "cores": 0.344,
+      "memoryMb": 1023.5,
+      "anonMb": 9.7,
+      "pids": 28
+    },
+    {
+      "t": 450.1,
+      "phase": "stage:8",
+      "cores": 0.942,
+      "memoryMb": 1062.3,
+      "anonMb": 43.5,
+      "pids": 51
+    },
+    {
+      "t": 451.1,
+      "phase": "stage:8",
+      "cores": 0.35,
+      "memoryMb": 1150.5,
+      "anonMb": 132.3,
+      "pids": 57
+    },
+    {
+      "t": 452.1,
+      "phase": "stage:8",
+      "cores": 2.821,
+      "memoryMb": 1206.4,
+      "anonMb": 167.8,
+      "pids": 57
+    },
+    {
+      "t": 453.1,
+      "phase": "stage:8",
+      "cores": 1.955,
+      "memoryMb": 1215.9,
+      "anonMb": 163.1,
+      "pids": 57
+    },
+    {
+      "t": 454.1,
+      "phase": "stage:8",
+      "cores": 2.099,
+      "memoryMb": 1090,
+      "anonMb": 22.9,
+      "pids": 38
+    },
+    {
+      "t": 455.1,
+      "phase": "stage:8",
+      "cores": 1.675,
+      "memoryMb": 1289.6,
+      "anonMb": 211.2,
+      "pids": 82
+    },
+    {
+      "t": 456.1,
+      "phase": "stage:8",
+      "cores": 2.812,
+      "memoryMb": 1288.1,
+      "anonMb": 195.9,
+      "pids": 64
+    },
+    {
+      "t": 457.1,
+      "phase": "stage:8",
+      "cores": 3.453,
+      "memoryMb": 1240.4,
+      "anonMb": 134.4,
+      "pids": 58
+    },
+    {
+      "t": 458.1,
+      "phase": "stage:8",
+      "cores": 1.123,
+      "memoryMb": 1287.8,
+      "anonMb": 167.1,
+      "pids": 57
+    },
+    {
+      "t": 459.1,
+      "phase": "stage:8",
+      "cores": 3.98,
+      "memoryMb": 1263.8,
+      "anonMb": 113.5,
+      "pids": 46
+    },
+    {
+      "t": 460.1,
+      "phase": "stage:8",
+      "cores": 2.457,
+      "memoryMb": 1176.3,
+      "anonMb": 12.9,
+      "pids": 29
+    },
+    {
+      "t": 461.1,
+      "phase": "stage:8",
+      "cores": 2.83,
+      "memoryMb": 1189.6,
+      "anonMb": 9.7,
+      "pids": 28
+    },
+    {
+      "t": 462.1,
+      "phase": "stage:8",
+      "cores": 0.308,
+      "memoryMb": 1192.5,
+      "anonMb": 9.8,
+      "pids": 29
+    },
+    {
+      "t": 463.1,
+      "phase": "stage:8",
+      "cores": 2.433,
+      "memoryMb": 1205.8,
+      "anonMb": 9.7,
+      "pids": 28
+    },
+    {
+      "t": 464.1,
+      "phase": "stage:8",
+      "cores": 1.022,
+      "memoryMb": 1374.8,
+      "anonMb": 170,
+      "pids": 57
+    },
+    {
+      "t": 465.1,
+      "phase": "stage:8",
+      "cores": 5.472,
+      "memoryMb": 1429,
+      "anonMb": 194.5,
+      "pids": 65
+    },
+    {
+      "t": 466.1,
+      "phase": "stage:8",
+      "cores": 1.636,
+      "memoryMb": 1255.4,
+      "anonMb": 9.7,
+      "pids": 28
+    },
+    {
+      "t": 467.1,
+      "phase": "stage:8",
+      "cores": 0.398,
+      "memoryMb": 1283.4,
+      "anonMb": 34.7,
+      "pids": 37
+    },
+    {
+      "t": 468.1,
+      "phase": "stage:8",
+      "cores": 3.681,
+      "memoryMb": 1523.1,
+      "anonMb": 258.3,
+      "pids": 79
+    },
+    {
+      "t": 469.1,
+      "phase": "stage:8",
+      "cores": 3.143,
+      "memoryMb": 1525,
+      "anonMb": 248.6,
+      "pids": 64
+    },
+    {
+      "t": 470.1,
+      "phase": "stage:8",
+      "cores": 1.133,
+      "memoryMb": 1343.8,
+      "anonMb": 61.1,
+      "pids": 46
+    },
+    {
+      "t": 471.1,
+      "phase": "stage:8",
+      "cores": 3.433,
+      "memoryMb": 1359,
+      "anonMb": 58.4,
+      "pids": 48
+    },
+    {
+      "t": 472.1,
+      "phase": "stage:8",
+      "cores": 5.078,
+      "memoryMb": 1502.8,
+      "anonMb": 180.7,
+      "pids": 57
+    },
+    {
+      "t": 473.1,
+      "phase": "stage:8",
+      "cores": 1.281,
+      "memoryMb": 1380.5,
+      "anonMb": 49.5,
+      "pids": 35
+    },
+    {
+      "t": 474.1,
+      "phase": "stage:8",
+      "cores": 0.996,
+      "memoryMb": 1465.3,
+      "anonMb": 134.1,
+      "pids": 57
+    },
+    {
+      "t": 475.1,
+      "phase": "stage:8",
+      "cores": 2.072,
+      "memoryMb": 1416.5,
+      "anonMb": 68.2,
+      "pids": 36
+    },
+    {
+      "t": 476.1,
+      "phase": "stage:8",
+      "cores": 4.229,
+      "memoryMb": 1617.7,
+      "anonMb": 256.2,
+      "pids": 74
+    },
+    {
+      "t": 477.1,
+      "phase": "stage:8",
+      "cores": 2.907,
+      "memoryMb": 1466.5,
+      "anonMb": 82.2,
+      "pids": 38
+    },
+    {
+      "t": 478.1,
+      "phase": "stage:8",
+      "cores": 0.92,
+      "memoryMb": 1429.2,
+      "anonMb": 48.9,
+      "pids": 35
+    },
+    {
+      "t": 479.1,
+      "phase": "stage:8",
+      "cores": 2.963,
+      "memoryMb": 1596.2,
+      "anonMb": 203.2,
+      "pids": 71
+    },
+    {
+      "t": 480.1,
+      "phase": "stage:8",
+      "cores": 2.586,
+      "memoryMb": 1265.9,
+      "anonMb": 173.2,
+      "pids": 57
+    },
+    {
+      "t": 481.1,
+      "phase": "stage:8",
+      "cores": 1.405,
+      "memoryMb": 1120,
+      "anonMb": 18.4,
+      "pids": 30
+    },
+    {
+      "t": 482.1,
+      "phase": "stage:8",
+      "cores": 2.279,
+      "memoryMb": 1366.3,
+      "anonMb": 228.4,
+      "pids": 54
+    },
+    {
+      "t": 483.1,
+      "phase": "stage:8",
+      "cores": 6.331,
+      "memoryMb": 1642.4,
+      "anonMb": 495.1,
+      "pids": 119
+    },
+    {
+      "t": 484.1,
+      "phase": "stage:8",
+      "cores": 4.075,
+      "memoryMb": 1373.9,
+      "anonMb": 205.6,
+      "pids": 57
+    },
+    {
+      "t": 485.1,
+      "phase": "stage:8",
+      "cores": 0.348,
+      "memoryMb": 1175.7,
+      "anonMb": 9.8,
+      "pids": 28
+    },
+    {
+      "t": 486.1,
+      "phase": "stage:8",
+      "cores": 0,
+      "memoryMb": 1175.4,
+      "anonMb": 9.8,
+      "pids": 28
+    },
+    {
+      "t": 487.1,
+      "phase": "stage:8",
+      "cores": 3.063,
+      "memoryMb": 1192,
+      "anonMb": 9.8,
+      "pids": 28
+    },
+    {
+      "t": 488.1,
+      "phase": "stage:8",
+      "cores": 0.873,
+      "memoryMb": 1353.4,
+      "anonMb": 165.4,
+      "pids": 61
+    },
+    {
+      "t": 489.1,
+      "phase": "stage:8",
+      "cores": 2.766,
+      "memoryMb": 1214.7,
+      "anonMb": 14.1,
+      "pids": 28
+    },
+    {
+      "t": 490.1,
+      "phase": "stage:8",
+      "cores": 1.323,
+      "memoryMb": 1422.1,
+      "anonMb": 211.4,
+      "pids": 83
+    },
+    {
+      "t": 491.1,
+      "phase": "stage:8",
+      "cores": 2.218,
+      "memoryMb": 1226.6,
+      "anonMb": 9.8,
+      "pids": 28
+    },
+    {
+      "t": 492.1,
+      "phase": "stage:8",
+      "cores": 2.292,
+      "memoryMb": 1413.2,
+      "anonMb": 186.5,
+      "pids": 57
+    },
+    {
+      "t": 493.1,
+      "phase": "stage:8",
+      "cores": 1.722,
+      "memoryMb": 1287.7,
+      "anonMb": 50.8,
+      "pids": 47
+    },
+    {
+      "t": 494.1,
+      "phase": "stage:8",
+      "cores": 0.81,
+      "memoryMb": 1244.9,
+      "anonMb": 10,
+      "pids": 29
+    },
+    {
+      "t": 495.1,
+      "phase": "stage:8",
+      "cores": 2.637,
+      "memoryMb": 1259.5,
+      "anonMb": 9.8,
+      "pids": 28
+    },
+    {
+      "t": 496.1,
+      "phase": "stage:8",
+      "cores": 2.036,
+      "memoryMb": 1443.5,
+      "anonMb": 183.2,
+      "pids": 57
+    },
+    {
+      "t": 497.1,
+      "phase": "stage:8",
+      "cores": 4.566,
+      "memoryMb": 1439,
+      "anonMb": 151.5,
+      "pids": 63
+    },
+    {
+      "t": 498.1,
+      "phase": "stage:8",
+      "cores": 1.956,
+      "memoryMb": 1309.5,
+      "anonMb": 9.8,
+      "pids": 28
+    },
+    {
+      "t": 499.1,
+      "phase": "stage:8",
+      "cores": 0,
+      "memoryMb": 1309.4,
+      "anonMb": 9.8,
+      "pids": 28
+    },
+    {
+      "t": 500.1,
+      "phase": "stage:8",
+      "cores": 0,
+      "memoryMb": 1309.4,
+      "anonMb": 9.8,
+      "pids": 28
+    },
+    {
+      "t": 501.1,
+      "phase": "stage:8",
+      "cores": 0,
+      "memoryMb": 1309.4,
+      "anonMb": 9.8,
+      "pids": 28
+    },
+    {
+      "t": 502.1,
+      "phase": "stage:8",
+      "cores": 0,
+      "memoryMb": 1309.4,
+      "anonMb": 9.8,
+      "pids": 28
+    },
+    {
+      "t": 503.1,
+      "phase": "stage:8",
+      "cores": 0,
+      "memoryMb": 1309.4,
+      "anonMb": 9.8,
+      "pids": 28
+    },
+    {
+      "t": 504.1,
+      "phase": "stage:8",
+      "cores": 0,
+      "memoryMb": 1309.4,
+      "anonMb": 9.8,
+      "pids": 28
+    },
+    {
+      "t": 505.1,
+      "phase": "stage:8",
+      "cores": 0,
+      "memoryMb": 1309.4,
+      "anonMb": 9.8,
+      "pids": 28
+    },
+    {
+      "t": 506.1,
+      "phase": "stage:8",
+      "cores": 0,
+      "memoryMb": 1309.4,
+      "anonMb": 9.8,
+      "pids": 28
+    },
+    {
+      "t": 507.1,
+      "phase": "stage:8",
+      "cores": 0.001,
+      "memoryMb": 1309.2,
+      "anonMb": 9.8,
+      "pids": 13
+    },
+    {
+      "t": 508.1,
+      "phase": "stage:8",
+      "cores": 0,
+      "memoryMb": 1309.1,
+      "anonMb": 9.8,
+      "pids": 13
+    },
+    {
+      "t": 509.1,
+      "phase": "stage:8",
+      "cores": 0,
+      "memoryMb": 1309.1,
+      "anonMb": 9.8,
+      "pids": 13
+    },
+    {
+      "t": 510.1,
+      "phase": "stage:8",
+      "cores": 0,
+      "memoryMb": 1309.1,
+      "anonMb": 9.8,
+      "pids": 13
+    },
+    {
+      "t": 511.1,
+      "phase": "stage:8",
+      "cores": 0,
+      "memoryMb": 1309,
+      "anonMb": 9.8,
+      "pids": 13
+    },
+    {
+      "t": 512.1,
+      "phase": "stage:8",
+      "cores": 0,
+      "memoryMb": 1309,
+      "anonMb": 9.8,
+      "pids": 13
+    },
+    {
+      "t": 513.1,
+      "phase": "stage:8",
+      "cores": 0,
+      "memoryMb": 1309,
+      "anonMb": 9.8,
+      "pids": 13
+    },
+    {
+      "t": 514.1,
+      "phase": "cooldown:8",
+      "cores": 0.001,
+      "memoryMb": 1309,
+      "anonMb": 9.8,
+      "pids": 13
+    },
+    {
+      "t": 515.1,
+      "phase": "cooldown:8",
+      "cores": 0,
+      "memoryMb": 1309,
+      "anonMb": 9.8,
+      "pids": 13
+    },
+    {
+      "t": 516.1,
+      "phase": "cooldown:8",
+      "cores": 0,
+      "memoryMb": 1309,
+      "anonMb": 9.8,
+      "pids": 13
+    },
+    {
+      "t": 517.1,
+      "phase": "cooldown:8",
+      "cores": 0,
+      "memoryMb": 1309,
+      "anonMb": 9.8,
+      "pids": 13
+    },
+    {
+      "t": 518.1,
+      "phase": "cooldown:8",
+      "cores": 0,
+      "memoryMb": 1309,
+      "anonMb": 9.8,
+      "pids": 13
+    },
+    {
+      "t": 519.1,
+      "phase": "stage:16",
+      "cores": 3.437,
+      "memoryMb": 1871.7,
+      "anonMb": 540.9,
+      "pids": 167
+    },
+    {
+      "t": 520.1,
+      "phase": "stage:16",
+      "cores": 8.404,
+      "memoryMb": 1785.4,
+      "anonMb": 407.2,
+      "pids": 109
+    },
+    {
+      "t": 521.1,
+      "phase": "stage:16",
+      "cores": 7.905,
+      "memoryMb": 1864.9,
+      "anonMb": 413.1,
+      "pids": 83
+    },
+    {
+      "t": 522.1,
+      "phase": "stage:16",
+      "cores": 8.05,
+      "memoryMb": 1809.4,
+      "anonMb": 361.9,
+      "pids": 88
+    },
+    {
+      "t": 523.1,
+      "phase": "stage:16",
+      "cores": 6.626,
+      "memoryMb": 1922.2,
+      "anonMb": 429.4,
+      "pids": 72
+    },
+    {
+      "t": 524.1,
+      "phase": "stage:16",
+      "cores": 5.476,
+      "memoryMb": 2084.6,
+      "anonMb": 558.1,
+      "pids": 125
+    },
+    {
+      "t": 525.1,
+      "phase": "stage:16",
+      "cores": 7.126,
+      "memoryMb": 2348.4,
+      "anonMb": 766.6,
+      "pids": 164
+    },
+    {
+      "t": 526.1,
+      "phase": "stage:16",
+      "cores": 4.044,
+      "memoryMb": 1656.4,
+      "anonMb": 39.6,
+      "pids": 42
+    },
+    {
+      "t": 527.1,
+      "phase": "stage:16",
+      "cores": 3.033,
+      "memoryMb": 1803.1,
+      "anonMb": 168.3,
+      "pids": 78
+    },
+    {
+      "t": 528.1,
+      "phase": "stage:16",
+      "cores": 3.237,
+      "memoryMb": 1912.8,
+      "anonMb": 262.2,
+      "pids": 90
+    },
+    {
+      "t": 529.1,
+      "phase": "stage:16",
+      "cores": 4.546,
+      "memoryMb": 1956,
+      "anonMb": 276.3,
+      "pids": 91
+    },
+    {
+      "t": 530.1,
+      "phase": "stage:16",
+      "cores": 3.662,
+      "memoryMb": 1855.4,
+      "anonMb": 167,
+      "pids": 71
+    },
+    {
+      "t": 531.1,
+      "phase": "stage:16",
+      "cores": 3.119,
+      "memoryMb": 1706.2,
+      "anonMb": 12.1,
+      "pids": 37
+    },
+    {
+      "t": 532.1,
+      "phase": "stage:16",
+      "cores": 0.767,
+      "memoryMb": 1711.3,
+      "anonMb": 11.9,
+      "pids": 35
+    },
+    {
+      "t": 533.1,
+      "phase": "stage:16",
+      "cores": 1.528,
+      "memoryMb": 1782.2,
+      "anonMb": 78.2,
+      "pids": 64
+    },
+    {
+      "t": 534.1,
+      "phase": "stage:16",
+      "cores": 1.44,
+      "memoryMb": 1714.1,
+      "anonMb": 12.9,
+      "pids": 36
+    },
+    {
+      "t": 535.1,
+      "phase": "stage:16",
+      "cores": 2.822,
+      "memoryMb": 1907.3,
+      "anonMb": 196,
+      "pids": 64
+    },
+    {
+      "t": 536.1,
+      "phase": "stage:16",
+      "cores": 1.236,
+      "memoryMb": 1757.8,
+      "anonMb": 35.8,
+      "pids": 58
+    },
+    {
+      "t": 537.1,
+      "phase": "stage:16",
+      "cores": 0.8,
+      "memoryMb": 1792.5,
+      "anonMb": 71.8,
+      "pids": 46
+    },
+    {
+      "t": 538.1,
+      "phase": "stage:16",
+      "cores": 1.276,
+      "memoryMb": 1730,
+      "anonMb": 12,
+      "pids": 35
+    },
+    {
+      "t": 539.1,
+      "phase": "stage:16",
+      "cores": 0,
+      "memoryMb": 1728.7,
+      "anonMb": 12,
+      "pids": 35
+    },
+    {
+      "t": 540.1,
+      "phase": "stage:16",
+      "cores": 0.936,
+      "memoryMb": 1730.3,
+      "anonMb": 12,
+      "pids": 35
+    },
+    {
+      "t": 541.1,
+      "phase": "stage:16",
+      "cores": 1.962,
+      "memoryMb": 1730.1,
+      "anonMb": 12,
+      "pids": 35
+    },
+    {
+      "t": 542.1,
+      "phase": "stage:16",
+      "cores": 2.867,
+      "memoryMb": 1892.2,
+      "anonMb": 167.8,
+      "pids": 71
+    },
+    {
+      "t": 543.1,
+      "phase": "stage:16",
+      "cores": 2.886,
+      "memoryMb": 1760.8,
+      "anonMb": 23.6,
+      "pids": 50
+    },
+    {
+      "t": 544.1,
+      "phase": "stage:16",
+      "cores": 1.765,
+      "memoryMb": 1747.4,
+      "anonMb": 12,
+      "pids": 35
+    },
+    {
+      "t": 545.1,
+      "phase": "stage:16",
+      "cores": 0.763,
+      "memoryMb": 1749.7,
+      "anonMb": 12.2,
+      "pids": 36
+    },
+    {
+      "t": 546.1,
+      "phase": "stage:16",
+      "cores": 2.666,
+      "memoryMb": 1975.2,
+      "anonMb": 222.2,
+      "pids": 71
+    },
+    {
+      "t": 547.1,
+      "phase": "stage:16",
+      "cores": 3.544,
+      "memoryMb": 1985.1,
+      "anonMb": 218.1,
+      "pids": 66
+    },
+    {
+      "t": 548.1,
+      "phase": "stage:16",
+      "cores": 1.197,
+      "memoryMb": 1781,
+      "anonMb": 12,
+      "pids": 35
+    },
+    {
+      "t": 549.1,
+      "phase": "stage:16",
+      "cores": 0.28,
+      "memoryMb": 1781.1,
+      "anonMb": 12,
+      "pids": 35
+    },
+    {
+      "t": 550.1,
+      "phase": "stage:16",
+      "cores": 1.945,
+      "memoryMb": 1808.1,
+      "anonMb": 37.4,
+      "pids": 37
+    },
+    {
+      "t": 551.1,
+      "phase": "stage:16",
+      "cores": 4.417,
+      "memoryMb": 2114,
+      "anonMb": 321.4,
+      "pids": 102
+    },
+    {
+      "t": 552.1,
+      "phase": "stage:16",
+      "cores": 4.654,
+      "memoryMb": 2306.9,
+      "anonMb": 478.4,
+      "pids": 108
+    },
+    {
+      "t": 553.1,
+      "phase": "stage:16",
+      "cores": 2.58,
+      "memoryMb": 1903.1,
+      "anonMb": 371.3,
+      "pids": 95
+    },
+    {
+      "t": 554.1,
+      "phase": "stage:16",
+      "cores": 4.44,
+      "memoryMb": 1586.8,
+      "anonMb": 35.9,
+      "pids": 57
+    },
+    {
+      "t": 555.1,
+      "phase": "stage:16",
+      "cores": 1.573,
+      "memoryMb": 1577.6,
+      "anonMb": 28.6,
+      "pids": 42
+    },
+    {
+      "t": 556.2,
+      "phase": "stage:16",
+      "cores": 1.954,
+      "memoryMb": 1916.1,
+      "anonMb": 356.6,
+      "pids": 101
+    },
+    {
+      "t": 557.2,
+      "phase": "stage:16",
+      "cores": 4.743,
+      "memoryMb": 1587.4,
+      "anonMb": 12.5,
+      "pids": 36
+    },
+    {
+      "t": 558.2,
+      "phase": "stage:16",
+      "cores": 4.164,
+      "memoryMb": 2029.6,
+      "anonMb": 427.2,
+      "pids": 117
+    },
+    {
+      "t": 559.2,
+      "phase": "stage:16",
+      "cores": 4.219,
+      "memoryMb": 1683.5,
+      "anonMb": 69.7,
+      "pids": 57
+    },
+    {
+      "t": 560.2,
+      "phase": "stage:16",
+      "cores": 1.314,
+      "memoryMb": 1626.3,
+      "anonMb": 12.2,
+      "pids": 35
+    },
+    {
+      "t": 561.2,
+      "phase": "stage:16",
+      "cores": 1.078,
+      "memoryMb": 1626.2,
+      "anonMb": 12.2,
+      "pids": 35
+    },
+    {
+      "t": 562.2,
+      "phase": "stage:16",
+      "cores": 0.867,
+      "memoryMb": 1818.7,
+      "anonMb": 196.4,
+      "pids": 85
+    },
+    {
+      "t": 563.2,
+      "phase": "stage:16",
+      "cores": 4.218,
+      "memoryMb": 1674.7,
+      "anonMb": 37.8,
+      "pids": 56
+    },
+    {
+      "t": 564.2,
+      "phase": "stage:16",
+      "cores": 0.226,
+      "memoryMb": 1643.3,
+      "anonMb": 12.2,
+      "pids": 35
+    },
+    {
+      "t": 565.2,
+      "phase": "stage:16",
+      "cores": 1.393,
+      "memoryMb": 1672.5,
+      "anonMb": 37.4,
+      "pids": 43
+    },
+    {
+      "t": 566.2,
+      "phase": "stage:16",
+      "cores": 2.584,
+      "memoryMb": 1997.8,
+      "anonMb": 351.6,
+      "pids": 99
+    },
+    {
+      "t": 567.2,
+      "phase": "stage:16",
+      "cores": 5.614,
+      "memoryMb": 1677.6,
+      "anonMb": 12.2,
+      "pids": 35
+    },
+    {
+      "t": 568.2,
+      "phase": "stage:16",
+      "cores": 0.643,
+      "memoryMb": 1708.6,
+      "anonMb": 42.1,
+      "pids": 42
+    },
+    {
+      "t": 569.2,
+      "phase": "stage:16",
+      "cores": 0.628,
+      "memoryMb": 1700.4,
+      "anonMb": 32.4,
+      "pids": 43
+    },
+    {
+      "t": 570.2,
+      "phase": "stage:16",
+      "cores": 1.942,
+      "memoryMb": 1892.4,
+      "anonMb": 221.8,
+      "pids": 81
+    },
+    {
+      "t": 571.2,
+      "phase": "stage:16",
+      "cores": 3.392,
+      "memoryMb": 1862,
+      "anonMb": 171.7,
+      "pids": 64
+    },
+    {
+      "t": 572.2,
+      "phase": "stage:16",
+      "cores": 3.459,
+      "memoryMb": 1750.8,
+      "anonMb": 50.8,
+      "pids": 50
+    },
+    {
+      "t": 573.2,
+      "phase": "stage:16",
+      "cores": 3.609,
+      "memoryMb": 1755.9,
+      "anonMb": 35.6,
+      "pids": 44
+    },
+    {
+      "t": 574.2,
+      "phase": "stage:16",
+      "cores": 2.008,
+      "memoryMb": 1896.6,
+      "anonMb": 173,
+      "pids": 65
+    },
+    {
+      "t": 575.2,
+      "phase": "stage:16",
+      "cores": 2.691,
+      "memoryMb": 1744.9,
+      "anonMb": 12.2,
+      "pids": 35
+    },
+    {
+      "t": 576.2,
+      "phase": "stage:16",
+      "cores": 1.172,
+      "memoryMb": 1857.3,
+      "anonMb": 116.9,
+      "pids": 71
+    },
+    {
+      "t": 577.2,
+      "phase": "stage:16",
+      "cores": 3.32,
+      "memoryMb": 1807.6,
+      "anonMb": 53.3,
+      "pids": 61
+    },
+    {
+      "t": 578.2,
+      "phase": "stage:16",
+      "cores": 0.67,
+      "memoryMb": 1762.4,
+      "anonMb": 12.2,
+      "pids": 35
+    },
+    {
+      "t": 579.2,
+      "phase": "stage:16",
+      "cores": 3.003,
+      "memoryMb": 1957.3,
+      "anonMb": 194,
+      "pids": 64
+    },
+    {
+      "t": 580.2,
+      "phase": "stage:16",
+      "cores": 0.324,
+      "memoryMb": 1778.4,
+      "anonMb": 12.2,
+      "pids": 35
+    },
+    {
+      "t": 581.2,
+      "phase": "stage:16",
+      "cores": 0,
+      "memoryMb": 1778.4,
+      "anonMb": 12.2,
+      "pids": 35
+    },
+    {
+      "t": 582.2,
+      "phase": "stage:16",
+      "cores": 0,
+      "memoryMb": 1778.4,
+      "anonMb": 12.2,
+      "pids": 35
+    },
+    {
+      "t": 583.2,
+      "phase": "stage:16",
+      "cores": 0,
+      "memoryMb": 1778.4,
+      "anonMb": 12.2,
+      "pids": 35
+    },
+    {
+      "t": 584.2,
+      "phase": "cooldown:16",
+      "cores": 0.002,
+      "memoryMb": 1778.6,
+      "anonMb": 12.2,
+      "pids": 35
+    },
+    {
+      "t": 585.2,
+      "phase": "cooldown:16",
+      "cores": 0,
+      "memoryMb": 1778.4,
+      "anonMb": 12.2,
+      "pids": 35
+    },
+    {
+      "t": 586.2,
+      "phase": "cooldown:16",
+      "cores": 0,
+      "memoryMb": 1778.4,
+      "anonMb": 12.2,
+      "pids": 35
+    },
+    {
+      "t": 587.2,
+      "phase": "cooldown:16",
+      "cores": 0,
+      "memoryMb": 1778.4,
+      "anonMb": 12.2,
+      "pids": 35
+    },
+    {
+      "t": 588.2,
+      "phase": "cooldown:16",
+      "cores": 0,
+      "memoryMb": 1778.4,
+      "anonMb": 12.2,
+      "pids": 35
+    },
+    {
+      "t": 589.2,
+      "phase": "after",
+      "cores": 0.002,
+      "memoryMb": 1777.8,
+      "anonMb": 12.2,
+      "pids": 13
+    },
+    {
+      "t": 590.2,
+      "phase": "after",
+      "cores": 0,
+      "memoryMb": 1777.8,
+      "anonMb": 12.2,
+      "pids": 13
+    },
+    {
+      "t": 591.2,
+      "phase": "after",
+      "cores": 0,
+      "memoryMb": 1777.8,
+      "anonMb": 12.1,
+      "pids": 13
+    }
+  ]
+}
