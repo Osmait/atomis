@@ -687,6 +687,11 @@ impl SessionManager {
         }
     }
 
+    /// Live sessions, for the metrics endpoint.
+    pub async fn count(&self) -> usize {
+        self.sessions.lock().await.len()
+    }
+
     pub async fn destroy(&self, id: &str) {
         let session = self.sessions.lock().await.remove(id);
         if let Some(session) = session {

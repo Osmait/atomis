@@ -179,6 +179,25 @@ impl LspRegistry {
         proxy.attach(socket).await;
     }
 
+    /// Language servers with a live process, per language, for the metrics
+    /// endpoint. A proxy whose server crashed and was not restarted holds
+    /// no memory, so it is not counted.
+    pub async fn running(&self) -> Vec<(&'static str, usize)> {
+        let proxies: Vec<Arc<LspProxy>> = self.proxies.lock().await.values().cloned().collect();
+        let mut counts: Vec<(&'static str, usize)> = Vec::new();
+        for proxy in proxies {
+            if proxy.state.lock().await.child_pid.is_none() {
+                continue;
+            }
+            let language = proxy.language.as_str();
+            match counts.iter_mut().find(|(name, _)| *name == language) {
+                Some((_, count)) => *count += 1,
+                None => counts.push((language, 1)),
+            }
+        }
+        counts
+    }
+
     pub async fn close_session(&self, session_id: &str) {
         let keys: Vec<String> = {
             let proxies = self.proxies.lock().await;

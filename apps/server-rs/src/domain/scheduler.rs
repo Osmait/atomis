@@ -178,6 +178,8 @@ impl RunScheduler {
                 }
             });
 
+            let in_flight = crate::metrics::METRICS.run_started();
+            let started = std::time::Instant::now();
             let outcome = (scheduler.runner)(
                 target,
                 Arc::clone(&session),
@@ -189,6 +191,17 @@ impl RunScheduler {
             .await;
             drop(events_tx);
             let _ = forwarder.await;
+            drop(in_flight);
+            // Counted whether or not anyone is still waiting for it: a
+            // superseded run cost the same CPU as one that was shown.
+            if let Some(outcome) = &outcome {
+                crate::metrics::METRICS.run_finished(
+                    target,
+                    outcome.terminal_state,
+                    started.elapsed().as_secs_f64(),
+                    &outcome.result,
+                );
+            }
 
             let current = {
                 let inner = scheduler.inner.lock().await;

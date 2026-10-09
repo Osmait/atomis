@@ -13,6 +13,7 @@ mod domain;
 mod http;
 mod exec;
 mod languages;
+mod metrics;
 mod protocol;
 mod state;
 mod util;
@@ -20,7 +21,7 @@ mod ws;
 
 use http::routes::{
     create_session, create_workspace, delete_workspace, doctor_route,
-    get_preferences, health, list_workspaces, put_preferences, rename_workspace,
+    get_preferences, health, list_workspaces, metrics_route, put_preferences, rename_workspace,
     ws_lsp_route, ws_runtime_route,
 };
 use state::AppState;
@@ -111,6 +112,7 @@ async fn main() {
     let mut app = Router::new()
         .route("/api/health", get(health))
         .route("/api/doctor", get(doctor_route))
+        .route("/api/metrics", get(metrics_route))
         .route("/api/sessions", post(create_session))
         .route(
             "/api/workspaces",
