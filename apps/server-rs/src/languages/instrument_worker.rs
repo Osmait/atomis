@@ -1,4 +1,5 @@
-//! Long-lived instrumenter processes, one per script, shared by sessions.
+//! Long-lived instrumenter processes, one per interpreter and script,
+//! shared by sessions.
 //!
 //! A Node instrumenter spends ~110 ms loading its parser and a few ms
 //! instrumenting; spawned per file, that load is most of a TS run's
@@ -31,7 +32,7 @@ struct Worker {
     next_id: u64,
 }
 
-static WORKERS: LazyLock<Mutex<HashMap<PathBuf, Worker>>> =
+static WORKERS: LazyLock<Mutex<HashMap<(String, PathBuf), Worker>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 #[derive(serde::Serialize)]
@@ -62,14 +63,15 @@ struct Wire {
     error: Option<String>,
 }
 
-/// Instruments one file through the worker for `script`; `None` means
-/// "use the CLI instead".
-pub async fn instrument(script: &Path, request: &Request<'_>) -> Option<Answer> {
+/// Instruments one file through the worker `program script` (e.g. `node
+/// worker.mjs`); `None` means "use the CLI instead".
+pub async fn instrument(program: &str, script: &Path, request: &Request<'_>) -> Option<Answer> {
+    let key = (program.to_string(), script.to_path_buf());
     let mut workers = WORKERS.lock().await;
-    if !workers.contains_key(script) {
-        match spawn(script) {
+    if !workers.contains_key(&key) {
+        match spawn(program, script) {
             Ok(worker) => {
-                workers.insert(script.to_path_buf(), worker);
+                workers.insert(key.clone(), worker);
             }
             Err(error) => {
                 tracing::warn!(%error, "instrumenter worker failed to start");
@@ -77,24 +79,24 @@ pub async fn instrument(script: &Path, request: &Request<'_>) -> Option<Answer> 
             }
         }
     }
-    let worker = workers.get_mut(script)?;
+    let worker = workers.get_mut(&key)?;
     match tokio::time::timeout(ANSWER_TIMEOUT, exchange(worker, request)).await {
         Ok(Ok(answer)) => Some(answer),
         Ok(Err(error)) => {
             tracing::warn!(%error, "instrumenter worker failed; using the CLI");
-            workers.remove(script);
+            workers.remove(&key);
             None
         }
         Err(_) => {
             tracing::warn!("instrumenter worker timed out; using the CLI");
-            workers.remove(script);
+            workers.remove(&key);
             None
         }
     }
 }
 
-fn spawn(script: &Path) -> Result<Worker, String> {
-    let mut command = tokio::process::Command::new("node");
+fn spawn(program: &str, script: &Path) -> Result<Worker, String> {
+    let mut command = tokio::process::Command::new(program);
     crate::exec::supervisor::scrub_bundle_env(&mut command);
     command
         .arg(script)

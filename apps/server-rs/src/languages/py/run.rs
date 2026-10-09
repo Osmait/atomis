@@ -181,7 +181,14 @@ pub async fn run(
             command_prefix_args: vec![instrumenter.to_string_lossy().into_owned()],
             extra_args: &|_| Vec::new(),
             timeout_ms: 10_000,
-            worker: None,
+            // The shared worker runs the system interpreter, whose `ast`
+            // may not match a session venv's Python; those use the CLI.
+            worker: (python_command(&session.root) == "python3").then(|| {
+                (
+                    "python3".to_string(),
+                    packs::project_root().join("python/instrumenter/pylive_worker.py"),
+                )
+            }),
         },
     )
     .await;

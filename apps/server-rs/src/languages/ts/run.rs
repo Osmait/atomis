@@ -247,7 +247,7 @@ pub async fn run(
             command_prefix_args: vec![instrumenter.to_string_lossy().into_owned()],
             extra_args: &|_| Vec::new(),
             timeout_ms: 10_000,
-            worker: Some(packs::project_root().join("ts/instrumenter/worker.mjs")),
+            worker: Some(("node".to_string(), packs::project_root().join("ts/instrumenter/worker.mjs"))),
         },
     )
     .await;
