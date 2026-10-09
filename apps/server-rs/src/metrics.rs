@@ -50,11 +50,13 @@ impl LanguageMetrics {
 pub struct Metrics {
     languages: [LanguageMetrics; LANGUAGES.len()],
     runs_in_flight: AtomicI64,
+    runs_queued: AtomicI64,
 }
 
 pub static METRICS: LazyLock<Metrics> = LazyLock::new(|| Metrics {
     languages: std::array::from_fn(|_| LanguageMetrics::new()),
     runs_in_flight: AtomicI64::new(0),
+    runs_queued: AtomicI64::new(0),
 });
 
 fn index(language: Language) -> usize {
@@ -78,7 +80,21 @@ impl Drop for InFlight {
     }
 }
 
+/// The same, for a run waiting for a free slot.
+pub struct Queued;
+
+impl Drop for Queued {
+    fn drop(&mut self) {
+        METRICS.runs_queued.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
 impl Metrics {
+    pub fn run_queued(&self) -> Queued {
+        self.runs_queued.fetch_add(1, Ordering::Relaxed);
+        Queued
+    }
+
     pub fn run_started(&self) -> InFlight {
         self.runs_in_flight.fetch_add(1, Ordering::Relaxed);
         InFlight
@@ -225,6 +241,8 @@ pub fn render(gauges: &Gauges) -> String {
 
     header(&mut out, "atomis_runs_in_flight", "gauge", "Runs currently compiling or executing.");
     let _ = writeln!(out, "atomis_runs_in_flight {}", metrics.runs_in_flight.load(Ordering::Relaxed));
+    header(&mut out, "atomis_runs_queued", "gauge", "Runs waiting for a free slot (ATOMIS_MAX_CONCURRENT_RUNS).");
+    let _ = writeln!(out, "atomis_runs_queued {}", metrics.runs_queued.load(Ordering::Relaxed));
     header(&mut out, "atomis_sessions", "gauge", "Live sessions, including those in their reconnect grace.");
     let _ = writeln!(out, "atomis_sessions {}", gauges.sessions);
     header(&mut out, "atomis_lsp_servers", "gauge", "Running language servers by language.");

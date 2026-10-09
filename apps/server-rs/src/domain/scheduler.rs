@@ -17,6 +17,27 @@ use crate::util::{now_ms, random_uuid};
 
 pub type Outbox = UnboundedSender<ServerEvent>;
 
+/// How many runs may compile or execute at once, across every session:
+/// `ATOMIS_MAX_CONCURRENT_RUNS`, or one per CPU this process may use (a
+/// container's CPU quota included).
+///
+/// Unbounded, sixteen people on two vCPUs meant sixteen compilers sharing
+/// them — every run slowed down together, the slowest took 40 s, and the
+/// memory of all of them at once (a Zig build alone is ~430 MB) reached the
+/// container's limit. Queued, each run gets a whole CPU and the memory
+/// ceiling follows the CPU count instead of the number of people.
+fn run_slots(raw: Option<&str>, cpus: usize) -> usize {
+    raw.and_then(|value| value.trim().parse::<usize>().ok())
+        .filter(|slots| *slots > 0)
+        .unwrap_or(cpus.max(1))
+}
+
+static RUN_SLOTS: std::sync::LazyLock<tokio::sync::Semaphore> = std::sync::LazyLock::new(|| {
+    let cpus = std::thread::available_parallelism().map_or(2, usize::from);
+    let slots = run_slots(std::env::var("ATOMIS_MAX_CONCURRENT_RUNS").ok().as_deref(), cpus);
+    tokio::sync::Semaphore::new(slots)
+});
+
 /// What actually executes a run. Injected so the scheduler's gating —
 /// supersession, cancellation, panic recovery — is testable without a
 /// toolchain on the machine.
@@ -178,17 +199,31 @@ impl RunScheduler {
                 }
             });
 
-            let in_flight = crate::metrics::METRICS.run_started();
             let started = std::time::Instant::now();
-            let outcome = (scheduler.runner)(
-                target,
-                Arc::clone(&session),
-                snapshot.clone(),
-                settings,
-                token.clone(),
-                events_tx.clone(),
-            )
-            .await;
+            // Waiting for a slot is part of the wait the person sees, so it
+            // stays inside the measured run; a run superseded while queued
+            // leaves the queue without ever starting.
+            let queued = crate::metrics::METRICS.run_queued();
+            let slot = tokio::select! {
+                slot = RUN_SLOTS.acquire() => slot.ok(),
+                () = token.cancelled() => None,
+            };
+            drop(queued);
+            let in_flight = slot.as_ref().map(|_| crate::metrics::METRICS.run_started());
+            let outcome = match slot {
+                Some(_slot) => {
+                    (scheduler.runner)(
+                        target,
+                        Arc::clone(&session),
+                        snapshot.clone(),
+                        settings,
+                        token.clone(),
+                        events_tx.clone(),
+                    )
+                    .await
+                }
+                None => None,
+            };
             drop(events_tx);
             let _ = forwarder.await;
             drop(in_flight);
@@ -499,6 +534,15 @@ mod tests {
             scheduler.inner.lock().await.active_run.is_none(),
             "the slot must be free for the next run"
         );
+    }
+
+    #[test]
+    fn run_slots_follow_the_cpus_unless_configured() {
+        assert_eq!(run_slots(None, 4), 4);
+        assert_eq!(run_slots(Some("2"), 16), 2);
+        // Zero would queue every run forever; it means "use the default".
+        assert_eq!(run_slots(Some("0"), 4), 4);
+        assert_eq!(run_slots(None, 0), 1);
     }
 
     #[tokio::test]
