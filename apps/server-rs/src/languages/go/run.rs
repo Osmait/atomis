@@ -23,12 +23,26 @@ use crate::languages::runtime::{cancelled_outcome, reset_generated, Events, Runn
 
 const COMPILE_TIMEOUT_MS: u64 = 60_000;
 
+/// The build cache every session shares, like Zig's global cache beside it
+/// in the toolchain cache (granted to the sandbox for the same reason).
+///
+/// A per-session cache rebuilt the runtime and the standard library for
+/// every new session: 2.5-4 s and about 9 CPU-seconds before the first run
+/// of each one. Go's cache is content-addressed, safe for concurrent
+/// `go` processes, and trims itself. Falls back to the session directory
+/// when the shared one cannot be created.
+fn go_cache(root: &std::path::Path) -> std::path::PathBuf {
+    let shared = crate::exec::sandbox::toolchain_cache_root().join("go-build");
+    if std::fs::create_dir_all(&shared).is_ok() {
+        shared
+    } else {
+        root.join(".gocache")
+    }
+}
+
 fn go_env(root: &std::path::Path) -> Vec<(String, String)> {
     vec![
-        (
-            "GOCACHE".into(),
-            root.join(".gocache").to_string_lossy().into_owned(),
-        ),
+        ("GOCACHE".into(), go_cache(root).to_string_lossy().into_owned()),
         // Sessions can live below a parent Git worktree whose status is not
         // readable from the sandbox. Build metadata is irrelevant for these
         // temporary binaries, so do not let VCS stamping block compilation.
@@ -489,5 +503,17 @@ mod tests {
             .find_map(|(name, value)| (name == "GOFLAGS").then_some(value.as_str()));
 
         assert_eq!(goflags, Some("-mod=mod -buildvcs=false"));
+    }
+
+    #[test]
+    fn the_build_cache_outlives_the_session() {
+        let root = std::path::Path::new("/tmp/atomis-go-session");
+        let env = go_env(root);
+        let cache = env
+            .iter()
+            .find_map(|(name, value)| (name == "GOCACHE").then_some(value.as_str()))
+            .expect("GOCACHE");
+        assert!(!cache.starts_with("/tmp/atomis-go-session"), "{cache}");
+        assert!(cache.ends_with("go-build"), "{cache}");
     }
 }
