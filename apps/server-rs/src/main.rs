@@ -109,6 +109,22 @@ async fn main() {
         });
     }
 
+    // Language servers are most of what a running server holds in memory,
+    // and an open tab keeps its own alive indefinitely. Stop the unused ones.
+    if let Some(idle) = ws::lsp::idle_timeout_from_env() {
+        let registry = Arc::clone(&state);
+        tokio::spawn(async move {
+            let mut every = tokio::time::interval(std::time::Duration::from_secs(30).min(idle));
+            loop {
+                every.tick().await;
+                let stopped = registry.lsp_registry.reap_idle(idle).await;
+                if stopped > 0 {
+                    tracing::info!(stopped, "stopped idle language servers");
+                }
+            }
+        });
+    }
+
     let mut app = Router::new()
         .route("/api/health", get(health))
         .route("/api/doctor", get(doctor_route))
