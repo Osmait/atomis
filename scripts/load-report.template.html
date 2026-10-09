@@ -1,0 +1,651 @@
+<title>Atomis Hosting Bill</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: a utility bill — the estimator is the statement on top, the
+   meter readings that justify every line sit below it. */
+:root {
+  --bg: #f6f7f6;
+  --panel: #ffffff;
+  --ink: #141716;
+  --ink-2: #4c5450;
+  --ink-3: #7b8480;
+  --rule: #dfe3e0;
+  --grid: #eceeec;
+  --accent: #0f6b5c;
+  --accent-soft: #e2f0ec;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
+  --ok: #1f7a3a; --warn: #a86400; --bad: #c03636;
+  --font-body: "IBM Plex Sans", system-ui, sans-serif;
+  --font-num: "IBM Plex Sans Condensed", "IBM Plex Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111413; --panel: #191d1b; --ink: #eef1ef; --ink-2: #b4bcb8; --ink-3: #85908b;
+    --rule: #2c3330; --grid: #232927; --accent: #4fc2a8; --accent-soft: #1d2f2a;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+    --ok: #5cc27a; --warn: #e0a040; --bad: #ef7474; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111413; --panel: #191d1b; --ink: #eef1ef; --ink-2: #b4bcb8; --ink-3: #85908b;
+  --rule: #2c3330; --grid: #232927; --accent: #4fc2a8; --accent-soft: #1d2f2a;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+  --ok: #5cc27a; --warn: #e0a040; --bad: #ef7474; color-scheme: dark;
+}
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.5; }
+.page { max-width: 1120px; margin: 0 auto; padding-inline: 20px; padding-block: 28px 64px; display: grid; gap: 40px; }
+h1, h2, h3 { margin: 0; text-wrap: balance; font-weight: 600; }
+h1 { font-size: 30px; letter-spacing: -0.01em; }
+h2 { font-size: 20px; }
+h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-2); font-weight: 500; }
+p { margin: 0; max-width: 68ch; color: var(--ink-2); }
+.mono, td.n, .tick text { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+header { display: grid; gap: 8px; }
+.meta { font-family: var(--font-mono); font-size: 12px; color: var(--ink-3); }
+section { display: grid; gap: 16px; }
+.lede { display: grid; gap: 6px; }
+
+/* Estimator */
+.bill { display: grid; grid-template-columns: minmax(0, 340px) minmax(0, 1fr); gap: 0; background: var(--panel); border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; }
+.controls { padding: 20px; display: grid; gap: 16px; align-content: start; border-right: 1px solid var(--rule); }
+.statement { padding: 20px 24px; display: grid; gap: 20px; align-content: start; min-width: 0; }
+.presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.presets button { font: inherit; font-size: 13px; padding: 5px 10px; border-radius: 999px; border: 1px solid var(--rule); background: var(--bg); color: var(--ink); cursor: pointer; }
+.presets button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--ink); }
+.presets button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.field { display: grid; gap: 4px; }
+.field label { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--ink-2); }
+.field label output { font-family: var(--font-mono); color: var(--ink); }
+.field input[type="range"] { width: 100%; accent-color: var(--accent); }
+.field select { font: inherit; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--rule); background: var(--bg); color: var(--ink); }
+.toggles { display: grid; gap: 6px; font-size: 13px; color: var(--ink-2); }
+.toggles label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.langs { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 13px; }
+.langs label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+input[type="checkbox"] { accent-color: var(--accent); }
+.total { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; }
+.total .big { font-family: var(--font-num); font-size: 56px; line-height: 1; font-weight: 600; letter-spacing: -0.02em; }
+.total .per { color: var(--ink-2); }
+.pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid currentColor; }
+.pill.ok { color: var(--ok); } .pill.warn { color: var(--warn); } .pill.bad { color: var(--bad); }
+.lines { width: 100%; border-collapse: collapse; font-size: 14px; }
+.lines td { padding: 7px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+.lines td.n { text-align: right; white-space: nowrap; padding-left: 12px; }
+.lines td .how { display: block; font-size: 12px; color: var(--ink-3); font-family: var(--font-mono); }
+.lines tr.sum td { border-bottom: 0; font-weight: 600; }
+.swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 8px; vertical-align: -1px; }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.fact { display: grid; gap: 2px; }
+.fact .v { font-family: var(--font-num); font-size: 22px; font-weight: 600; }
+.fact .k { font-size: 12px; color: var(--ink-3); }
+
+/* Readings */
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.card { background: var(--panel); border: 1px solid var(--rule); border-radius: 10px; padding: 16px 18px; display: grid; gap: 10px; min-width: 0; align-content: start; }
+.chart { position: relative; width: 100%; min-width: 0; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--ink-2); }
+.tip { position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 6px 9px; font-size: 12px; color: var(--ink); box-shadow: 0 4px 14px rgb(0 0 0 / 0.12); white-space: nowrap; z-index: 2; }
+.tip b { font-weight: 600; }
+.tablewrap { overflow-x: auto; }
+table.data { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.data th { text-align: right; font-weight: 500; color: var(--ink-3); font-size: 12px; padding: 6px 8px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+table.data th:first-child, table.data td:first-child { text-align: left; }
+table.data td { padding: 6px 8px; border-bottom: 1px solid var(--grid); text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.delta-good { color: var(--ok); } .delta-bad { color: var(--bad); }
+.notes { display: grid; gap: 8px; }
+.notes li { color: var(--ink-2); max-width: 80ch; }
+.notes ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
+
+@media (max-width: 820px) {
+  .bill { grid-template-columns: minmax(0, 1fr); }
+  .controls { border-right: 0; border-bottom: 1px solid var(--rule); }
+  .grid2 { grid-template-columns: minmax(0, 1fr); }
+  .total .big { font-size: 44px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .bar-seg { transition: width 180ms ease; }
+}
+</style>
+
+<div class="page">
+  <header>
+    <h1>Atomis on Railway: what a month costs</h1>
+    <p>Every figure below comes from a load test of the real server inside its own cgroup, the same accounting Railway bills: CPU actually used and memory actually resident, including every compiler, program and language server the server starts.</p>
+    <div class="meta" id="meta"></div>
+  </header>
+
+  <section aria-labelledby="estimator-h">
+    <div class="lede">
+      <h2 id="estimator-h">Monthly estimate</h2>
+      <p>Pick a usage pattern, or set your own. Prices are Railway's standard compute rates, billed per minute on usage.</p>
+    </div>
+    <div class="bill">
+      <div class="controls">
+        <div class="presets" role="group" aria-label="Usage presets" id="presets"></div>
+        <div class="field">
+          <label for="users">People coding at the same time <output id="users-o"></output></label>
+          <input type="range" id="users" min="1" max="30" step="1" value="1">
+        </div>
+        <div class="field">
+          <label for="hours">Active hours per day <output id="hours-o"></output></label>
+          <input type="range" id="hours" min="0.5" max="24" step="0.5" value="2">
+        </div>
+        <div class="field">
+          <label for="days">Active days per month <output id="days-o"></output></label>
+          <input type="range" id="days" min="1" max="30" step="1" value="22">
+        </div>
+        <div class="field">
+          <label for="rate">Runs per person per active hour <output id="rate-o"></output></label>
+          <input type="range" id="rate" min="10" max="600" step="10" value="120">
+        </div>
+        <div class="field">
+          <span style="font-size:13px;color:var(--ink-2)">Languages in use</span>
+          <div class="langs" id="langs"></div>
+        </div>
+        <div class="toggles">
+          <label><input type="checkbox" id="lsp" checked> Editor features (language servers)</label>
+          <label><input type="checkbox" id="sleep" checked> Serverless: sleep when nobody is using it</label>
+          <label><input type="checkbox" id="tabOpen"> A tab stays open all day</label>
+        </div>
+        <div class="field">
+          <label for="plan">Plan</label>
+          <select id="plan">
+            <option value="hobby">Hobby: $5/month, $5 usage included</option>
+            <option value="pro">Pro: $20/month, $20 usage included</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="volume">Volume for /data (GB) <output id="volume-o"></output></label>
+          <input type="range" id="volume" min="0" max="20" step="1" value="1">
+        </div>
+      </div>
+      <div class="statement">
+        <div class="total">
+          <span class="big" id="total"></span>
+          <span class="per">per month</span>
+          <span id="fit"></span>
+        </div>
+        <p id="before-total" hidden></p>
+        <table class="lines" id="lines" aria-label="Bill breakdown"></table>
+        <div class="facts" id="facts"></div>
+        <div class="card" style="padding:12px 14px">
+          <h3>Running total over 30 days</h3>
+          <div class="chart" id="c-month"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="runs-h">
+    <div class="lede">
+      <h2 id="runs-h">What one run costs</h2>
+      <p>One person editing and running alone: a cold first run, then back-to-back runs with a changed source each time. CPU-seconds per run is the number the CPU line of the bill is built from.</p>
+    </div>
+    <div class="grid2">
+      <div class="card"><h3>CPU-seconds per warm run</h3><div class="chart" id="c-cpu"></div></div>
+      <div class="card"><h3>Peak memory during a run (MB)</h3><div class="chart" id="c-runmem"></div></div>
+    </div>
+    <div class="card tablewrap"><table class="data" id="t-runs"></table></div>
+  </section>
+
+  <section aria-labelledby="lsp-h">
+    <div class="lede">
+      <h2 id="lsp-h">What an open editor holds</h2>
+      <p>Memory each language server keeps for as long as a tab has that language open, measured after it finished indexing. This is the largest line of the bill whenever someone is connected.</p>
+    </div>
+    <div class="grid2">
+      <div class="card"><h3>Resident memory per language server (MB)</h3><div class="chart" id="c-lsp"></div></div>
+      <div class="card"><h3>Startup CPU per language server (CPU-s)</h3><div class="chart" id="c-lspcpu"></div></div>
+    </div>
+    <div class="card tablewrap" id="lsp-compare" hidden><table class="data" id="t-lsp"></table></div>
+  </section>
+
+  <section aria-labelledby="load-h">
+    <div class="lede">
+      <h2 id="load-h">Under load</h2>
+      <p>N people at once, each running every few seconds with an irregular pause between runs, across all languages in turn. Compared on this machine without limits and capped at 2 vCPU and 2 GB, the size of a modest Railway service.</p>
+    </div>
+    <div class="grid2">
+      <div class="card"><h3>Run latency p95 (ms)</h3><div class="legend" id="lg-p95"></div><div class="chart" id="c-p95"></div></div>
+      <div class="card"><h3>CPU cores in use</h3><div class="legend" id="lg-cores"></div><div class="chart" id="c-cores"></div></div>
+    </div>
+    <div class="card tablewrap"><table class="data" id="t-stages"></table></div>
+  </section>
+
+  <section aria-labelledby="ts-h">
+    <div class="lede">
+      <h2 id="ts-h">The whole test, second by second</h2>
+      <p>The unbounded run. Shaded bands mark each phase: idle, one language at a time, language servers opening, then each concurrency stage.</p>
+    </div>
+    <div class="card"><h3>CPU cores</h3><div class="chart" id="c-ts-cores"></div></div>
+    <div class="card"><h3>Container memory (MB)</h3><div class="chart" id="c-ts-mem"></div></div>
+  </section>
+
+  <section class="notes" aria-labelledby="notes-h">
+    <h2 id="notes-h">How the estimate is worked out</h2>
+    <ul id="notes"></ul>
+  </section>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script>
+const DATA = /*__DATA__*/null;
+const U = DATA.unbounded, S = DATA.sized, B = DATA.before;
+
+// Railway standard compute, billed per minute of actual use (October 2026).
+const PRICE = { vcpuMin: 0.000463, gbMin: 0.000231, egressGb: 0.05, volumeGbMonth: 0.15 };
+const PLANS = { hobby: { fee: 5, included: 5 }, pro: { fee: 20, included: 20 } };
+const NAMES = { zig: "Zig", ts: "TypeScript", py: "Python", go: "Go", rust: "Rust", cpp: "C/C++" };
+const LANGS = Object.keys(U.profile);
+const MONTH_HOURS = 730;
+// Railway's serverless wakes on traffic and sleeps 5-10 minutes after the
+// last outbound packet: each active day pays that tail once.
+const SLEEP_TAIL_HOURS = 10 / 60;
+const RUN_KB = 6; // one run's socket traffic: edit, states, values, output
+
+const PRESETS = [
+  { id: "solo", label: "Just me, 2 h a day", users: 1, hours: 2, days: 22, rate: 120, langs: ["zig", "rust", "ts"], lsp: true, sleep: true, tabOpen: false },
+  { id: "solo-open", label: "Just me, tab left open", users: 1, hours: 2, days: 30, rate: 120, langs: ["zig", "rust", "ts", "go"], lsp: true, sleep: true, tabOpen: true },
+  { id: "solo-heavy", label: "Just me, all day", users: 1, hours: 8, days: 22, rate: 180, langs: LANGS, lsp: true, sleep: true, tabOpen: false },
+  { id: "team", label: "Team of 5", users: 5, hours: 6, days: 22, rate: 120, langs: LANGS, lsp: true, sleep: true, tabOpen: false },
+  { id: "public", label: "Public demo", users: 20, hours: 12, days: 30, rate: 60, langs: ["py", "ts", "go"], lsp: false, sleep: false, tabOpen: false },
+];
+
+const $ = (id) => document.getElementById(id);
+const fmt$ = (v) => v < 10 ? `$${v.toFixed(2)}` : `$${v.toFixed(0)}`;
+const fmtN = (v, d = 0) => v.toLocaleString("en-US", { maximumFractionDigits: d, minimumFractionDigits: d });
+// Colors stay CSS variables, set as inline style, so a theme switch
+// repaints the charts without redrawing them.
+const css = (name) => `var(${name})`;
+
+// Language servers stop this long after their editor goes quiet; before
+// that existed, they lived until the tab closed (plus the 2-minute grace).
+const LSP_IDLE_HOURS = 10 / 60;
+const RECONNECT_GRACE_HOURS = 2 / 60;
+
+// ── the model ────────────────────────────────────────────────────────────
+// `D` is one pair of results: the current one, or the one before the
+// optimisations. Per-run figures come from the unbounded run (one run at a
+// time, so the cap does not change them); the idle server from the capped
+// one, whose cgroup started without anyone else's file cache in it.
+function estimate(s, D = { U, S, reaper: true }) {
+  const U = D.U, idle = (D.S ?? D.U).idle;
+  const langs = s.langs.length ? s.langs : LANGS;
+  const mean = (f) => langs.reduce((t, l) => t + f(l), 0) / langs.length;
+  const cpuPerRun = mean((l) => U.profile[l].cpuSecondsPerRun);
+  const runSeconds = mean((l) => U.profile[l].warmRunP50Ms / 1000);
+  const runAnonMb = mean((l) => U.profile[l].peakAnonMb);
+  const lspOf = (l) => U.lsp?.languages?.[l];
+  const lspMb = s.lsp ? langs.reduce((t, l) => t + Math.max(0, lspOf(l)?.heldAnonMb ?? 0), 0) : 0;
+  const lspCpu = s.lsp ? langs.reduce((t, l) => t + (lspOf(l)?.cpuSeconds ?? 0), 0) : 0;
+  const coldCpu = mean((l) => U.profile[l].coldCpuSeconds);
+
+  const activeHours = s.hours * s.days;
+  const awakeHours = s.sleep ? Math.min(MONTH_HOURS, activeHours + s.days * SLEEP_TAIL_HOURS) : MONTH_HOURS;
+  const runs = s.users * s.rate * activeHours;
+  // Each person opens their languages once a day: one cold build and one
+  // language server start per language.
+  const opens = s.users * s.days;
+  const cpuSeconds = runs * cpuPerRun + opens * (lspCpu + coldCpu * langs.length);
+
+  const idleGb = idle.memoryMb / 1024;
+  // Little's law: runs in flight at once times what each holds.
+  const inFlight = (s.users * s.rate / 3600) * runSeconds;
+  // How long the language servers live each day: the active hours, plus
+  // however long an unused tab keeps them.
+  const lspHoursPerDay = s.tabOpen
+    ? (D.reaper ? s.hours + LSP_IDLE_HOURS : 24)
+    : s.hours + (D.reaper ? LSP_IDLE_HOURS : RECONNECT_GRACE_HOURS);
+  const lspGbHours = (s.users * lspMb / 1024) * Math.min(24, lspHoursPerDay) * s.days;
+  const gbMinutes = idleGb * awakeHours * 60 + (inFlight * runAnonMb / 1024) * activeHours * 60 + lspGbHours * 60;
+
+  const egressGb = (opens * DATA.firstLoadKb + runs * RUN_KB) / 1048576;
+  const lines = {
+    cpu: (cpuSeconds / 60) * PRICE.vcpuMin,
+    ram: gbMinutes * PRICE.gbMin,
+    egress: egressGb * PRICE.egressGb,
+    volume: s.volume * PRICE.volumeGbMonth,
+  };
+  const usage = lines.cpu + lines.ram + lines.egress + lines.volume;
+  const plan = PLANS[s.plan];
+  const bill = plan.fee + Math.max(0, usage - plan.included);
+  const peakMemoryMb = idle.memoryMb + s.users * lspMb + Math.ceil(Math.max(inFlight, Math.min(s.users, 1))) * runAnonMb;
+  const avgCores = (runs * cpuPerRun) / Math.max(1, activeHours * 3600);
+  return { lines, usage, bill, plan, runs, cpuSeconds, gbMinutes, egressGb, activeHours, awakeHours, peakMemoryMb, avgCores, lspMb, cpuPerRun, inFlight, demandPerMin: (s.users * s.rate) / 60 };
+}
+
+/** The measured stage whose throughput covers the demand, on the capped server. */
+function capacity(demandPerMin) {
+  const stages = (S ?? U).stages;
+  const fit = stages.find((st) => st.runsPerMinute >= demandPerMin);
+  return fit ? { stage: fit, over: false } : { stage: stages.at(-1), over: true };
+}
+
+// ── controls ─────────────────────────────────────────────────────────────
+const state = { ...PRESETS[0], plan: "hobby", volume: 1 };
+let activePreset = PRESETS[0].id;
+
+function buildControls() {
+  for (const p of PRESETS) {
+    const b = document.createElement("button");
+    b.type = "button"; b.textContent = p.label; b.dataset.id = p.id;
+    b.addEventListener("click", () => { Object.assign(state, p, { langs: [...p.langs] }); activePreset = p.id; sync(); });
+    $("presets").append(b);
+  }
+  for (const l of LANGS) {
+    const label = document.createElement("label");
+    const box = document.createElement("input");
+    box.type = "checkbox"; box.id = `lang-${l}`; box.value = l;
+    box.addEventListener("change", () => {
+      state.langs = LANGS.filter((x) => $(`lang-${x}`).checked); activePreset = null; render();
+    });
+    label.append(box, document.createTextNode(NAMES[l] ?? l));
+    $("langs").append(label);
+  }
+  for (const id of ["users", "hours", "days", "rate", "volume"]) {
+    $(id).addEventListener("input", () => { state[id] = Number($(id).value); activePreset = null; render(); });
+  }
+  for (const id of ["lsp", "sleep", "tabOpen"]) $(id).addEventListener("change", () => { state[id] = $(id).checked; activePreset = null; render(); });
+  $("plan").addEventListener("change", () => { state.plan = $("plan").value; render(); });
+}
+
+function sync() {
+  for (const id of ["users", "hours", "days", "rate", "volume"]) $(id).value = state[id];
+  for (const l of LANGS) $(`lang-${l}`).checked = state.langs.includes(l);
+  $("lsp").checked = state.lsp; $("sleep").checked = state.sleep; $("tabOpen").checked = Boolean(state.tabOpen); $("plan").value = state.plan;
+  render();
+}
+
+function render() {
+  $("users-o").textContent = state.users;
+  $("hours-o").textContent = `${state.hours} h`;
+  $("days-o").textContent = state.days;
+  $("rate-o").textContent = `${state.rate} (one every ${fmtN(3600 / state.rate)} s)`;
+  $("volume-o").textContent = `${state.volume} GB`;
+  for (const b of $("presets").children) b.setAttribute("aria-pressed", String(b.dataset.id === activePreset));
+
+  const e = estimate(state);
+  $("total").textContent = fmt$(e.bill);
+  const beforeTotal = $("before-total");
+  if (B) {
+    const b = estimate(state, { U: B.unbounded, S: B.sized, reaper: false });
+    beforeTotal.hidden = false;
+    beforeTotal.textContent = `Before the optimisations: ${fmt$(b.bill)} a month (usage $${b.usage.toFixed(2)}, peak memory ${fmtN(b.peakMemoryMb)} MB). Now: usage $${e.usage.toFixed(2)}, peak ${fmtN(e.peakMemoryMb)} MB.`;
+  }
+  const cap = capacity(e.demandPerMin);
+  const sizedLabel = S ? "2 vCPU / 2 GB" : "this machine";
+  const memOk = e.peakMemoryMb <= 2048;
+  const pill = $("fit");
+  pill.className = "pill " + (cap.over || !memOk ? "bad" : cap.stage.p95Ms > 3000 ? "warn" : "ok");
+  pill.textContent = cap.over
+    ? `beyond what ${sizedLabel} sustained`
+    : !memOk ? `needs more than 2 GB (${fmtN(e.peakMemoryMb)} MB peak)`
+    : `fits ${sizedLabel}: runs p95 ≈ ${fmtN(cap.stage.p95Ms / 1000, 1)} s`;
+
+  const rows = [
+    ["cpu", "CPU", "--s1", `${fmtN(e.cpuSeconds / 3600, 1)} vCPU-hours · ${fmtN(e.runs)} runs × ${fmtN(e.cpuPerRun, 2)} CPU-s`],
+    ["ram", "Memory", "--s2", `${fmtN(e.gbMinutes / 60, 0)} GB-hours · ${fmtN(e.awakeHours)} h awake, ${fmtN(e.lspMb)} MB of language servers per person`],
+    ["egress", "Network egress", "--s3", `${fmtN(e.egressGb, 2)} GB`],
+    ["volume", "Volume", "--s4", `${state.volume} GB`],
+  ];
+  const t = $("lines"); t.replaceChildren();
+  for (const [key, name, color, how] of rows) {
+    const tr = t.insertRow();
+    const a = tr.insertCell(); const sw = document.createElement("span"); sw.className = "swatch"; sw.style.background = `var(${color})`;
+    const hw = document.createElement("span"); hw.className = "how"; hw.textContent = how;
+    a.append(sw, document.createTextNode(name), hw);
+    const b = tr.insertCell(); b.className = "n"; b.textContent = `$${e.lines[key].toFixed(2)}`;
+  }
+  const add = (label, value, cls) => { const tr = t.insertRow(); if (cls) tr.className = cls; tr.insertCell().textContent = label; const c = tr.insertCell(); c.className = "n"; c.textContent = value; };
+  add("Usage", `$${e.usage.toFixed(2)}`);
+  add(`Plan fee (includes $${e.plan.included} of usage)`, `$${e.plan.fee.toFixed(2)}`);
+  add("You pay", `$${e.bill.toFixed(2)}`, "sum");
+
+  const facts = [
+    [fmtN(e.peakMemoryMb), "MB peak memory"],
+    [fmtN(e.avgCores, 2), "vCPU average while active"],
+    [fmtN(e.demandPerMin, 1), "runs per minute at peak"],
+    [`${fmtN(e.usage / e.plan.included * 100)}%`, "of included usage"],
+  ];
+  $("facts").replaceChildren(...facts.map(([v, k]) => {
+    const d = document.createElement("div"); d.className = "fact";
+    const a = document.createElement("span"); a.className = "v"; a.textContent = v;
+    const b = document.createElement("span"); b.className = "k"; b.textContent = k;
+    d.append(a, b); return d;
+  }));
+  drawMonth(e);
+}
+
+// ── charts ───────────────────────────────────────────────────────────────
+function tooltip(host) {
+  let tip = host.querySelector(".tip");
+  if (!tip) { tip = document.createElement("div"); tip.className = "tip"; tip.hidden = true; host.append(tip); }
+  return {
+    show(event, lines) {
+      tip.replaceChildren(...lines.map((l, i) => { const d = document.createElement("div"); if (i === 0) { const b = document.createElement("b"); b.textContent = l; d.append(b); } else d.textContent = l; return d; }));
+      tip.hidden = false;
+      const r = host.getBoundingClientRect();
+      const x = event.clientX - r.left, y = event.clientY - r.top;
+      const w = tip.offsetWidth;
+      tip.style.left = `${Math.max(0, Math.min(r.width - w, x + 12))}px`;
+      tip.style.top = `${Math.max(0, y - tip.offsetHeight - 10)}px`;
+    },
+    hide() { tip.hidden = true; },
+  };
+}
+
+function frame(id, height, margin) {
+  const host = $(id);
+  const width = Math.max(280, host.clientWidth || 500);
+  host.querySelector("svg")?.remove();
+  const svg = d3.select(host).append("svg").attr("viewBox", `0 0 ${width} ${height}`).attr("width", "100%");
+  return { host, svg, width, height, m: margin, iw: width - margin.l - margin.r, ih: height - margin.t - margin.b };
+}
+
+function axes(f, x, y, { xFormat, yFormat, xTicks = 6, yTicks = 4 } = {}) {
+  const g = f.svg.append("g").attr("transform", `translate(${f.m.l},${f.m.t})`);
+  g.append("g").call(d3.axisLeft(y).ticks(yTicks).tickSize(-f.iw).tickFormat(yFormat ?? null))
+    .call((a) => { a.select(".domain").remove(); a.selectAll("line").style("stroke", css("--grid")); a.selectAll("text").style("fill", css("--ink-3")).attr("font-size", 11); a.attr("class", "tick"); });
+  if (x) g.append("g").attr("transform", `translate(0,${f.ih})`).call(d3.axisBottom(x).ticks(xTicks).tickSizeOuter(0).tickFormat(xFormat ?? null))
+    .call((a) => { a.select(".domain").style("stroke", css("--rule")); a.selectAll("line").style("stroke", css("--rule")); a.selectAll("text").style("fill", css("--ink-3")).attr("font-size", 11); a.attr("class", "tick"); });
+  return g;
+}
+
+/** Horizontal bars, one per language, value label at the end. */
+function hbars(id, rows, { unit = "", digits = 0, color = "--s1", compareRows } = {}) {
+  const rowH = 30;
+  const f = frame(id, rows.length * rowH + 24, { t: 4, r: 64, b: 20, l: 92 });
+  const max = d3.max(rows, (r) => r.value) || 1;
+  const x = d3.scaleLinear().domain([0, max * 1.05]).nice().range([0, f.iw]);
+  const y = d3.scaleBand().domain(rows.map((r) => r.key)).range([0, f.ih]).padding(0.32);
+  const g = axes(f, null, d3.scaleLinear().range([f.ih, f.ih]), { yTicks: 0 });
+  g.selectAll(".tick").remove();
+  g.append("g").call(d3.axisBottom(x).ticks(4).tickSize(f.ih)).call((a) => { a.select(".domain").remove(); a.selectAll("line").style("stroke", css("--grid")); a.selectAll("text").style("fill", css("--ink-3")).attr("font-size", 11).attr("dy", 14); a.attr("class", "tick"); });
+  const tip = tooltip(f.host);
+  for (const r of rows) {
+    const yy = y(r.key);
+    g.append("text").attr("x", -10).attr("y", yy + y.bandwidth() / 2).attr("dy", "0.35em").attr("text-anchor", "end").style("fill", css("--ink-2")).attr("font-size", 12).text(r.label);
+    const w = Math.max(2, x(r.value));
+    g.append("rect").attr("x", 0).attr("y", yy).attr("width", w).attr("height", y.bandwidth()).attr("rx", 3).style("fill", css(color));
+    g.append("text").attr("x", w + 6).attr("y", yy + y.bandwidth() / 2).attr("dy", "0.35em").style("fill", css("--ink")).attr("font-size", 12).style("font-family", css("--font-mono")).text(`${fmtN(r.value, digits)}${unit}`);
+    g.append("rect").attr("x", -f.m.l).attr("y", yy - 4).attr("width", f.iw + f.m.l + f.m.r).attr("height", y.bandwidth() + 8).attr("fill", "transparent")
+      .on("mousemove", (ev) => tip.show(ev, [r.label, ...r.tip])).on("mouseleave", () => tip.hide());
+  }
+}
+
+/** Lines over concurrency, one per test run. */
+function stageLines(id, legendId, series, key, { yFormat } = {}) {
+  const f = frame(id, 220, { t: 10, r: 16, b: 28, l: 52 });
+  const all = series.flatMap((s) => s.rows);
+  const xs = [...new Set(all.map((r) => r.concurrency))].sort((a, b) => a - b);
+  const x = d3.scalePoint().domain(xs).range([0, f.iw]).padding(0.3);
+  const y = d3.scaleLinear().domain([0, d3.max(all, (r) => r[key]) * 1.1 || 1]).nice().range([f.ih, 0]);
+  const g = axes(f, x, y, { yFormat, xFormat: (d) => `${d} users` });
+  for (const s of series) {
+    g.append("path").datum(s.rows).attr("fill", "none").style("stroke", css(s.color)).attr("stroke-width", 2)
+      .attr("d", d3.line().x((r) => x(r.concurrency)).y((r) => y(r[key])));
+    g.selectAll(null).data(s.rows).join("circle").attr("cx", (r) => x(r.concurrency)).attr("cy", (r) => y(r[key])).attr("r", 4)
+      .style("fill", css(s.color)).style("stroke", css("--panel")).attr("stroke-width", 2);
+  }
+  const tip = tooltip(f.host);
+  for (const c of xs) {
+    g.append("rect").attr("x", x(c) - x.step() / 2).attr("y", 0).attr("width", x.step()).attr("height", f.ih).attr("fill", "transparent")
+      .on("mousemove", (ev) => tip.show(ev, [`${c} concurrent`, ...series.map((s) => { const r = s.rows.find((q) => q.concurrency === c); return r ? `${s.name}: ${yFormat ? yFormat(r[key]) : fmtN(r[key], 2)}` : `${s.name}: n/a`; })]))
+      .on("mouseleave", () => tip.hide());
+  }
+  $(legendId).replaceChildren(...series.map((s) => { const d = document.createElement("span"); const sw = document.createElement("span"); sw.className = "swatch"; sw.style.background = `var(${s.color})`; d.append(sw, document.createTextNode(s.name)); return d; }));
+}
+
+/** One timeseries with phase bands. */
+function timeseries(id, key, { color, yFormat }) {
+  const ts = U.timeseries;
+  const f = frame(id, 190, { t: 22, r: 12, b: 26, l: 52 });
+  const x = d3.scaleLinear().domain(d3.extent(ts, (d) => d.t)).range([0, f.iw]);
+  const y = d3.scaleLinear().domain([0, d3.max(ts, (d) => d[key]) * 1.08 || 1]).nice().range([f.ih, 0]);
+  const g = axes(f, x, y, { yFormat, xFormat: (d) => `${Math.round(d / 60)} min`, xTicks: 8 });
+  // Phase bands: consecutive samples with the same top-level phase.
+  const top = (p) => p.split(":").slice(0, p.startsWith("stage") || p.startsWith("profile") ? 2 : 1).join(":");
+  const bands = [];
+  for (const d of ts) {
+    const p = top(d.phase);
+    if (bands.length && bands.at(-1).p === p) bands.at(-1).end = d.t; else bands.push({ p, start: d.t, end: d.t });
+  }
+  bands.forEach((b, i) => {
+    if (i % 2 === 0) g.insert("rect", ":first-child").attr("x", x(b.start)).attr("y", 0).attr("width", Math.max(0, x(b.end) - x(b.start))).attr("height", f.ih).style("fill", css("--grid")).attr("opacity", 0.6);
+    const label = b.p.startsWith("stage:") ? `${b.p.slice(6)}×` : b.p.startsWith("profile:") ? b.p.slice(8) : b.p.startsWith("cooldown") || b.p === "after" || b.p === "startup" ? "" : b.p;
+    if (label && x(b.end) - x(b.start) > 18) g.append("text").attr("x", (x(b.start) + x(b.end)) / 2).attr("y", -8).attr("text-anchor", "middle").style("fill", css("--ink-3")).attr("font-size", 10).text(label);
+  });
+  g.append("path").datum(ts).style("fill", css(color)).attr("opacity", 0.14).attr("d", d3.area().x((d) => x(d.t)).y0(f.ih).y1((d) => y(d[key])));
+  g.append("path").datum(ts).attr("fill", "none").style("stroke", css(color)).attr("stroke-width", 1.5).attr("d", d3.line().x((d) => x(d.t)).y((d) => y(d[key])));
+  const tip = tooltip(f.host);
+  const rule = g.append("line").attr("y1", 0).attr("y2", f.ih).style("stroke", css("--ink-3")).attr("stroke-dasharray", "3 3").attr("visibility", "hidden");
+  const dot = g.append("circle").attr("r", 4).style("fill", css(color)).style("stroke", css("--panel")).attr("stroke-width", 2).attr("visibility", "hidden");
+  const bisect = d3.bisector((d) => d.t).center;
+  g.append("rect").attr("width", f.iw).attr("height", f.ih).attr("fill", "transparent")
+    .on("mousemove", (ev) => {
+      const [mx] = d3.pointer(ev); const d = ts[bisect(ts, x.invert(mx))];
+      rule.attr("x1", x(d.t)).attr("x2", x(d.t)).attr("visibility", "visible");
+      dot.attr("cx", x(d.t)).attr("cy", y(d[key])).attr("visibility", "visible");
+      tip.show(ev, [`${fmtN(d.t)} s · ${d.phase}`, `${yFormat ? yFormat(d[key]) : d[key]}`, `${d.pids} processes`]);
+    })
+    .on("mouseleave", () => { tip.hide(); rule.attr("visibility", "hidden"); dot.attr("visibility", "hidden"); });
+}
+
+function drawMonth(e) {
+  const f = frame("c-month", 170, { t: 10, r: 14, b: 26, l: 44 });
+  // Usage accrues day by day; the bill is flat at the fee until the
+  // included usage runs out.
+  const days = d3.range(0, 31);
+  const daily = e.usage / 30;
+  const pts = days.map((d) => ({ d, usage: daily * d, bill: e.plan.fee + Math.max(0, daily * d - e.plan.included) }));
+  const x = d3.scaleLinear().domain([0, 30]).range([0, f.iw]);
+  const y = d3.scaleLinear().domain([0, Math.max(e.plan.included, e.plan.fee, pts.at(-1).bill, pts.at(-1).usage) * 1.15]).nice().range([f.ih, 0]);
+  const g = axes(f, x, y, { yFormat: (v) => `$${v}`, xFormat: (d) => `day ${d}`, xTicks: 6 });
+  g.append("line").attr("x1", 0).attr("x2", f.iw).attr("y1", y(e.plan.included)).attr("y2", y(e.plan.included)).style("stroke", css("--ink-3")).attr("stroke-dasharray", "4 4");
+  g.append("text").attr("x", 4).attr("y", y(e.plan.included) - 6).style("fill", css("--ink-3")).attr("font-size", 11).text(`$${e.plan.included} included`);
+  g.append("path").datum(pts).attr("fill", "none").style("stroke", css("--s1")).attr("stroke-width", 2).attr("d", d3.line().x((p) => x(p.d)).y((p) => y(p.usage)));
+  g.append("path").datum(pts).attr("fill", "none").style("stroke", css("--accent")).attr("stroke-width", 2).attr("d", d3.line().x((p) => x(p.d)).y((p) => y(p.bill)));
+  const last = pts.at(-1);
+  g.append("text").attr("x", f.iw).attr("y", y(last.usage) - 7).attr("text-anchor", "end").style("fill", css("--ink-2")).attr("font-size", 11).text(`usage $${last.usage.toFixed(2)}`);
+  g.append("text").attr("x", f.iw).attr("y", y(last.bill) + (Math.abs(y(last.bill) - y(last.usage)) < 14 ? 16 : -7)).attr("text-anchor", "end").style("fill", css("--ink")).attr("font-size", 11).attr("font-weight", 600).text(`bill $${last.bill.toFixed(2)}`);
+  const tip = tooltip(f.host);
+  const bisect = d3.bisector((p) => p.d).center;
+  g.append("rect").attr("width", f.iw).attr("height", f.ih).attr("fill", "transparent")
+    .on("mousemove", (ev) => { const p = pts[bisect(pts, x.invert(d3.pointer(ev)[0]))]; tip.show(ev, [`Day ${p.d}`, `Usage so far $${p.usage.toFixed(2)}`, `Bill so far $${p.bill.toFixed(2)}`]); })
+    .on("mouseleave", () => tip.hide());
+}
+
+function drawReadings() {
+  const name = (l) => NAMES[l] ?? l;
+  hbars("c-cpu", LANGS.map((l) => ({ key: l, label: name(l), value: U.profile[l].cpuSecondsPerRun,
+    tip: [`${fmtN(U.profile[l].cpuSecondsPerRun, 3)} CPU-s per warm run`, `cold first run: ${fmtN(U.profile[l].coldCpuSeconds, 2)} CPU-s`] })), { digits: 2, color: "--s1" });
+  hbars("c-runmem", LANGS.map((l) => ({ key: l, label: name(l), value: U.profile[l].peakAnonMb,
+    tip: [`${fmtN(U.profile[l].peakAnonMb)} MB anonymous memory at peak`, `${fmtN(U.profile[l].peakMemoryMb)} MB including file cache`] })), { color: "--s2" });
+  const lsp = U.lsp?.languages ?? {};
+  const lspLangs = Object.keys(lsp).filter((l) => lsp[l].heldAnonMb !== undefined);
+  hbars("c-lsp", lspLangs.map((l) => ({ key: l, label: name(l), value: Math.max(0, lsp[l].heldAnonMb),
+    tip: [`${fmtN(lsp[l].heldAnonMb)} MB held after indexing`, `ready in ${fmtN(lsp[l].readyMs)} ms`, lsp[l].ready ? "answered requests" : "did not answer in time"] })), { color: "--s2" });
+  hbars("c-lspcpu", lspLangs.map((l) => ({ key: l, label: name(l), value: lsp[l].cpuSeconds,
+    tip: [`${fmtN(lsp[l].cpuSeconds, 1)} CPU-s to start and index`] })), { digits: 1, color: "--s1" });
+
+  if (B?.unbounded?.lsp) {
+    $("lsp-compare").hidden = false;
+    const lt = $("t-lsp"); lt.replaceChildren();
+    lt.createTHead().insertRow().append(...["Language server", "Before (MB)", "After (MB)", "Change"].map((h) => { const th = document.createElement("th"); th.textContent = h; return th; }));
+    const lb = lt.createTBody();
+    for (const l of lspLangs) {
+      const was = B.unbounded.lsp.languages[l]?.heldAnonMb; const now = lsp[l].heldAnonMb;
+      const tr = lb.insertRow();
+      const pct = was ? ((now - was) / was) * 100 : null;
+      [name(l), was === undefined ? "n/a" : fmtN(was), fmtN(now), pct === null ? "n/a" : `${pct > 0 ? "+" : ""}${fmtN(pct)}%`]
+        .forEach((c, i) => { const td = tr.insertCell(); td.textContent = c; if (i === 3 && pct !== null && Math.abs(pct) >= 10) td.className = pct > 0 ? "delta-bad" : "delta-good"; });
+    }
+  }
+
+  // Per-language table, with the earlier run when there is one.
+  const C = B?.unbounded;
+  const t = $("t-runs");
+  t.replaceChildren();
+  const head = ["Language", "Cold run", "Warm p50", "Warm p95", "CPU-s / run", "Peak MB", "Server: instrument / compile / execute"];
+  if (C) head.splice(5, 0, "Cold before", "CPU-s before");
+  t.createTHead().insertRow().append(...head.map((h) => { const th = document.createElement("th"); th.textContent = h; return th; }));
+  const body = t.createTBody();
+  for (const l of LANGS) {
+    const p = U.profile[l]; const tr = body.insertRow();
+    const b = p.lastBreakdown;
+    const cells = [name(l), `${fmtN(p.coldRunMs)} ms`, `${fmtN(p.warmRunP50Ms)} ms`, `${fmtN(p.warmRunP95Ms)} ms`, fmtN(p.cpuSecondsPerRun, 3), fmtN(p.peakAnonMb),
+      b ? `${fmtN(b.instrumentationMs)} / ${fmtN(b.compilationMs)} / ${fmtN(b.executionMs)} ms` : "n/a"];
+    if (C) {
+      const was = C.profile?.[l];
+      cells.splice(5, 0, was ? `${fmtN(was.coldRunMs)} ms` : "n/a", was ? fmtN(was.cpuSecondsPerRun, 3) : "n/a");
+    }
+    cells.forEach((c) => { tr.insertCell().textContent = c; });
+  }
+
+  const series = [{ name: "No limits (this machine)", color: "--s1", rows: U.stages }];
+  if (S) series.push({ name: "2 vCPU / 2 GB", color: "--s2", rows: S.stages });
+  if (B?.sized) series.push({ name: "2 vCPU / 2 GB, before", color: "--s3", rows: B.sized.stages });
+  stageLines("c-p95", "lg-p95", series, "p95Ms", { yFormat: (v) => `${fmtN(v)} ms` });
+  stageLines("c-cores", "lg-cores", series, "avgCores", { yFormat: (v) => fmtN(v, 1) });
+
+  const st = $("t-stages");
+  st.replaceChildren();
+  st.createTHead().insertRow().append(...["Run", "People", "Runs/min", "p50", "p95", "p99", "Failed", "Cores", "CPU-s/run", "Peak MB"].map((h) => { const th = document.createElement("th"); th.textContent = h; return th; }));
+  const sb = st.createTBody();
+  for (const s of series) for (const r of s.rows) {
+    const tr = sb.insertRow();
+    [s.name, r.concurrency, fmtN(r.runsPerMinute), `${fmtN(r.p50Ms)} ms`, `${fmtN(r.p95Ms)} ms`, `${fmtN(r.p99Ms)} ms`, r.failures, fmtN(r.avgCores, 2), fmtN(r.cpuSecondsPerRun, 3), fmtN(r.peakMemoryMb)]
+      .forEach((c) => { tr.insertCell().textContent = c; });
+  }
+
+  timeseries("c-ts-cores", "cores", { color: "--s1", yFormat: (v) => fmtN(v, 1) });
+  timeseries("c-ts-mem", "memoryMb", { color: "--s2", yFormat: (v) => `${fmtN(v)} MB` });
+
+  $("meta").textContent = [
+    `Measured ${new Date(U.takenAt).toISOString().slice(0, 16).replace("T", " ")} UTC`,
+    U.commit && `commit ${U.commit}`,
+    `${U.host.cpus} × ${U.host.cpuModel?.replace(/\s+/g, " ").trim()}`,
+    `idle ${fmtN((S ?? U).idle.memoryMb)} MB, ${fmtN(U.idle.cores, 3)} cores`,
+  ].filter(Boolean).join(" · ");
+
+  const notes = [
+    `CPU: runs per month × the mean CPU-seconds of a warm run in the selected languages, plus, once per person per active day, a cold first build and each language server's startup. Billed at $${PRICE.vcpuMin}/vCPU-minute.`,
+    `Memory: the idle server (${fmtN((S ?? U).idle.memoryMb)} MB) for every hour the service is awake, the runs in flight while people are active (arrival rate × run time × peak memory per run), and each person's language servers for as long as they live: the active hours plus ${LSP_IDLE_HOURS * 60} minutes, after which an unused one stops. Before that existed, a tab left open kept them all day. Billed at $${PRICE.gbMin}/GB-minute.`,
+    `Language server memory is what each holds right after its first indexing on a cold cache. gopls holds much less once its cache is warm (about 70 MB under the 128 MiB limit), which on Railway lives in the /data volume and survives deploys, so the Go line is pessimistic.`,
+    `Serverless adds ${SLEEP_TAIL_HOURS * 60} minutes of awake time per active day, the time Railway waits before putting a quiet service to sleep. A sleeping service's first request wakes it and may take a few seconds.`,
+    `Egress: one first visit (${fmtN(DATA.firstLoadKb)} KB, from the browser benchmark) per person per day, plus about ${RUN_KB} KB of socket traffic per run.`,
+    `The capacity badge compares the run rate you set with the highest rate the capped 2 vCPU / 2 GB server sustained in the test, and reports that stage's p95 latency.`,
+    `This machine's CPUs are faster than a typical cloud vCPU, so CPU-seconds per run is likely an underestimate there by a factor of 1.5 to 2. Treat the CPU line as a lower bound.`,
+  ];
+  $("notes").replaceChildren(...notes.map((n) => { const li = document.createElement("li"); li.textContent = n; return li; }));
+}
+
+buildControls();
+sync();
+drawReadings();
+let resizeTimer;
+window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { drawReadings(); render(); }, 150); });
+</script>
