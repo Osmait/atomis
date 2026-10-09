@@ -386,61 +386,107 @@ async fn read_message(stdout: &mut ChildStdout) -> Result<(u32, Vec<u8>), String
 }
 
 /// Renders an ErrorBundle (std/zig/ErrorBundle.zig) the way the compiler
-/// prints one — `path:line:col: error: message`, each note after its error
-/// — so the diagnostics parser the classic build uses reads it unchanged.
+/// prints one — `path:line:col: error: message`, then its notes, then its
+/// reference trace — so the diagnostics parser the classic build uses reads
+/// it unchanged. The reference trace matters: an error raised inside the
+/// standard library (a bad format string, say) is located in the user's
+/// code only by its `referenced by:` lines.
 ///
 /// Layout: a header `{extra_len: u32, string_bytes_len: u32}`, then
 /// `extra_len` u32s, then the string table. `extra[0..3]` is the message
 /// list `{len, start, compile_log_text}`; `extra[start..start+len]` index the
 /// root messages `{msg, count, src_loc, notes_len}`, each followed by its
-/// notes' indices; a source location is `{src_path, line, column, ...}`,
-/// zero-based. Strings are offsets of NUL-terminated text.
+/// notes' indices. A source location is `{src_path, line, column,
+/// span_start, span_main, span_end, source_line, reference_trace_len}`,
+/// zero-based, followed by that many `{decl_name, src_loc}` references.
+/// Strings are offsets of NUL-terminated text.
 fn render_error_bundle(body: &[u8]) -> Result<String, String> {
-    let word = |bytes: &[u8], at: usize| -> Option<u32> {
-        bytes.get(at..at + 4).map(|w| u32::from_le_bytes(w.try_into().unwrap_or_default()))
+    let word = |at: usize| -> Option<u32> {
+        body.get(at..at + 4).map(|w| u32::from_le_bytes(w.try_into().unwrap_or_default()))
     };
     let malformed = || "malformed error bundle".to_string();
-    let extra_len = word(body, 0).ok_or_else(malformed)? as usize;
-    let strings_len = word(body, 4).ok_or_else(malformed)? as usize;
+    let extra_len = word(0).ok_or_else(malformed)? as usize;
+    let strings_len = word(4).ok_or_else(malformed)? as usize;
     if extra_len == 0 {
         return Ok(String::new());
     }
     let extra_end = 8 + extra_len * 4;
     let strings = body.get(extra_end..extra_end + strings_len).ok_or_else(malformed)?;
-    let extra = |index: u32| -> Result<u32, String> {
-        word(body, 8 + index as usize * 4)
-            .filter(|_| (index as usize) < extra_len)
-            .ok_or_else(malformed)
-    };
-    let text = |offset: u32| -> String {
-        let tail = strings.get(offset as usize..).unwrap_or_default();
-        let end = tail.iter().position(|byte| *byte == 0).unwrap_or(tail.len());
-        String::from_utf8_lossy(&tail[..end]).into_owned()
+    let bundle = Bundle {
+        extra: &|index: u32| {
+            word(8 + index as usize * 4)
+                .filter(|_| (index as usize) < extra_len)
+                .ok_or_else(malformed)
+        },
+        strings,
     };
     let mut out = String::new();
-    let render = |index: u32, kind: &str, out: &mut String| -> Result<u32, String> {
-        let message = text(extra(index)?);
-        let location = extra(index + 2)?;
-        if location == 0 {
-            out.push_str(&format!("{kind}: {message}\n"));
-        } else {
-            let path = text(extra(location)?);
-            let line = extra(location + 1)? + 1;
-            let column = extra(location + 2)? + 1;
-            out.push_str(&format!("{path}:{line}:{column}: {kind}: {message}\n"));
-        }
-        extra(index + 3)
-    };
-    let (count, start) = (extra(0)?, extra(1)?);
+    let (count, start) = (bundle.at(0)?, bundle.at(1)?);
     for i in 0..count {
-        let message = extra(start + i)?;
-        let notes = render(message, "error", &mut out)?;
-        for n in 0..notes {
-            let note = extra(message + 4 + n)?;
-            render(note, "note", &mut out)?;
-        }
+        bundle.render(bundle.at(start + i)?, "error", &mut out, 0)?;
     }
     Ok(out)
+}
+
+struct Bundle<'a> {
+    extra: &'a dyn Fn(u32) -> Result<u32, String>,
+    strings: &'a [u8],
+}
+
+impl Bundle<'_> {
+    fn at(&self, index: u32) -> Result<u32, String> {
+        (self.extra)(index)
+    }
+
+    fn text(&self, offset: u32) -> String {
+        let tail = self.strings.get(offset as usize..).unwrap_or_default();
+        let end = tail.iter().position(|byte| *byte == 0).unwrap_or(tail.len());
+        String::from_utf8_lossy(&tail[..end]).into_owned()
+    }
+
+    fn location(&self, loc: u32) -> Result<String, String> {
+        Ok(format!(
+            "{}:{}:{}",
+            self.text(self.at(loc)?),
+            self.at(loc + 1)? + 1,
+            self.at(loc + 2)? + 1
+        ))
+    }
+
+    /// One message, its notes, then its reference trace, as
+    /// `ErrorBundle.renderErrorMessage` orders them.
+    fn render(&self, index: u32, kind: &str, out: &mut String, depth: u32) -> Result<(), String> {
+        // Notes do not nest in practice; a cycle in a corrupt bundle must
+        // not recurse forever.
+        if depth > 8 {
+            return Err("error bundle nests too deep".to_string());
+        }
+        let message = self.text(self.at(index)?);
+        let loc = self.at(index + 2)?;
+        let notes = self.at(index + 3)?;
+        if loc == 0 {
+            out.push_str(&format!("{kind}: {message}\n"));
+        } else {
+            out.push_str(&format!("{}: {kind}: {message}\n", self.location(loc)?));
+        }
+        for n in 0..notes {
+            self.render(self.at(index + 4 + n)?, "note", out, depth + 1)?;
+        }
+        if loc != 0 {
+            let references = self.at(loc + 7)?;
+            if references > 0 {
+                out.push_str("referenced by:\n");
+                for r in 0..references {
+                    let entry = loc + 8 + r * 2;
+                    let (name, src) = (self.at(entry)?, self.at(entry + 1)?);
+                    if src != 0 {
+                        out.push_str(&format!("    {}: {}\n", self.text(name), self.location(src)?));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -449,6 +495,54 @@ mod tests {
 
     type Location<'a> = Option<(&'a str, u32, u32)>;
     type Message<'a> = (&'a str, Location<'a>, &'a [(&'a str, Location<'a>)]);
+
+    /// Appends a source location whose reference trace points at `refs`.
+    fn with_references(body: &[u8], refs: &[(&str, &str, u32, u32)]) -> Vec<u8> {
+        // Rebuild: parse the simple bundle back into extra + strings, then
+        // append the references to the first message's location.
+        let extra_len = u32::from_le_bytes(body[0..4].try_into().unwrap()) as usize;
+        let strings_len = u32::from_le_bytes(body[4..8].try_into().unwrap()) as usize;
+        let mut extra: Vec<u32> = (0..extra_len)
+            .map(|i| u32::from_le_bytes(body[8 + i * 4..12 + i * 4].try_into().unwrap()))
+            .collect();
+        let mut strings = body[8 + extra_len * 4..8 + extra_len * 4 + strings_len].to_vec();
+        let first = extra[extra[1] as usize] as usize;
+        let loc = extra[first + 2] as usize;
+        // Move the location to the end so its trailing references fit.
+        let moved = extra.len() as u32;
+        let copy: Vec<u32> = extra[loc..loc + 8].to_vec();
+        extra.extend(copy);
+        extra[first + 2] = moved;
+        extra[moved as usize + 7] = refs.len() as u32;
+        let mut ref_locs = Vec::new();
+        let mut pending = Vec::new();
+        for (decl, path, line, column) in refs {
+            let decl_at = strings.len() as u32;
+            strings.extend_from_slice(decl.as_bytes());
+            strings.push(0);
+            let path_at = strings.len() as u32;
+            strings.extend_from_slice(path.as_bytes());
+            strings.push(0);
+            pending.push((decl_at, path_at, *line, *column));
+        }
+        let refs_start = extra.len();
+        extra.extend(std::iter::repeat_n(0, pending.len() * 2));
+        for (i, (decl_at, path_at, line, column)) in pending.into_iter().enumerate() {
+            let at = extra.len() as u32;
+            extra.extend([path_at, line, column, 0, 0, 0, 0, 0]);
+            extra[refs_start + i * 2] = decl_at;
+            extra[refs_start + i * 2 + 1] = at;
+            ref_locs.push(at);
+        }
+        let mut out = Vec::new();
+        out.extend((extra.len() as u32).to_le_bytes());
+        out.extend((strings.len() as u32).to_le_bytes());
+        for value in extra {
+            out.extend(value.to_le_bytes());
+        }
+        out.extend(strings);
+        out
+    }
 
     /// Builds a bundle the way the compiler serialises one.
     fn bundle(messages: &[Message<'_>]) -> Vec<u8> {
@@ -531,6 +625,29 @@ mod tests {
              generated/main.zig:4:5: note: parameter type declared here\n\
              error: no location\n"
         );
+    }
+
+    #[test]
+    fn an_error_inside_std_keeps_the_trace_back_to_the_user_code() {
+        // `std.debug.print("{hello}", .{})`: the error is raised in std's
+        // Writer, and only the reference trace says where the call is.
+        let body = with_references(
+            &bundle(&[("too few arguments", Some(("/usr/lib/zig/std/Io/Writer.zig", 716, 12)), &[])]),
+            &[("print", "/usr/lib/zig/std/debug.zig", 210, 4), ("main", "generated/main.zig", 2, 19)],
+        );
+        assert_eq!(
+            render_error_bundle(&body).unwrap(),
+            "/usr/lib/zig/std/Io/Writer.zig:717:13: error: too few arguments\n\
+             referenced by:\n    print: /usr/lib/zig/std/debug.zig:211:5\n    main: generated/main.zig:3:20\n"
+        );
+        // And the classic build's parser maps that to the user's line.
+        let diagnostics = crate::languages::zig::diagnostics::parse_compiler_diagnostics(
+            &render_error_bundle(&body).unwrap(),
+            "/s/generated/main.zig",
+        );
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].path.as_deref(), Some("src/main.zig"));
+        assert_eq!((diagnostics[0].line, diagnostics[0].column), (3, 20));
     }
 
     #[test]
