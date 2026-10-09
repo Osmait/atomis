@@ -141,6 +141,8 @@ impl Metrics {
 /// What the scrape reads from the live state rather than from counters.
 pub struct Gauges {
     pub sessions: usize,
+    /// Zig compilers kept running for incremental builds.
+    pub zig_compile_servers: usize,
     /// Running language servers, per language id.
     pub lsp_servers: Vec<(&'static str, usize)>,
 }
@@ -245,6 +247,8 @@ pub fn render(gauges: &Gauges) -> String {
     let _ = writeln!(out, "atomis_runs_queued {}", metrics.runs_queued.load(Ordering::Relaxed));
     header(&mut out, "atomis_sessions", "gauge", "Live sessions, including those in their reconnect grace.");
     let _ = writeln!(out, "atomis_sessions {}", gauges.sessions);
+    header(&mut out, "atomis_zig_compile_servers", "gauge", "Zig compilers kept running for incremental builds.");
+    let _ = writeln!(out, "atomis_zig_compile_servers {}", gauges.zig_compile_servers);
     header(&mut out, "atomis_lsp_servers", "gauge", "Running language servers by language.");
     for (language, count) in &gauges.lsp_servers {
         let _ = writeln!(out, "atomis_lsp_servers{{language=\"{language}\"}} {count}");
@@ -283,7 +287,7 @@ mod tests {
                 ..RunResult::default()
             },
         );
-        let text = render(&Gauges { sessions: 2, lsp_servers: vec![("py", 1)] });
+        let text = render(&Gauges { sessions: 2, zig_compile_servers: 1, lsp_servers: vec![("py", 1)] });
         assert!(text.contains("atomis_runs_total{language=\"py\",outcome=\"succeeded\"}"));
         // 0.2s is above the 0.1 bound and within 0.25.
         let bucket = |le: &str| {

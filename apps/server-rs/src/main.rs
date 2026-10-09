@@ -109,17 +109,28 @@ async fn main() {
         });
     }
 
-    // Language servers are most of what a running server holds in memory,
-    // and an open tab keeps its own alive indefinitely. Stop the unused ones.
-    if let Some(idle) = ws::lsp::idle_timeout_from_env() {
+    // Language servers and Zig's compile servers are most of what a running
+    // server holds in memory, and an open tab keeps its own alive
+    // indefinitely. Stop the unused ones.
+    {
+        let lsp_idle = ws::lsp::idle_timeout_from_env();
         let registry = Arc::clone(&state);
         tokio::spawn(async move {
-            let mut every = tokio::time::interval(std::time::Duration::from_secs(30).min(idle));
+            let mut every = tokio::time::interval(std::time::Duration::from_secs(30));
             loop {
                 every.tick().await;
-                let stopped = registry.lsp_registry.reap_idle(idle).await;
+                if let Some(idle) = lsp_idle {
+                    let stopped = registry.lsp_registry.reap_idle(idle).await;
+                    if stopped > 0 {
+                        tracing::info!(stopped, "stopped idle language servers");
+                    }
+                }
+                let stopped = languages::zig::compile_server::reap_idle(
+                    languages::zig::compile_server::IDLE,
+                )
+                .await;
                 if stopped > 0 {
-                    tracing::info!(stopped, "stopped idle language servers");
+                    tracing::info!(stopped, "stopped idle zig compile servers");
                 }
             }
         });

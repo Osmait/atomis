@@ -55,6 +55,7 @@ pub(crate) async fn metrics_route(
     }
     let gauges = crate::metrics::Gauges {
         sessions: state.sessions.count().await,
+        zig_compile_servers: crate::languages::zig::compile_server::count().await,
         lsp_servers: state.lsp_registry.running().await,
     };
     (

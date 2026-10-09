@@ -6,10 +6,20 @@ const std = @import("std");
 
 extern "c" fn write(fd: c_int, buffer: [*]const u8, count: usize) isize;
 
+/// One write(2) to fd 3: straight to the kernel on Linux without libc (the
+/// incremental compile server builds tests without it), libc otherwise.
+fn writeSome(bytes: []const u8) isize {
+    if (builtin.os.tag == .linux and !builtin.link_libc) {
+        const result = std.os.linux.write(3, bytes.ptr, bytes.len);
+        return if (std.os.linux.errno(result) == .SUCCESS) @intCast(result) else -1;
+    }
+    return write(3, bytes.ptr, bytes.len);
+}
+
 fn writeAllFd3(bytes: []const u8) void {
     var offset: usize = 0;
     while (offset < bytes.len) {
-        const result = write(3, bytes.ptr + offset, bytes.len - offset);
+        const result = writeSome(bytes[offset..]);
         if (result <= 0) return;
         offset += @intCast(result);
     }
