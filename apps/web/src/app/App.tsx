@@ -29,6 +29,7 @@ import { TerminalPane } from "../features/terminal/TerminalPane.js";
 import { WorkspacePicker } from "../features/workspaces/WorkspacePicker.js";
 import { updateVimAppCommands } from "../features/editor/vimExtensions.js";
 import { useDismissable } from "../shared/ui/useDismissable.js";
+import { confirmAction, ConfirmHost } from "../shared/ui/confirm.js";
 import { useEditorDecorations } from "../features/editor/useEditorDecorations.js";
 import { useGlobalShortcuts } from "./useGlobalShortcuts.js";
 import { useKeyboardNav, type TreeNavRow } from "./useKeyboardNav.js";
@@ -792,7 +793,9 @@ export function App(): React.JSX.Element {
 	);
 	useDismissable(
 		Boolean(project.treeContextMenu),
-		".tree-context-menu",
+		// A row's ⋯ toggles the menu itself; dismissing on its press would
+		// close the menu only for the click to open it again.
+		".tree-context-menu, .file-actions",
 		useCallback(
 			() => setTreeContextMenu(undefined),
 			[setTreeContextMenu],
@@ -861,26 +864,24 @@ export function App(): React.JSX.Element {
 		],
 	);
 
-	const loadDemoWorkspace = useCallback((): void => {
-		if (
-			!window.confirm(
-				"Load the demo workspace? Current files will be replaced by every language's example.",
-			)
-		)
-			return;
-		if (!session) return;
+	const loadDemoWorkspace = useCallback(async (): Promise<void> => {
+		const confirmed = await confirmAction({
+			title: "Load the demo workspace?",
+			message: "Every file here is replaced by each language's example.",
+			confirmLabel: "Load demo",
+		});
+		if (!confirmed || !session) return;
 		sendRuntime({ type: "workspace.reset", sessionId: session.sessionId, version: ++versionRef.current, scaffold: "demo" });
 	}, [sendRuntime, session]);
 
-	const clearWorkspace = useCallback((): void => {
+	const clearWorkspace = useCallback(async (): Promise<void> => {
 		const entry = WEB_LANGUAGE_PACKS[session?.language ?? defaultTemplate].entryFile;
-		if (
-			!window.confirm(
-				`Clear the workspace? Only a fresh ${entry} will remain.`,
-			)
-		)
-			return;
-		if (!session) return;
+		const confirmed = await confirmAction({
+			title: "Clear the workspace?",
+			message: `Every file is deleted; only a fresh ${entry} remains.`,
+			confirmLabel: "Clear workspace",
+		});
+		if (!confirmed || !session) return;
 		sendRuntime({ type: "workspace.reset", sessionId: session.sessionId, version: ++versionRef.current, scaffold: "minimal" });
 	}, [defaultTemplate, sendRuntime, session]);
 
@@ -1034,9 +1035,9 @@ export function App(): React.JSX.Element {
 						activePath={activePath}
 						failsByFile={failsByFile}
 						focused={focusZone === "tree"}
-						onClearWorkspace={clearWorkspace}
+						onClearWorkspace={() => void clearWorkspace()}
 						onHideTree={() => updateLayout({ treeOpen: false })}
-						onLoadDemo={loadDemoWorkspace}
+						onLoadDemo={() => void loadDemoWorkspace()}
 						onSelect={selectFile}
 						onSwitchWorkspace={openWorkspacePicker}
 						onToggleFolder={toggleFolder}
@@ -1186,7 +1187,7 @@ export function App(): React.JSX.Element {
 					onClose={() => project.setTreeContextMenu(undefined)}
 					onCreateFile={project.createFile}
 					onCreateFolder={project.createFolder}
-					onDelete={project.deleteFile}
+					onDelete={(path) => void project.deleteFile(path)}
 					onOpen={selectFile}
 					onRename={project.renameFile}
 				/>
@@ -1359,7 +1360,7 @@ export function App(): React.JSX.Element {
 					}}
 					onCreate={(name) => createNamedWorkspace(name, defaultTemplate)}
 					onDelete={(id) =>
-						deleteNamedWorkspace(id, id === session.workspace?.id)
+						void deleteNamedWorkspace(id, id === session.workspace?.id)
 					}
 					onOpen={switchToWorkspace}
 					onRename={renameNamedWorkspace}
@@ -1370,6 +1371,9 @@ export function App(): React.JSX.Element {
 						: {})}
 				/>
 			)}
+			{/* Last, so a confirmation opened from the workspace switcher
+			    sits above it. */}
+			<ConfirmHost />
 			{paletteOpen && (
 				<CommandPalette
 					activePath={activePath}

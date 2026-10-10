@@ -13,6 +13,7 @@ import {
 	normalizeFolderName,
 } from "../../shared/lib/paths.js";
 import { closeTab as computeCloseTab } from "../../shared/lib/tabs.js";
+import { confirmAction } from "../../shared/ui/confirm.js";
 import type { LogSourceLocation, ProjectFile, ProjectFilesReader } from "../../shared/types.js";
 
 export interface TreeDraft {
@@ -308,10 +309,9 @@ export function useProjectFiles(options: ProjectFilesOptions) {
 		[treeDraft, createFileNamed, createFolderNamed, renameFileTo],
 	);
 
-	const deleteFile = useCallback(
+	const removeFile = useCallback(
 		(path: string): void => {
-			if (!session || ENTRY_FILES.has(path)) return;
-			if (!window.confirm(`Delete src/${path}?`)) return;
+			if (!session) return;
 			const current = filesRef.current.find((file) => file.path === path);
 			if (!current) return;
 			const wasActive = activePathRef.current === path;
@@ -345,6 +345,20 @@ export function useProjectFiles(options: ProjectFilesOptions) {
 			});
 		},
 		[entryRef, filesRef, lspClientsRef, monacoRef, pruneDiagnosticsFor, sendRuntime, session, setProjectFiles, versionRef],
+	);
+
+	/** Asks, then deletes. Resolves once answered, for callers that wait. */
+	const deleteFile = useCallback(
+		async (path: string): Promise<void> => {
+			if (!session || ENTRY_FILES.has(path)) return;
+			const confirmed = await confirmAction({
+				title: `Delete src/${path}?`,
+				message: "The file is removed from the workspace. This cannot be undone.",
+				confirmLabel: "Delete file",
+			});
+			if (confirmed) removeFile(path);
+		},
+		[removeFile, session],
 	);
 
 	/** Session bootstrap: reset to the created session's entry file. */

@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { confirmDialog } from "./helpers.js";
 import { resetPreferences } from "./reset.js";
 
 test.beforeEach(async ({ request, baseURL }) => {
@@ -52,7 +53,7 @@ test("the chosen default survives file browsing and creates Rust workspaces", as
 	});
 	await expect(page.locator(".global-status")).toContainText("src/main.rs");
 
-	page.once("dialog", (dialog) => dialog.accept());
 	await page.locator(".workspace-bar").click();
 	await page.getByLabel(`Delete ${name}`).click();
+	await confirmDialog(page, "Delete workspace");
 });
