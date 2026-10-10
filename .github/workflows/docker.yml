@@ -11,12 +11,14 @@ on:
       - Dockerfile
       - .dockerignore
       - .github/workflows/docker.yml
+      - scripts/image-smoke.mjs
   pull_request:
     branches: [main]
     paths:
       - Dockerfile
       - .dockerignore
       - .github/workflows/docker.yml
+      - scripts/image-smoke.mjs
   workflow_dispatch:
 
 concurrency:
@@ -31,4 +33,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build the image
-        run: docker build .
+        run: docker build -t atomis:ci .
+      # A build proves nothing about what the image can run: bookworm's clang
+      # 14 and a Node without type stripping each switched a language off,
+      # and only production found out. Run it as a host would, then one
+      # program per language.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Start the image
+        run: |
+          token="$(openssl rand -hex 24)"
+          echo "ATOMIS_SMOKE_TOKEN=$token" >> "$GITHUB_ENV"
+          docker run -d --name atomis -p 8080:8080 -e PORT=8080 \
+            -e ATOMIS_TOKEN="$token" -e ATOMIS_ALLOWED_ORIGINS=http://localhost:8080 \
+            atomis:ci
+          for _ in $(seq 1 60); do
+            curl -fsS http://localhost:8080/api/health && exit 0
+            sleep 2
+          done
+          docker logs atomis
+          exit 1
+      - name: Run a program in every language
+        run: node scripts/image-smoke.mjs http://localhost:8080 "$ATOMIS_SMOKE_TOKEN"
+      - name: Server log
+        if: failure()
+        run: docker logs atomis
