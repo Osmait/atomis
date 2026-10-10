@@ -38,6 +38,7 @@ import { usePeekPanel } from "../features/editor/usePeekPanel.js";
 import { useQuickScope } from "../features/editor/useQuickScope.js";
 import { useProjectFiles } from "../features/files/useProjectFiles.js";
 import { useRuntimeEvents } from "../features/runtime/useRuntimeEvents.js";
+import { useRunInput } from "../features/runtime/useRunInput.js";
 import {
 	languageForPath,
 	monacoLanguageFor,
@@ -408,6 +409,36 @@ export function App(): React.JSX.Element {
 		[setDiagnostics],
 	);
 
+	const {
+		input,
+		setInput,
+		flushInput,
+		mode: stdinMode,
+		setMode: setStdinMode,
+	} = useRunInput(session, sendRuntime);
+	/** The interactive run whose input was ended with EOF: no more to type. */
+	const [stdinClosedRun, setStdinClosedRun] = useState<string>();
+	// Open while the run the server opened stdin for is the one running —
+	// another run starting, or this one ending, closes it by itself.
+	const stdinOpen =
+		runtime.stdinRunId !== undefined &&
+		runtime.stdinRunId === runtime.runId &&
+		runtime.stdinRunId !== stdinClosedRun &&
+		isBusy(runtime.runState);
+	const sendStdin = useCallback(
+		(text: string, eof: boolean): void => {
+			if (!session) return;
+			if (text) runtime.echoInput(text);
+			if (eof) setStdinClosedRun(runtime.stdinRunId);
+			sendRuntime({
+				type: "stdin.write",
+				sessionId: session.sessionId,
+				data: text,
+				...(eof ? { eof: true } : {}),
+			});
+		},
+		[runtime, sendRuntime, session],
+	);
 	const project = useProjectFiles({
 		session,
 		sendRuntime,
@@ -588,6 +619,9 @@ export function App(): React.JSX.Element {
 
 	const run = useCallback((): void => {
 		if (!session) return;
+		// Typed input still waiting out its delay goes first: the run reads
+		// what is on screen.
+		flushInput();
 		const language =
 			languageForPath(activePathRef.current) ?? activeLanguageRef.current;
 		lastRunLanguageRef.current = language;
@@ -597,8 +631,10 @@ export function App(): React.JSX.Element {
 			version: versionRef.current,
 			reason: "manual",
 			language,
+			// Typed input only makes sense for a run you started and watch.
+			...(stdinMode === "terminal" ? { interactive: true } : {}),
 		});
-	}, [activePathRef, sendRuntime, session]);
+	}, [activePathRef, flushInput, sendRuntime, session, stdinMode]);
 	const stop = useCallback((): void => {
 		if (session)
 			sendRuntime({ type: "run.cancel", sessionId: session.sessionId });
@@ -1127,6 +1163,13 @@ export function App(): React.JSX.Element {
 									.join(", ") || status
 							}
 							narrow={narrow}
+							input={input}
+							onInputChange={setInput}
+							onStdinEof={(text) => sendStdin(text, true)}
+							onStdinModeChange={setStdinMode}
+							onStdinSend={(text) => sendStdin(text, false)}
+							stdinMode={stdinMode}
+							stdinOpen={stdinOpen}
 							onAddDependency={(name) =>
 								sendRuntime({
 									type: "deps.add",

@@ -55,6 +55,7 @@ export const SETTINGS_KEY = "atomis.settings.v1";
 const LAYOUT_KEY = "atomis.layout.v1";
 export const VALUE_FMT_KEY = "atomis.value-fmt.v1";
 export const VIM_MODE_KEY = "atomis.vim-mode.v1";
+export const STDIN_MODE_KEY = "atomis.stdin-mode.v1";
 export const DEFAULT_TEMPLATE_KEY = "atomis.language.v1";
 const SCAFFOLD_KEY = "atomis.scaffold.v1";
 export const INLINE_LOGS_KEY = "atomis.inline-logs.v1";
@@ -146,6 +147,21 @@ export function loadValueFmt(): ValueFmt {
 
 export function saveValueFmt(fmt: ValueFmt): void {
 	writeStoredItem(VALUE_FMT_KEY, fmt);
+}
+
+/**
+ * Where a Run's program reads stdin from: the Input text ("text"), or the
+ * terminal, typed while it runs ("terminal"). Auto Run always reads the
+ * Input text — it restarts the program at every edit.
+ */
+export type StdinMode = "text" | "terminal";
+
+export function loadStdinMode(): StdinMode {
+	return readStoredItem(STDIN_MODE_KEY) === "terminal" ? "terminal" : "text";
+}
+
+export function saveStdinMode(mode: StdinMode): void {
+	writeStoredItem(STDIN_MODE_KEY, mode);
 }
 
 export function loadVimMode(): boolean {

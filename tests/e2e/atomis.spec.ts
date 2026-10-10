@@ -233,6 +233,74 @@ pub fn main(init: std.process.Init) !void {
 	).toHaveCount(0);
 });
 
+test("the Input view feeds the program's stdin, and a change reruns it", async ({
+	page,
+}) => {
+	await openClean(page);
+	// Python runs main.py; the demo workspace carries one.
+	await page.getByRole("button", { name: "main.py", exact: true }).click();
+	await replaceEditor(
+		page,
+		'import sys\nname = sys.stdin.readline().strip()\nnumbers = [int(x) for x in sys.stdin.readline().split()]\nprint(f"hello {name}: {sum(numbers)}")\nprint("then:", repr(sys.stdin.read()))\n',
+	);
+	const terminal = page.locator(".panel-content");
+	// Nothing to read yet: end of file straight away, as before.
+	await expect(terminal).toContainText("hello : 0");
+
+	await openTermView(page, "Input");
+	await page.getByLabel("Program input").fill("Ada\n5 7 9\n");
+	await expect(page.locator(".input-footer")).toContainText("2 lines");
+	await openTermView(page, "Output");
+	// Auto Run picks the new input up like an edit — no Run pressed.
+	await expect(terminal).toContainText("hello Ada: 21");
+	await expect(terminal).toContainText("then: ''");
+	await page.getByRole("button", { name: "stdin · 2 lines" }).click();
+	await expect(page.getByLabel("Program input")).toHaveValue("Ada\n5 7 9\n");
+});
+
+test("an interactive Run waits for typed input, line by line, and EOF ends it", async ({
+	page,
+}) => {
+	await openClean(page);
+	await page.getByRole("button", { name: "main.py", exact: true }).click();
+	await replaceEditor(
+		page,
+		'name = input("Name? ")\nprint(f"hi {name}")\nage = int(input("Age? "))\nprint(f"next year {age + 1}")\n',
+	);
+	await openTermView(page, "Input");
+	await page.getByRole("radio", { name: "Typed in the terminal" }).click();
+	await openTermView(page, "Output");
+
+	const terminal = page.locator(".panel-content");
+	const field = page.getByLabel("Input for the running program");
+	await page.locator(".run-button").click();
+	await expect(field).toBeVisible();
+	await expect(field).toBeFocused();
+	// The prompt has no newline, and output waits for one to attach its
+	// source line — but a program that went quiet to wait gets it shown.
+	await expect(terminal).toContainText("Name?");
+	// Longer than a plain run's whole budget (2 s): a person is typing.
+	await page.waitForTimeout(3000);
+	await field.fill("Ada");
+	await field.press("Enter");
+	await expect(terminal).toContainText("hi Ada");
+	await field.fill("41");
+	await field.press("Enter");
+	await expect(terminal).toContainText("next year 42");
+	// The program is done with its input: the line goes with it.
+	await expect(field).toHaveCount(0);
+	await expect(page.locator(".state-succeeded")).toBeVisible();
+	// What was typed is in the output, where the program's reply follows.
+	await expect(page.locator(".output-entry pre.input")).toHaveText(["Ada", "41"]);
+
+	// EOF before an answer: the program reads end of file.
+	await page.locator(".run-button").click();
+	await expect(field).toBeVisible();
+	await page.getByRole("button", { name: "EOF" }).click();
+	await expect(terminal).toContainText("EOFError");
+	await expect(field).toHaveCount(0);
+});
+
 test("a file is deleted from its own row, after a confirmation that Cancel backs out of", async ({
 	page,
 }) => {

@@ -85,6 +85,29 @@ test("shared file create, rename and delete synchronize; stale edits cannot resu
   await peer.close();
 });
 
+test("a workspace keeps its Input text across sessions; a scratch session starts empty",async({page,request,baseURL})=>{
+  const id=await workspace(request,baseURL!);
+  const created=await session(request,baseURL!,id);
+  expect(created.input).toBe("");
+  await connect(page,created);
+  await send(page,created,[{type:"input.update",text:"3\n5 7 9\n"}]);
+  await expect.poll(async()=>(await session(request,baseURL!,id)).input).toBe("3\n5 7 9\n");
+  // Emptied, it is gone from disk too.
+  await send(page,created,[{type:"input.update",text:""}]);
+  await expect.poll(async()=>(await session(request,baseURL!,id)).input).toBe("");
+  expect((await session(request,baseURL!)).input).toBe("");
+});
+
+test("an input over the limit is refused and the previous one kept",async({page,request,baseURL})=>{
+  const id=await workspace(request,baseURL!);
+  const created=await session(request,baseURL!,id);await connect(page,created);
+  await send(page,created,[{type:"input.update",text:"kept\n"}]);
+  await expect.poll(async()=>(await session(request,baseURL!,id)).input).toBe("kept\n");
+  await send(page,created,[{type:"input.update",text:"x".repeat(512*1024+1)}]);
+  await expect.poll(async()=>(await events(page)).some(event=>event.type==="server.error"&&(event.details??"").includes("Input exceeds"))).toBe(true);
+  expect((await session(request,baseURL!,id)).input).toBe("kept\n");
+});
+
 test("only the workspace's own entry is protected; other languages' main files delete like any file",async({page,request,baseURL})=>{
   const id=await workspace(request,baseURL!);
   const created=await session(request,baseURL!,id);await connect(page,created);

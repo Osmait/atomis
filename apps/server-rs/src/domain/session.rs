@@ -31,6 +31,21 @@ pub struct SessionSettings {
     /// Let the program itself open outbound connections. Off by default:
     /// a playground that can phone home is a different tool.
     pub network: bool,
+    /// Set on the run's own copy, never by the client: the program reads
+    /// what the user types, so it gets time to wait for it.
+    pub interactive: bool,
+}
+
+impl SessionSettings {
+    /// The user program's time budget. Everything else — compilers, test
+    /// runs — keeps `timeout_ms` even in an interactive run.
+    pub fn program_timeout_ms(&self) -> u64 {
+        if self.interactive {
+            crate::domain::scheduler::INTERACTIVE_TIMEOUT_MS
+        } else {
+            self.timeout_ms
+        }
+    }
 }
 
 impl Default for SessionSettings {
@@ -43,6 +58,7 @@ impl Default for SessionSettings {
             sandbox: crate::exec::sandbox::detect_support().available(),
             network: false,
             manual_probe_ids: Vec::new(),
+            interactive: false,
         }
     }
 }
@@ -89,6 +105,11 @@ pub struct Session {
     /// Set when the session is attached to a persistent workspace, whose
     /// directory must survive the disconnect that ends the session.
     pub workspace_id: Option<String>,
+    /// The Input text, piped to the program's stdin on every run.
+    pub input: Mutex<Arc<str>>,
+    /// Set by the scheduler for an interactive run: what the user types,
+    /// taken by the program's spawn in place of the Input text.
+    pub live_stdin: Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<crate::exec::supervisor::LiveInput>>>,
 }
 
 impl Session {
@@ -109,6 +130,33 @@ impl Session {
             )));
         }
         Some(std::sync::Arc::clone(&self.sandbox_policy))
+    }
+
+    /// What the next run's program reads on stdin.
+    pub async fn stdin(&self) -> crate::exec::supervisor::Stdin {
+        if let Some(live) = self.live_stdin.lock().await.take() {
+            return crate::exec::supervisor::Stdin::Live(live);
+        }
+        let text = Arc::clone(&*self.input.lock().await);
+        if text.is_empty() {
+            crate::exec::supervisor::Stdin::Null
+        } else {
+            crate::exec::supervisor::Stdin::Text(Arc::from(text.as_bytes()))
+        }
+    }
+
+    /// Replaces the Input text. A persistent workspace keeps it on disk, so
+    /// it is there again on the next open. Returns whether it changed.
+    pub async fn set_input(&self, text: String) -> Result<bool, String> {
+        let mut input = self.input.lock().await;
+        if *input.as_ref() == text {
+            return Ok(false);
+        }
+        if self.workspace_id.is_some() {
+            write_input(&self.root, &text).await.map_err(|error| error.to_string())?;
+        }
+        *input = Arc::from(text);
+        Ok(true)
     }
 
     pub async fn current(&self) -> Snapshot {
@@ -656,6 +704,7 @@ impl SessionManager {
             .map(|(_, s)| s.clone())
             .unwrap_or_else(|| crate::protocol::DEFAULT_ZIG_SOURCE.to_string());
 
+        let input = if workspace.is_some() { read_input(&root).await } else { String::new() };
         let sandbox_policy = std::sync::Arc::new(crate::exec::sandbox::policy_for(
             &root,
             &crate::languages::packs::project_root(),
@@ -685,6 +734,8 @@ impl SessionManager {
             attach_generation: std::sync::atomic::AtomicU64::new(0),
             sandbox_policy,
             workspace_id: workspace.clone(),
+            input: Mutex::new(Arc::from(input.as_str())),
+            live_stdin: Mutex::new(None),
         });
         if let Some(workspace_id) = &workspace {
             crate::domain::workspace::touch(workspace_id).await;
@@ -724,6 +775,7 @@ impl SessionManager {
             sandbox_support: crate::exec::sandbox::detect_support().as_str().to_string(),
             sandbox: crate::exec::sandbox::detect_support().available(),
             workspace: workspace_meta.map(|(_, meta)| meta),
+            input,
         })
     }
 
@@ -787,6 +839,38 @@ mod futures {
         }
         out
     }
+}
+
+/// Where a persistent workspace keeps its Input text: beside src/, never in
+/// it, so it is not a project file.
+fn input_path(root: &std::path::Path) -> PathBuf {
+    root.join(".atomis").join("stdin.txt")
+}
+
+/// The saved Input text, or empty. Anything unreadable or oversized counts
+/// as no input rather than a session that will not open.
+async fn read_input(root: &std::path::Path) -> String {
+    match tokio::fs::read_to_string(input_path(root)).await {
+        Ok(text) if text.len() <= crate::protocol::MAX_INPUT_BYTES => text,
+        _ => String::new(),
+    }
+}
+
+/// Written beside and renamed over, so a crash mid-write leaves the old text
+/// rather than half of the new one. An empty input removes the file.
+async fn write_input(root: &std::path::Path, text: &str) -> std::io::Result<()> {
+    let path = input_path(root);
+    if text.is_empty() {
+        return match tokio::fs::remove_file(&path).await {
+            Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error),
+            _ => Ok(()),
+        };
+    }
+    let dir = path.parent().expect("input path has a parent");
+    tokio::fs::create_dir_all(dir).await?;
+    let partial = dir.join("stdin.txt.partial");
+    tokio::fs::write(&partial, text).await?;
+    tokio::fs::rename(&partial, &path).await
 }
 
 #[cfg(test)]

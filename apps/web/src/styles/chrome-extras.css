@@ -51,6 +51,21 @@
 	font-size: 12px;
 }
 
+/* Output's reminder that the run read stdin, and the way to it. */
+.term-stdin-chip {
+	font-size: 11px;
+	color: var(--subtext);
+	padding: 1px 8px;
+	border: 1px solid var(--surface1);
+	border-radius: 999px;
+	white-space: nowrap;
+}
+
+.term-stdin-chip:hover {
+	color: var(--text);
+	border-color: var(--mauve);
+}
+
 .term-menu-wrap {
 	margin-left: auto;
 	position: relative;

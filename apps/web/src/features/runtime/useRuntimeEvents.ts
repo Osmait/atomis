@@ -75,6 +75,10 @@ export function useRuntimeEvents(options: RuntimeEventsOptions) {
 		setStatus,
 	} = options;
 	const [runState, setRunState] = useState<RunState>("idle");
+	/** The run the last state belongs to. */
+	const [runId, setRunId] = useState<string>();
+	/** The run whose program reads typed input, once the server says so. */
+	const [stdinRunId, setStdinRunId] = useState<string>();
 	const [catalog, setCatalog] = useState<ProbeDescriptor[]>([]);
 	const catalogRef = useRef<ProbeDescriptor[]>([]);
 	const [values, setValues] = useState<Map<string, InlineValue>>(new Map());
@@ -185,8 +189,13 @@ export function useRuntimeEvents(options: RuntimeEventsOptions) {
 				!acceptsVersion(versionRef.current, event.documentVersion)
 			)
 				return;
+			if (event.type === "stdin.open") {
+				setStdinRunId(event.runId);
+				return;
+			}
 			if (event.type === "run.state") {
 				setRunState(event.state);
+				if (event.runId) setRunId(event.runId);
 				// A run that reached the end is showing you the current code,
 				// whether or not it had any values to report. Clearing this
 				// only when a probe value arrived left a program whose only
@@ -363,11 +372,33 @@ export function useRuntimeEvents(options: RuntimeEventsOptions) {
 		lastRunFailedRef.current = false;
 		runNoRef.current = 0;
 		outputSeqRef.current = 0;
+		setRunId(undefined);
+		setStdinRunId(undefined);
+	}, []);
+
+	/** Shows typed input in the output, where the program's reply follows:
+	 * a program reading a pipe does not echo it. */
+	const echoInput = useCallback((text: string): void => {
+		setOutput((previous) =>
+			[
+				...previous,
+				{
+					stream: "stdout" as const,
+					category: "input" as const,
+					chunk: text,
+					receivedAt: performance.now(),
+					seq: ++outputSeqRef.current,
+				},
+			].slice(-500),
+		);
 	}, []);
 
 	return {
 		reset,
 		runState,
+		runId,
+		stdinRunId,
+		echoInput,
 		catalog,
 		catalogRef,
 		values,
