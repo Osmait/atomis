@@ -65,7 +65,11 @@ type Runner = Arc<
 const SUPERSEDED_GRACE: std::time::Duration = std::time::Duration::from_secs(3);
 
 struct Inner {
-    debounce: Option<tokio::task::JoinHandle<()>>,
+    /// The pending auto run, tagged so its own task can tell it is still
+    /// the pending one.
+    debounce: Option<(u64, tokio::task::JoinHandle<()>)>,
+    debounce_seq: u64,
+
     cancel: Option<CancellationToken>,
     active_run: Option<String>,
     last_language: Language,
@@ -104,6 +108,7 @@ impl RunScheduler {
             outbox,
             inner: Mutex::new(Inner {
                 debounce: None,
+                debounce_seq: 0,
                 cancel: None,
                 active_run: None,
                 last_language: language,
@@ -145,11 +150,27 @@ impl RunScheduler {
             state: RunState::Debouncing,
         });
         let scheduler = Arc::clone(self);
+        // Held across the spawn, so the task cannot look for its tag before
+        // it is stored.
+        let mut inner = self.inner.lock().await;
+        inner.debounce_seq += 1;
+        let tag = inner.debounce_seq;
         let handle = tokio::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_millis(debounce_ms)).await;
+            // From here on this task IS the run's start: it leaves the pending
+            // slot first, or starting the run — which cancels whatever auto
+            // run is pending — would abort the very task doing it, the moment
+            // it waits for the superseded run.
+            {
+                let mut inner = scheduler.inner.lock().await;
+                if inner.debounce.as_ref().map(|(pending, _)| *pending) != Some(tag) {
+                    return;
+                }
+                inner.debounce = None;
+            }
             scheduler.run(version, Some(target)).await;
         });
-        self.inner.lock().await.debounce = Some(handle);
+        inner.debounce = Some((tag, handle));
     }
 
     pub async fn run(self: &Arc<Self>, version: u64, language: Option<Language>) {
@@ -357,7 +378,7 @@ impl RunScheduler {
 
     async fn cancel_internal(&self) {
         let mut inner = self.inner.lock().await;
-        if let Some(handle) = inner.debounce.take() {
+        if let Some((_, handle)) = inner.debounce.take() {
             handle.abort();
         }
         if let Some(token) = inner.cancel.take() {
@@ -655,6 +676,43 @@ mod tests {
         }
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         assert_eq!(runs.load(Ordering::SeqCst), 1, "one run per burst");
+    }
+
+    #[tokio::test]
+    async fn an_auto_run_starts_even_when_the_run_it_supersedes_is_slow_to_go() {
+        // The debounced run's own task starts it, and starting cancels the
+        // pending auto run: that must not be the task itself, or it dies
+        // while waiting for the old run and nothing ever runs.
+        let settings = SessionSettings {
+            debounce_ms: 30,
+            ..SessionSettings::default()
+        };
+        let session = test_session(settings);
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let started = Arc::new(tokio::sync::Notify::new());
+        let runner: Runner = {
+            let calls = Arc::clone(&calls);
+            let started = Arc::clone(&started);
+            Arc::new(move |_, _, _, _, cancel: CancellationToken, _| {
+                let first = calls.fetch_add(1, Ordering::SeqCst) == 0;
+                let started = Arc::clone(&started);
+                Box::pin(async move {
+                    if first {
+                        started.notify_one();
+                        cancel.cancelled().await;
+                        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+                    }
+                    None
+                }) as RunnerFuture
+            })
+        };
+        let scheduler = RunScheduler::with_runner(session, tx, runner);
+        scheduler.run(1, Some(Language::Zig)).await;
+        started.notified().await;
+        scheduler.document_updated(None).await;
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        assert_eq!(calls.load(Ordering::SeqCst), 2, "the auto run must start");
     }
 
     #[tokio::test]
