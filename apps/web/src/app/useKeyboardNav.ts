@@ -141,7 +141,7 @@ export function useKeyboardNav(options: KeyboardNavOptions): KeyboardNav {
 				inTextInput,
 				overlayOpen:
 					paletteOpenRef.current ||
-					Boolean(document.querySelector(".settings-modal")),
+					Boolean(document.querySelector(".settings-modal, .confirm-dialog")),
 				leaderPending: leaderPendingRef.current,
 				leaderChar: appearanceRef.current.leader,
 				vimAllows: inMonaco

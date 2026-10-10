@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { confirmDialog } from "./helpers.js";
 import { resetPreferences } from "./reset.js";
 
 test.beforeEach(async ({ request, baseURL }) => {
@@ -225,8 +226,8 @@ pub fn main(init: std.process.Init) !void {
 	await expect(
 		page.getByRole("button", { name: "data/notes.txt" }),
 	).toBeVisible();
-	page.once("dialog", (dialog) => dialog.accept());
 	await treeAction(page, "Delete file");
+	await confirmDialog(page, "Delete file");
 	await expect(
 		page.getByRole("button", { name: "data/notes.txt" }),
 	).toHaveCount(0);
@@ -348,6 +349,56 @@ test("the mini Redis demo keeps its data from one run to the next", async ({
 	await page.keyboard.type("\n# rerun\n");
 	await expect(terminal).toContainText("loaded 2 keys");
 	await expect(terminal).toContainText("redis> (integer) 2");
+});
+
+test("a file is deleted from its own row, after a confirmation that Cancel backs out of", async ({
+	page,
+}) => {
+	await openClean(page);
+	await treeAction(page, "New file");
+	await fillTreeDraft(page, "scratch.txt");
+	const file = page.getByRole("button", { name: "scratch.txt", exact: true });
+	await expect(file).toBeVisible();
+	// Not the active file: the row's own menu acts on its row, not on
+	// whatever the editor shows.
+	await page.getByRole("button", { name: "main.zig", exact: true }).click();
+	const row = page.locator(".tree-file-row", { has: file });
+	const askToDelete = async (): Promise<void> => {
+		await row.hover();
+		await row.getByRole("button", { name: "File actions" }).click();
+		await page.getByRole("menuitem", { name: "Delete", exact: true }).click();
+		await expect(
+			page.getByRole("alertdialog", { name: "Delete src/scratch.txt?" }),
+		).toBeVisible();
+	};
+
+	await askToDelete();
+	await page.getByRole("alertdialog").getByRole("button", { name: "Cancel" }).click();
+	await expect(page.getByRole("alertdialog")).toHaveCount(0);
+	await expect(file).toBeVisible();
+
+	await askToDelete();
+	await confirmDialog(page, "Delete file");
+	await expect(file).toHaveCount(0);
+	// The entry file has no Delete: it is what the run starts from.
+	await page
+		.locator(".tree-file-row", { has: page.getByRole("button", { name: "main.zig", exact: true }) })
+		.getByRole("button", { name: "File actions" })
+		.click();
+	await expect(page.getByRole("menuitem", { name: "Delete", exact: true })).toBeDisabled();
+	await expect(page.getByText("The run starts here, so it stays put.")).toBeVisible();
+	await page.keyboard.press("Escape");
+	// Another language's entry name is just a file here: the demo's main.c
+	// in a Zig workspace goes like any other.
+	const mainC = page.getByRole("button", { name: "main.c", exact: true });
+	await page.locator(".tree-file-row", { has: mainC }).hover();
+	await page
+		.locator(".tree-file-row", { has: mainC })
+		.getByRole("button", { name: "File actions" })
+		.click();
+	await page.getByRole("menuitem", { name: "Delete", exact: true }).click();
+	await confirmDialog(page, "Delete file");
+	await expect(mainC).toHaveCount(0);
 });
 
 test("Vim mode keeps native clipboard shortcuts", async ({
@@ -1673,9 +1724,9 @@ test("workspace starts minimal, loads the demo and clears back", async ({
 	await expect(page.getByText("43 : i32", { exact: true })).toBeVisible();
 	await expect(page.locator(".test-score")).toHaveText("2/2");
 
-	page.on("dialog", (dialog) => void dialog.accept());
 	await page.locator(".tree-menu-btn").click();
 	await page.getByRole("menuitem", { name: "Load demo workspace" }).click();
+	await confirmDialog(page, "Load demo");
 	await expect(page.locator(".file-tree")).toBeVisible();
 	await expect(page.locator(".state-succeeded")).toBeVisible({
 		timeout: 60_000,
@@ -1688,6 +1739,7 @@ test("workspace starts minimal, loads the demo and clears back", async ({
 
 	await page.locator(".tree-menu-btn").click();
 	await page.getByRole("menuitem", { name: "Clear workspace" }).click();
+	await confirmDialog(page, "Clear workspace");
 	await expect(page.locator(".file-tree")).toBeVisible();
 	await expect(page.locator(".tree-file")).toHaveCount(1, {
 		timeout: 60_000,
@@ -1992,9 +2044,9 @@ test("persistent workspaces keep their files across reloads", async ({
 	await expect(page.locator(".branch-status b")).toHaveText(before ?? "");
 	await expect(page.getByText("41 : i32", { exact: true })).toBeVisible();
 
-	page.on("dialog", (dialog) => void dialog.accept());
 	await treeAction(page, "Switch workspace…");
 	await page.getByLabel(`Delete ${name}`).click();
+	await confirmDialog(page, "Delete workspace");
 	await expect(page.locator(".branch-status")).toContainText("scratch", {
 		timeout: 30_000,
 	});

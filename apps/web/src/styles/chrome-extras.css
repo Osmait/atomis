@@ -117,6 +117,15 @@
 	text-align: left;
 }
 
+/* A line of explanation inside a menu, e.g. why items are disabled. */
+.term-menu-note {
+	margin: 2px 8px 4px;
+	max-width: 190px;
+	font-size: 11px;
+	line-height: 1.4;
+	color: var(--dim);
+}
+
 .term-menu button:hover {
 	background: var(--surface0);
 	color: var(--text);

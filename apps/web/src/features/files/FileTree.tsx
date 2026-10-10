@@ -38,7 +38,9 @@ interface FileTreeProps {
 	onDraftChange: (value: string) => void;
 	onDraftCommit: (value: string) => void;
 	onDraftCancel: () => void;
-	onOpenContextMenu: (menu: TreeContextMenuState) => void;
+	onOpenContextMenu: (menu: TreeContextMenuState | undefined) => void;
+	/** The file whose row menu is open, so its ⋯ toggles it shut. */
+	menuPath?: string | undefined;
 }
 
 /**
@@ -311,28 +313,52 @@ export function FileTree(props: FileTreeProps): React.JSX.Element {
 								</React.Fragment>
 							);
 						const fails = failsByFile.get(`src/${row.path}`) ?? 0;
+						const active = row.path === activePath;
 						return (
-							<button
-								aria-label={row.path}
-								className={`tree-file${row.path === activePath ? " active" : ""}${kbSelected ? " kb-sel" : ""}`}
+							<div
+								className={`tree-file-row${active ? " active" : ""}`}
 								data-tree-path={row.path}
 								key={row.path}
-								onClick={() => props.onSelect(row.path)}
-								style={{
-									paddingLeft: `${22 + row.depth * 14}px`,
-									...rowDelay(rowIndex),
-								}}
-								title={row.path}
+								style={rowDelay(rowIndex)}
 							>
-								<FileIcon path={row.path} /> {row.name}
-								<span className={`tree-badge${fails ? " fails" : ""}`}>
-									{fails
-										? String(fails)
-										: row.path === activePath
-											? "✓"
-											: ""}
-								</span>
-							</button>
+								<button
+									aria-label={row.path}
+									className={`tree-file${active ? " active" : ""}${kbSelected ? " kb-sel" : ""}`}
+									onClick={() => props.onSelect(row.path)}
+									style={{ paddingLeft: `${22 + row.depth * 14}px` }}
+									title={row.path}
+								>
+									<FileIcon path={row.path} /> {row.name}
+									<span className={`tree-badge${fails ? " fails" : ""}`}>
+										{fails ? String(fails) : active ? "✓" : ""}
+									</span>
+								</button>
+								{/* The row's own menu — the context menu, reachable
+								    without a right click, which a touch screen does
+								    not have. Not named after the file, so a lookup
+								    by the file's name still finds only the file. */}
+								<button
+									aria-expanded={props.menuPath === row.path}
+									aria-haspopup="menu"
+									aria-label="File actions"
+									className={`file-actions${props.menuPath === row.path ? " open" : ""}`}
+									onClick={(event) => {
+										if (props.menuPath === row.path) {
+											props.onOpenContextMenu(undefined);
+											return;
+										}
+										const rect = event.currentTarget.getBoundingClientRect();
+										props.onOpenContextMenu({
+											x: rect.left,
+											y: rect.bottom + 2,
+											path: row.path,
+										});
+									}}
+									title="File actions"
+								>
+									<Lucide icon="ellipsis-vertical" size={14} />
+								</button>
+							</div>
 						);
 					})}
 				</div>

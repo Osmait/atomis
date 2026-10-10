@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { confirmDialog } from "./helpers.js";
 import { resetPreferences } from "./reset.js";
 
 /**
@@ -173,4 +174,30 @@ test("the mobile keys keep editing focus and expose app commands", async ({
 		.getByRole("button", { name: "Commands", exact: true })
 		.tap();
 	await expect(page.getByRole("dialog", { name: "Find file" })).toBeVisible();
+});
+
+test("a file can be deleted with taps alone", async ({ page }, testInfo) => {
+	test.skip(
+		testInfo.project.name === "phone",
+		"the phone layout shows no file tree",
+	);
+	await openReady(page);
+	await page.locator(".tree-menu-btn").tap();
+	await page.getByRole("menuitem", { name: "New file", exact: true }).tap();
+	await page.getByLabel("File name").fill("scratch.txt");
+	await page.getByLabel("File name").press("Enter");
+	const file = page.getByRole("button", { name: "scratch.txt", exact: true });
+	await expect(file).toBeVisible();
+	// No right click and no hover on a touch screen: the row's ⋯ has to be
+	// there to be found, and big enough to hit.
+	const actions = page
+		.locator(".tree-file-row", { has: file })
+		.getByRole("button", { name: "File actions" });
+	await expect(actions).toBeVisible();
+	const box = await actions.boundingBox();
+	expect(box?.width).toBeGreaterThanOrEqual(40);
+	await actions.tap();
+	await page.getByRole("menuitem", { name: "Delete", exact: true }).tap();
+	await confirmDialog(page, "Delete file");
+	await expect(file).toHaveCount(0);
 });

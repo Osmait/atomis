@@ -1,5 +1,6 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import type { CreateSessionResponse, RuntimeServerEvent } from "../../packages/protocol/src/index.js";
+import { confirmDialog } from "./helpers.js";
 
 interface ClientWindow { reliabilitySocket?: WebSocket; reliabilityEvents: RuntimeServerEvent[] }
 interface RecoveryWindow { recoverySockets: WebSocket[] }
@@ -117,6 +118,22 @@ test("an input over the limit is refused and the previous one kept",async({page,
   expect((await session(request,baseURL!,id)).input).toBe("kept\n");
 });
 
+test("only the workspace's own entry is protected; other languages' main files delete like any file",async({page,request,baseURL})=>{
+  const id=await workspace(request,baseURL!);
+  const created=await session(request,baseURL!,id);await connect(page,created);
+  // A Python workspace with a main.c added by hand: the C entry name, but
+  // the user's own file.
+  await send(page,created,[{type:"file.create",version:2,path:"main.c",source:"int main(void) { return 0; }\n",baseRevision:await revision(page)}]);
+  await saved(page,2);
+  await send(page,created,[{type:"file.rename",version:3,path:"main.c",newPath:"other.c",baseRevision:await revision(page)}]);
+  await saved(page,3);
+  await send(page,created,[{type:"file.delete",version:4,path:"other.c",baseRevision:await revision(page)}]);
+  await saved(page,4);
+  await send(page,created,[{type:"file.delete",version:5,path:"main.py",baseRevision:await revision(page)}]);
+  await expect.poll(async()=>(await events(page)).some(event=>event.type==="server.error"&&event.message.includes("main.py cannot be deleted"))).toBe(true);
+  expect((await session(request,baseURL!,id)).files.map(file=>file.path)).toEqual(["main.py"]);
+});
+
 test("persistent reset replaces sources and synchronizes the new catalog",async({page,context,request,baseURL})=>{
   const id=await workspace(request,baseURL!);
   const a=await session(request,baseURL!,id),b=await session(request,baseURL!,id);
@@ -153,14 +170,15 @@ test("the app resets a persistent workspace in place and closes removed tabs",as
   await page.addInitScript(workspaceId=>localStorage.setItem("atomis.workspace.v1",workspaceId),id);
   await page.goto("/");
   await expect(page.locator(".tree-file")).toHaveCount(1);
-  page.on("dialog",dialog=>void dialog.accept());
   await page.locator(".tree-menu-btn").click();
   await page.getByRole("menuitem",{name:"Load demo workspace"}).click();
+  await confirmDialog(page,"Load demo");
   await expect.poll(()=>page.locator(".tree-file").count()).toBeGreaterThan(1);
   await page.getByRole("button",{name:"main.zig",exact:true}).click();
   await expect(page.locator(".global-status")).toContainText("main.zig");
   await page.locator(".tree-menu-btn").click();
   await page.getByRole("menuitem",{name:"Clear workspace"}).click();
+  await confirmDialog(page,"Clear workspace");
   await expect(page.locator(".tree-file")).toHaveCount(1);
   await expect(page.locator(".global-status")).toContainText("main.py");
   expect((await session(request,baseURL!,id)).files.map(file=>file.path)).toEqual(["main.py"]);
