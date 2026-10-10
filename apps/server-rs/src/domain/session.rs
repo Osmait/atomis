@@ -141,6 +141,8 @@ pub struct Session {
     /// When the proxy last carried a request, in ms since the epoch: what
     /// keeps an idle server from running for nothing.
     pub last_http_ms: std::sync::atomic::AtomicU64,
+    /// Installed when the runtime socket attaches, before the first run.
+    pub pending_dependencies: std::sync::Mutex<Vec<String>>,
     /// Set by the scheduler for an interactive run: what the user types,
     /// taken by the program's spawn in place of the Input text.
     pub live_stdin: Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<crate::exec::supervisor::LiveInput>>>,
@@ -795,6 +797,7 @@ impl SessionManager {
             input: Mutex::new(Arc::from(input.as_str())),
             http_port,
             last_http_ms: std::sync::atomic::AtomicU64::new(0),
+            pending_dependencies: std::sync::Mutex::new(Vec::new()),
             live_stdin: Mutex::new(None),
         });
         if let Some(workspace_id) = &workspace {

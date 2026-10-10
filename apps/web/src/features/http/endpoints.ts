@@ -133,19 +133,30 @@ const requestLine: Rule = (line) =>
 		via: "request line",
 	}));
 
+/**
+ * Hand-written routing compares the method and the path on one line:
+ * `("GET", "/todos") =>` in Rust, `strcmp(method, "GET") == 0 && strcmp(path,
+ * "/todos") == 0` in C. A method literal beside a path literal is a route.
+ */
+const methodBesidePath: Rule = (line) => {
+	const method = line.match(/["'](GET|POST|PUT|PATCH|DELETE)["']/);
+	const path = line.match(/["'](\/[A-Za-z0-9_\-./{}:]*)["']/);
+	return method && path ? [{ method: method[1] ?? "ANY", path: path[1] ?? "", via: "hand-written" }] : [];
+};
+
 const RULES: Record<string, Rule[]> = {
-	ts: [methodCall, nodeHttp],
-	js: [methodCall, nodeHttp],
-	mjs: [methodCall, nodeHttp],
-	py: [pythonDecorator, pythonHttpServer],
+	ts: [methodCall, nodeHttp, methodBesidePath],
+	js: [methodCall, nodeHttp, methodBesidePath],
+	mjs: [methodCall, nodeHttp, methodBesidePath],
+	py: [pythonDecorator, pythonHttpServer, methodBesidePath],
 	go: [goHandle, capitalCall, methodCall],
-	rs: [axumRoute, rustAttribute, requestLine],
-	c: [requestLine],
-	h: [requestLine],
-	cpp: [methodCall, crowRoute, requestLine],
-	cc: [methodCall, crowRoute, requestLine],
-	hpp: [methodCall, crowRoute, requestLine],
-	zig: [zigTarget, requestLine],
+	rs: [axumRoute, rustAttribute, requestLine, methodBesidePath],
+	c: [requestLine, methodBesidePath],
+	h: [requestLine, methodBesidePath],
+	cpp: [methodCall, crowRoute, requestLine, methodBesidePath],
+	cc: [methodCall, crowRoute, requestLine, methodBesidePath],
+	hpp: [methodCall, crowRoute, requestLine, methodBesidePath],
+	zig: [zigTarget, requestLine, methodBesidePath],
 };
 
 const isTest = (path: string): boolean => /(^|\/)(main_test\.|.*\.test\.|.*_test\.)/.test(path);

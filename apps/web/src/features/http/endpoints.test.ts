@@ -1,3 +1,4 @@
+import { readFileSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { detectEndpoints, samplePath } from "./endpoints.js";
 
@@ -109,6 +110,15 @@ describe("detectEndpoints", () => {
 		expect(routes("main.c", 'if (strncmp(buf, "GET /health", 11) == 0)')).toEqual(["GET /health :1 request line"]);
 	});
 
+	it("reads hand-written routing that compares method and path on one line", () => {
+		expect(routes("main.rs", '        ("GET", "/todos") => list(&todos),')).toEqual(["GET /todos :1 hand-written"]);
+		expect(
+			routes("main.c", 'if (strcmp(method, "POST") == 0 && strcmp(path, "/todos") == 0) create();'),
+		).toEqual(["POST /todos :1 hand-written"]);
+		// A method alone, or a path alone, is not a route.
+		expect(routes("main.c", 'if (strcmp(method, "GET") == 0) {')).toEqual([]);
+	});
+
 	it("skips comments, test files and repeats", () => {
 		expect(
 			routes("main.ts", '// app.get("/old", x)\napp.get("/items", a);\napp.get("/items", b);'),
@@ -120,5 +130,31 @@ describe("detectEndpoints", () => {
 		expect(samplePath("/items/:id")).toBe("/items/1");
 		expect(samplePath("/users/{id}/posts/{post}")).toBe("/users/1/posts/1");
 		expect(samplePath("/users/<int:id>")).toBe("/users/1");
+	});
+});
+
+describe("the REST demos", () => {
+	const demos = new URL("../../../../../demos/", import.meta.url);
+	const versions = ["rest", "rest-express", "rest-fastapi", "rest-gin", "rest-axum"].flatMap((dir) =>
+		readdirSync(new URL(`${dir}/`, demos))
+			.filter((file) => file.startsWith("main."))
+			.map((file) => `${dir}/${file}`),
+	);
+
+	it("are all found", () => {
+		expect(versions).toHaveLength(11);
+	});
+
+	// The HTTP view is how the demo is meant to be used: every route of the
+	// contract has to be listed, ready to send, in every version.
+	it.each(versions)("lists all six routes of %s", (version) => {
+		const source = readFileSync(new URL(version, demos), "utf8");
+		const listed = new Set(
+			detectEndpoints([{ path: version.split("/")[1] ?? "", source }]).map(
+				(endpoint) => `${endpoint.method} ${samplePath(endpoint.path)}`,
+			),
+		);
+		for (const route of ["GET /health", "GET /todos", "POST /todos", "GET /todos/1", "PATCH /todos/1", "DELETE /todos/1"])
+			expect(listed, `${version} should list ${route}`).toContain(route);
 	});
 });

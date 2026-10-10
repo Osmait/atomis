@@ -268,6 +268,34 @@ pub struct CreateSessionRequest {
     /// The new scratch session's Input text (a demo's). Never a workspace's:
     /// that one keeps its own.
     pub input: Option<String>,
+    /// Packages the new scratch session installs when its runtime socket
+    /// attaches, before its first run (a demo built on a framework). Each is
+    /// what the Dependencies view would take; `name[a,b]` asks Cargo for
+    /// features a and b.
+    pub dependencies: Option<Vec<String>>,
+}
+
+/// At most this many dependencies in a new session.
+pub const MAX_SESSION_DEPENDENCIES: usize = 16;
+
+/// A dependency name reaches a command line, so it is bounded and kept
+/// clear of option syntax and shell-looking characters. It is passed as an
+/// argv entry (never through a shell), so this is the belt to that
+/// suspenders.
+pub fn validate_dependency_name(name: &str) -> Result<(), String> {
+    let name = name.trim();
+    if name.is_empty() || name.len() > 214 {
+        return Err("dependency name length".into());
+    }
+    if name.starts_with('-') {
+        return Err("dependency name may not start with '-'".into());
+    }
+    if name.chars().any(|c| {
+        c.is_control() || c.is_whitespace() || "\"'`$;&|<>()".contains(c)
+    }) {
+        return Err("dependency name has invalid characters".into());
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -554,25 +582,7 @@ impl RuntimeClientMessage {
 
     /// zod-parity validation beyond serde's shape checks.
     pub fn validate(&self) -> Result<(), String> {
-        // A dependency name reaches a command line, so it is bounded and
-        // kept clear of option syntax and shell-looking characters. It is
-        // passed as an argv entry (never through a shell), so this is the
-        // belt to that suspenders.
-        let check_dependency = |name: &str| -> Result<(), String> {
-            let name = name.trim();
-            if name.is_empty() || name.len() > 214 {
-                return Err("dependency name length".into());
-            }
-            if name.starts_with('-') {
-                return Err("dependency name may not start with '-'".into());
-            }
-            if name.chars().any(|c| {
-                c.is_control() || c.is_whitespace() || "\"'`$;&|<>()".contains(c)
-            }) {
-                return Err("dependency name has invalid characters".into());
-            }
-            Ok(())
-        };
+        let check_dependency = validate_dependency_name;
         let check_version = |version: u64| -> Result<(), String> {
             if version == 0 {
                 Err("version must be positive".into())

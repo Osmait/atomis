@@ -27,6 +27,22 @@ describe("demo catalog", () => {
 		);
 	});
 
+	it("has the REST API in all seven languages and on four frameworks, opening as servers", () => {
+		const rest = DEMO_KINDS.find((kind) => kind.id === "rest");
+		expect(rest?.serve).toBe(true);
+		expect(demosOf(rest!)).toHaveLength(7);
+		const framework = DEMO_KINDS.find((kind) => kind.id === "rest-framework");
+		const demos = demosOf(framework!);
+		expect(demos.map((demo) => `${demo.language}:${demo.variant}`)).toEqual([
+			"rust:axum",
+			"go:gin",
+			"ts:Express",
+			"py:FastAPI",
+		]);
+		// Every framework demo installs what it imports.
+		for (const demo of demos) expect(demo.dependencies.length).toBeGreaterThan(0);
+	});
+
 	it("gives every demo a unique id", () => {
 		const ids = DEMO_KINDS.flatMap((kind) => demosOf(kind).map((demo) => demo.id));
 		expect(new Set(ids).size).toBe(ids.length);

@@ -17,7 +17,7 @@ interface DemoPickerProps {
 /** A kind matches on its own words; a language matches by name. */
 function matches(kind: DemoKind, demo: Demo, query: string): boolean {
 	if (!query) return true;
-	const words = `${kind.title} ${kind.summary} ${WEB_LANGUAGE_PACKS[demo.language].label} ${demo.language}`;
+	const words = `${kind.title} ${kind.summary} ${WEB_LANGUAGE_PACKS[demo.language].label} ${demo.language} ${demo.variant ?? ""}`;
 	return query
 		.toLowerCase()
 		.split(/\s+/)
@@ -92,9 +92,10 @@ export function DemoPicker(props: DemoPickerProps): React.JSX.Element {
 								{demos.map((demo) => {
 									const pack = WEB_LANGUAGE_PACKS[demo.language];
 									const runnable = props.runnable(demo.language);
+									const label = demo.variant ? `${pack.label} · ${demo.variant}` : pack.label;
 									return (
 										<button
-											aria-label={`${kind.title} in ${pack.label}`}
+											aria-label={`${kind.title} in ${label}`}
 											className="demo-language"
 											disabled={!runnable}
 											key={demo.id}
@@ -102,7 +103,7 @@ export function DemoPicker(props: DemoPickerProps): React.JSX.Element {
 											title={runnable ? `Open in ${pack.label}` : `${pack.label} is not installed here`}
 										>
 											<FileIcon path={pack.entryFile} />
-											<span>{pack.label}</span>
+											<span>{label}</span>
 										</button>
 									);
 								})}

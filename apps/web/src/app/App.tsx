@@ -628,9 +628,12 @@ export function App(): React.JSX.Element {
 		[sendRuntime, session],
 	);
 
+	// A server demo opens serving; anything else opens as a plain run.
+	const serveNextSessionRef = useRef(false);
 	useEffect(() => {
-		serveRef.current = false;
-		setServeState(false);
+		serveRef.current = serveNextSessionRef.current;
+		serveNextSessionRef.current = false;
+		setServeState(serveRef.current);
 	}, [session]);
 	const setServe = useCallback(
 		(on: boolean): void => {
@@ -1478,10 +1481,15 @@ export function App(): React.JSX.Element {
 						// A demo that reads typed input switches Run to it: that
 						// is what it is there to show.
 						if (demo.kind.stdinMode) setStdinMode(demo.kind.stdinMode);
+						if (demo.kind.serve) {
+							serveNextSessionRef.current = true;
+							setTab("http");
+						}
 						openDemo({
 							language: demo.language,
 							files: demo.files,
 							...(demo.kind.input ? { input: demo.kind.input } : {}),
+							...(demo.dependencies.length ? { dependencies: demo.dependencies } : {}),
 						});
 					}}
 					runnable={(language) => {

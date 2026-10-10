@@ -100,6 +100,20 @@ pub static TS: DepsSupport = DepsSupport {
     remove_argument: same_name,
 };
 
+/// What follows the add command for `name`. Cargo has no inline syntax for
+/// features, so `tokio[full,macros]` — the extras syntax uv already
+/// understands — becomes `tokio --features full,macros`.
+pub fn add_arguments(language: Language, name: &str) -> Vec<String> {
+    if language == Language::Rust {
+        if let Some((krate, rest)) = name.split_once('[') {
+            if let Some(features) = rest.strip_suffix(']') {
+                return vec![krate.to_string(), "--features".to_string(), features.to_string()];
+            }
+        }
+    }
+    vec![name.to_string()]
+}
+
 /// Go removes a module by asking for the null version.
 pub fn remove_argument(language: Language, name: &str) -> String {
     support(language).map_or_else(|| name.to_string(), |deps| (deps.remove_argument)(name))
@@ -438,6 +452,18 @@ fn parse_package_json(text: &str) -> Vec<Dependency> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn cargo_takes_features_in_the_extras_syntax_and_others_keep_the_name() {
+        use crate::protocol::Language;
+        assert_eq!(
+            super::add_arguments(Language::Rust, "tokio[full,macros]"),
+            ["tokio", "--features", "full,macros"]
+        );
+        assert_eq!(super::add_arguments(Language::Rust, "serde_json"), ["serde_json"]);
+        // uv reads extras itself.
+        assert_eq!(super::add_arguments(Language::Py, "fastapi[standard]"), ["fastapi[standard]"]);
+    }
+
     use super::*;
 
     #[test]

@@ -1,0 +1,155 @@
+{
+	"//": "The REST demos contract: [method, path, body or null, status, expected JSON — \"\" means an empty body, null means not compared]. Used by scripts/rest-check.mjs and tests/e2e/demos.spec.ts.",
+	"steps": [
+		[
+			"GET",
+			"/health",
+			null,
+			200,
+			{
+				"ok": true
+			}
+		],
+		[
+			"GET",
+			"/todos",
+			null,
+			200,
+			[]
+		],
+		[
+			"POST",
+			"/todos",
+			"{\"title\":\"Learn HTTP\"}",
+			201,
+			{
+				"id": 1,
+				"title": "Learn HTTP",
+				"done": false
+			}
+		],
+		[
+			"POST",
+			"/todos",
+			"{\"title\":\"Write tests\"}",
+			201,
+			{
+				"id": 2,
+				"title": "Write tests",
+				"done": false
+			}
+		],
+		[
+			"POST",
+			"/todos",
+			"{}",
+			400,
+			{
+				"error": "title is required"
+			}
+		],
+		[
+			"POST",
+			"/todos",
+			"not json",
+			400,
+			{
+				"error": "title is required"
+			}
+		],
+		[
+			"GET",
+			"/todos",
+			null,
+			200,
+			[
+				{
+					"id": 1,
+					"title": "Learn HTTP",
+					"done": false
+				},
+				{
+					"id": 2,
+					"title": "Write tests",
+					"done": false
+				}
+			]
+		],
+		[
+			"GET",
+			"/todos/1",
+			null,
+			200,
+			{
+				"id": 1,
+				"title": "Learn HTTP",
+				"done": false
+			}
+		],
+		[
+			"GET",
+			"/todos/99",
+			null,
+			404,
+			{
+				"error": "not found"
+			}
+		],
+		[
+			"PATCH",
+			"/todos/1",
+			"{\"done\":true}",
+			200,
+			{
+				"id": 1,
+				"title": "Learn HTTP",
+				"done": true
+			}
+		],
+		[
+			"PATCH",
+			"/todos/99",
+			"{\"done\":true}",
+			404,
+			{
+				"error": "not found"
+			}
+		],
+		[
+			"DELETE",
+			"/todos/2",
+			null,
+			204,
+			""
+		],
+		[
+			"DELETE",
+			"/todos/2",
+			null,
+			404,
+			{
+				"error": "not found"
+			}
+		],
+		[
+			"GET",
+			"/todos",
+			null,
+			200,
+			[
+				{
+					"id": 1,
+					"title": "Learn HTTP",
+					"done": true
+				}
+			]
+		],
+		[
+			"GET",
+			"/nope",
+			null,
+			404,
+			null
+		]
+	]
+}

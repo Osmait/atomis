@@ -652,6 +652,7 @@ mod tests {
             live_stdin: tokio::sync::Mutex::new(None),
             http_port: 20_000,
             last_http_ms: std::sync::atomic::AtomicU64::new(0),
+            pending_dependencies: std::sync::Mutex::new(Vec::new()),
         })
     }
 
