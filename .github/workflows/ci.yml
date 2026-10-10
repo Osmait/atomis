@@ -115,6 +115,11 @@ jobs:
           workspaces: |
             apps/server-rs
             rust/instrumenter
+      # Python dependencies install with uv, as in the image (Dockerfile's
+      # UV_VERSION): the FastAPI demo's spec installs its packages.
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.7"
       - name: Install clangd (the cpp spec asserts LSP hover)
         run: |
           sudo apt-get update

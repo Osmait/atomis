@@ -207,6 +207,25 @@ async function serveContract(page: Page, created: CreateSessionResponse, readyWi
 			url.searchParams.set("sessionId", session.sessionId);
 			url.searchParams.set("token", session.authToken);
 			const socket = new WebSocket(url);
+			// What the session said, for when the server never comes up: a
+			// failed install or a crash at import reads better than a timeout.
+			const log: string[] = [];
+			socket.addEventListener("message", (event) => {
+				const message = JSON.parse(String(event.data)) as {
+					type: string;
+					chunk?: string;
+					state?: string;
+					name?: string;
+					error?: string;
+					message?: string;
+					details?: string;
+				};
+				if (message.type === "output" || message.type === "deps.output") log.push(message.chunk ?? "");
+				if (message.type === "deps.state")
+					log.push(`[deps] ${message.state} ${message.name ?? ""} ${message.error ?? ""}\n`);
+				if (message.type === "server.error")
+					log.push(`[error] ${message.message ?? ""} ${message.details ?? ""}\n`);
+			});
 			await new Promise((resolve) => {
 				socket.addEventListener("open", resolve, { once: true });
 			});
@@ -240,7 +259,8 @@ async function serveContract(page: Page, created: CreateSessionResponse, readyWi
 			};
 			const deadline = Date.now() + within;
 			while ((await call("GET", "/health", null)).proxied) {
-				if (Date.now() > deadline) return ["the server never answered /health"];
+				if (Date.now() > deadline)
+					return [`the server never answered /health. The session said:\n${log.join("").slice(-3000)}`];
 				await new Promise((resolve) => {
 					setTimeout(resolve, 1000);
 				});
