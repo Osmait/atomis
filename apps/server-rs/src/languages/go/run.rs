@@ -23,12 +23,73 @@ use crate::languages::runtime::{cancelled_outcome, reset_generated, Events, Runn
 
 const COMPILE_TIMEOUT_MS: u64 = 60_000;
 
+/// The build cache every session shares, like Zig's global cache beside it
+/// in the toolchain cache (granted to the sandbox for the same reason).
+///
+/// A per-session cache rebuilt the runtime and the standard library for
+/// every new session: 2.5-4 s and about 9 CPU-seconds before the first run
+/// of each one. Go's cache is content-addressed, safe for concurrent
+/// `go` processes, and trims itself. Falls back to the session directory
+/// when the shared one cannot be created.
+fn go_cache(root: &std::path::Path) -> std::path::PathBuf {
+    let shared = crate::exec::sandbox::toolchain_cache_root().join("go-build");
+    if std::fs::create_dir_all(&shared).is_ok() {
+        shared
+    } else {
+        root.join(".gocache")
+    }
+}
+
+/// Linker flags for every binary a run builds: no symbol table and no
+/// DWARF. The Go linker was the largest steady-state cost of a Go run in
+/// the CPU profile, and the debug info it wrote was never read — a panic is
+/// located through the runtime's pclntab, which these flags keep.
+const LDFLAGS: &str = "-ldflags=-s -w";
+
+/// `go test` for the visible source, started with the run rather than after
+/// it: it reads only `src/`, so it can build and run while the program is
+/// instrumented, compiled and executed. Killed if the run ends early.
+struct TestRun(tokio::task::JoinHandle<supervisor::ProcessResult>);
+
+impl Drop for TestRun {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+fn start_tests(session: &Session, settings: &SessionSettings, cancel: &CancellationToken) -> TestRun {
+    let root = session.root.clone();
+    let sandbox = session.sandbox(settings);
+    let cancel = cancel.clone();
+    let timeout = (settings.timeout_ms + COMPILE_TIMEOUT_MS).max(10_000);
+    TestRun(tokio::spawn(async move {
+        supervisor::run(
+            "go",
+            &[
+                "test".into(),
+                "-json".into(),
+                "-count=1".into(),
+                "-vet=off".into(),
+                LDFLAGS.into(),
+                "./src".into(),
+            ],
+            RunOptions {
+                cwd: root.clone(),
+                limits: ProcessLimits::new(timeout, 4 * 1024 * 1024, 512 * 1024),
+                cancel,
+                probe_fd: false,
+                env: go_env(&root),
+                sandbox,
+                callbacks: StreamCallbacks::default(),
+            },
+        )
+        .await
+    }))
+}
+
 fn go_env(root: &std::path::Path) -> Vec<(String, String)> {
     vec![
-        (
-            "GOCACHE".into(),
-            root.join(".gocache").to_string_lossy().into_owned(),
-        ),
+        ("GOCACHE".into(), go_cache(root).to_string_lossy().into_owned()),
         // Sessions can live below a parent Git worktree whose status is not
         // readable from the sandbox. Build metadata is irrelevant for these
         // temporary binaries, so do not let VCS stamping block compilation.
@@ -205,6 +266,7 @@ pub async fn run(
 
     emit(RunnerEvent::State(RunState::Instrumenting));
     let test_catalog = discover_go_tests(&snapshot.files);
+    let mut tests = (!test_catalog.is_empty()).then(|| start_tests(session, settings, &cancel));
     emit(RunnerEvent::TestCatalog(test_catalog.clone()));
     let _ = reset_generated(&session.root).await;
     let instrumenter = packs::instrumenter_path(Language::Go);
@@ -223,6 +285,7 @@ pub async fn run(
             command_prefix_args: Vec::new(),
             extra_args: &|_| Vec::new(),
             timeout_ms: 5000,
+            worker: None,
         },
     )
     .await;
@@ -247,25 +310,43 @@ pub async fn run(
     emit(RunnerEvent::State(RunState::Compiling));
     let executable = session.root.join("target/go-bin");
     let _ = tokio::fs::create_dir_all(session.root.join("target")).await;
-    let compile = supervisor::run(
-        "go",
-        &[
-            "build".into(),
-            "-o".into(),
-            executable.to_string_lossy().into_owned(),
-            "./generated".into(),
-        ],
-        RunOptions {
-            cwd: session.root.clone(),
-            limits: ProcessLimits::new(COMPILE_TIMEOUT_MS, 512 * 1024, 1024 * 1024),
-            cancel: cancel.clone(),
-            probe_fd: false,
-            env: go_env(&session.root),
-            sandbox: session.sandbox(settings),
-            callbacks: StreamCallbacks::default(),
-        },
-    )
+    // The compiler and linker directly when the session qualifies (see
+    // direct.rs); `go build` otherwise, or when that path gives up.
+    let direct = super::direct::build(&super::direct::Build {
+        root: &session.root,
+        executable: &executable,
+        env: go_env(&session.root),
+        sandbox: session.sandbox(settings),
+        cancel: &cancel,
+        timeout_ms: COMPILE_TIMEOUT_MS,
+        ldflags: &["-s", "-w"],
+    })
     .await;
+    let compile = match direct {
+        Some(compile) => compile,
+        None => {
+            supervisor::run(
+                "go",
+                &[
+                    "build".into(),
+                    LDFLAGS.into(),
+                    "-o".into(),
+                    executable.to_string_lossy().into_owned(),
+                    "./generated".into(),
+                ],
+                RunOptions {
+                    cwd: session.root.clone(),
+                    limits: ProcessLimits::new(COMPILE_TIMEOUT_MS, 512 * 1024, 1024 * 1024),
+                    cancel: cancel.clone(),
+                    probe_fd: false,
+                    env: go_env(&session.root),
+                    sandbox: session.sandbox(settings),
+                    callbacks: StreamCallbacks::default(),
+                },
+            )
+            .await
+        }
+    };
     metrics.compilation_ms = compile.duration_ms;
     if compile.cancelled || cancel.is_cancelled() {
         return cancelled_outcome(metrics, "superseded");
@@ -343,7 +424,7 @@ pub async fn run(
                 source: Some("runtime".to_string()),
             }],
         });
-        run_tests(session, settings, &test_catalog, &cancel, &events).await;
+        run_tests(&test_catalog, tests.take(), &cancel, &events).await;
         metrics.reason = Some("abnormal exit".to_string());
         return RunnerOutcome {
             result: metrics,
@@ -354,7 +435,7 @@ pub async fn run(
         owner: "runtime".to_string(),
         diagnostics: Vec::new(),
     });
-    run_tests(session, settings, &test_catalog, &cancel, &events).await;
+    run_tests(&test_catalog, tests.take(), &cancel, &events).await;
     RunnerOutcome {
         result: metrics,
         terminal_state: TerminalState::Succeeded,
@@ -362,40 +443,19 @@ pub async fn run(
 }
 
 async fn run_tests(
-    session: &Session,
-    settings: &SessionSettings,
     catalog: &[TestCase],
+    tests: Option<TestRun>,
     cancel: &CancellationToken,
     events: &Events,
 ) {
+    let Some(mut tests) = tests else { return };
     if catalog.is_empty() || cancel.is_cancelled() {
         return;
     }
     let _ = events.send(RunnerEvent::State(RunState::Testing));
-    let execution = supervisor::run(
-        "go",
-        &[
-            "test".into(),
-            "-json".into(),
-            "-count=1".into(),
-            "-vet=off".into(),
-            "./src".into(),
-        ],
-        RunOptions {
-            cwd: session.root.clone(),
-            limits: ProcessLimits::new(
-                (settings.timeout_ms + COMPILE_TIMEOUT_MS).max(10_000),
-                4 * 1024 * 1024,
-                512 * 1024,
-            ),
-            cancel: cancel.clone(),
-            probe_fd: false,
-            env: go_env(&session.root),
-            sandbox: session.sandbox(settings),
-            callbacks: StreamCallbacks::default(),
-        },
-    )
-    .await;
+    let Ok(execution) = (&mut tests.0).await else {
+        return;
+    };
     if execution.cancelled || cancel.is_cancelled() {
         return;
     }
@@ -489,5 +549,17 @@ mod tests {
             .find_map(|(name, value)| (name == "GOFLAGS").then_some(value.as_str()));
 
         assert_eq!(goflags, Some("-mod=mod -buildvcs=false"));
+    }
+
+    #[test]
+    fn the_build_cache_outlives_the_session() {
+        let root = std::path::Path::new("/tmp/atomis-go-session");
+        let env = go_env(root);
+        let cache = env
+            .iter()
+            .find_map(|(name, value)| (name == "GOCACHE").then_some(value.as_str()))
+            .expect("GOCACHE");
+        assert!(!cache.starts_with("/tmp/atomis-go-session"), "{cache}");
+        assert!(cache.ends_with("go-build"), "{cache}");
     }
 }

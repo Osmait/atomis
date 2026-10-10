@@ -6,6 +6,7 @@ use std::net::SocketAddr;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
+use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::Router;
 
@@ -13,18 +14,59 @@ mod domain;
 mod http;
 mod exec;
 mod languages;
+mod metrics;
 mod protocol;
 mod state;
+mod trace_export;
 mod util;
 mod ws;
 
 use http::routes::{
     create_session, create_workspace, delete_workspace, doctor_route,
-    get_preferences, health, list_workspaces, put_preferences, rename_workspace,
+    get_preferences, health, list_workspaces, metrics_route, put_preferences, rename_workspace,
     ws_lsp_route, ws_runtime_route,
     session_alive,
 };
 use state::AppState;
+
+/// Caching for the built UI. Everything under /assets/ is named by its
+/// content hash, so a browser may keep it forever and never ask again; the
+/// pages that reference those names must be checked on every visit, or a
+/// deploy would keep serving the old UI. Without either header browsers
+/// guessed, and revalidated all fourteen files on each visit for a while
+/// after every deploy: a round trip each, which over a phone link is the
+/// load. API and socket routes are left alone.
+async fn cache_headers(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let path = request.uri().path().to_owned();
+    let mut response = next.run(request).await;
+    if path.starts_with("/api/") || path.starts_with("/ws/") || !response.status().is_success() {
+        return response;
+    }
+    let is_html = response
+        .headers()
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.starts_with("text/html"));
+    // A missing asset reaches the single-page fallback and would come back
+    // as index.html — cached forever under that name, from a page left
+    // open across a deploy. It is a 404.
+    if path.starts_with("/assets/") && is_html {
+        return axum::http::StatusCode::NOT_FOUND.into_response();
+    }
+    let policy = if path.starts_with("/assets/") {
+        "public, max-age=31536000, immutable"
+    } else {
+        "no-cache"
+    };
+    response
+        .headers_mut()
+        .entry(axum::http::header::CACHE_CONTROL)
+        .or_insert(axum::http::HeaderValue::from_static(policy));
+    response
+}
 
 /// Resolves when the process that spawned us is gone.
 ///
@@ -74,12 +116,19 @@ async fn main() {
         std::process::exit(i32::from(failed));
     }
 
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info".into()),
-        )
-        .init();
+    {
+        use tracing_subscriber::layer::SubscriberExt;
+        use tracing_subscriber::util::SubscriberInitExt;
+        use tracing_subscriber::Layer;
+        // The level filter is the log's alone: RUST_LOG=warn must not stop
+        // the spans an ATOMIS_TRACE timeline is made of.
+        let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| "info".into());
+        tracing_subscriber::registry()
+            .with(tracing_subscriber::fmt::layer().with_filter(filter))
+            .with(trace_export::ChromeTrace::from_env())
+            .init();
+    }
 
     let port: u16 = std::env::var("ATOMIS_PORT")
         .ok()
@@ -109,9 +158,44 @@ async fn main() {
         });
     }
 
+    // Language servers and Zig's compile servers are most of what a running
+    // server holds in memory, and an open tab keeps its own alive
+    // indefinitely. Stop the unused ones.
+    {
+        let lsp_idle = ws::lsp::idle_timeout_from_env();
+        let registry = Arc::clone(&state);
+        tokio::spawn(async move {
+            let mut every = tokio::time::interval(std::time::Duration::from_secs(30));
+            loop {
+                every.tick().await;
+                if let Some(idle) = lsp_idle {
+                    let stopped = registry.lsp_registry.reap_idle(idle).await;
+                    if stopped > 0 {
+                        tracing::info!(stopped, "stopped idle language servers");
+                    }
+                }
+                let stopped = languages::zig::compile_server::reap_idle(
+                    languages::zig::compile_server::IDLE,
+                )
+                .await;
+                if stopped > 0 {
+                    tracing::info!(stopped, "stopped idle zig compile servers");
+                }
+                let stopped = languages::instrument_worker::reap_idle(
+                    languages::instrument_worker::IDLE,
+                )
+                .await;
+                if stopped > 0 {
+                    tracing::info!(stopped, "stopped idle instrumenter workers");
+                }
+            }
+        });
+    }
+
     let mut app = Router::new()
         .route("/api/health", get(health))
         .route("/api/doctor", get(doctor_route))
+        .route("/api/metrics", get(metrics_route))
         .route("/api/sessions", post(create_session).layer(axum::extract::DefaultBodyLimit::max(protocol::MAX_PROJECT_BYTES * 6 + 65536)))
         .route("/api/sessions/{id}", get(session_alive))
         .route(
@@ -148,7 +232,9 @@ async fn main() {
                     .precompressed_br()
                     .precompressed_gzip(),
             );
-        app = app.fallback_service(serve);
+        app = app
+            .fallback_service(serve)
+            .layer(axum::middleware::from_fn(cache_headers));
     }
 
     let app = app.with_state(Arc::clone(&state));
@@ -180,6 +266,17 @@ async fn main() {
     // Same announce line the Tauri shell parses from the Node sidecar.
     println!("ATOMIS_LISTENING={}", bound.port());
     tracing::info!(%bound, "atomis-server (rust) ready — code runs locally with your permissions");
+
+    // Nagle's algorithm holds a small write until the previous one is
+    // acknowledged, and the peer delays that ACK by up to 40 ms: every run
+    // state, value and result is a small WebSocket frame, so each run
+    // finished ~40 ms after its work did. Measured as a floor under every
+    // language, even runs that stopped at a syntax error.
+    let listener = axum::serve::ListenerExt::tap_io(listener, |tcp| {
+        if let Err(error) = tcp.set_nodelay(true) {
+            tracing::warn!(%error, "TCP_NODELAY could not be set");
+        }
+    });
 
     let shutdown_state = Arc::clone(&state);
     axum::serve(listener, app)

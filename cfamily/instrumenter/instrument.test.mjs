@@ -181,3 +181,28 @@ std::cout << x;
 		`marker spliced into string content:\n${result.generated}`,
 	);
 });
+
+test("the per-session worker answers exactly what the CLI writes", async () => {
+	// The server prefers the worker and falls back to the CLI; a session
+	// must not see a difference between the two.
+	const { execFileSync } = await import("node:child_process");
+	const { readFileSync } = await import("node:fs");
+	const here = import.meta.dirname;
+	const dir = mkdtempSync(join(tmpdir(), "clive-worker-"));
+	try {
+		const input = join(dir, "main.cpp");
+		writeFileSync(input, '#include <cstdio>\nint main() {\n  int price = 40;\n  int tax = 3;\n  std::printf("%d\\n", price + tax);\n}\n');
+		const output = join(dir, "out.cpp");
+		const sourceMap = join(dir, "map.json");
+		const cli = execFileSync("node", [join(here, "clive-instrument.mjs"), "--lang", "cpp", "--input", input, "--output", output, "--source-map", sourceMap, "--uri", "file:///w/src/main.cpp", "--version", "3", "--file-id", "1"], { encoding: "utf8" });
+		const request = { id: 5, inputPath: input, lang: "cpp", uri: "file:///w/src/main.cpp", version: 3, fileId: 1, autoInspect: true, manual: [], output, sourceMap };
+		const answers = execFileSync("node", [join(here, "worker.mjs")], { input: `${JSON.stringify(request)}\nnot json\n`, encoding: "utf8" })
+			.trim().split("\n").map((line) => JSON.parse(line));
+		assert.equal(answers[0].id, 5);
+		assert.equal(answers[0].json, cli.trim());
+		assert.equal(answers[0].generated, readFileSync(output, "utf8"));
+		assert.ok(answers[1].error, "a bad line is answered, not fatal");
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});

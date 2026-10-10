@@ -135,6 +135,46 @@ class InstrumentTests(unittest.TestCase):
             with open(f"{workdir}/out.py", encoding="utf-8") as handle:
                 self.assertIn('x = 1; _atomis_probe("', handle.read())
 
+    def test_the_worker_answers_exactly_what_the_cli_writes(self):
+        # The server prefers the long-lived worker and falls back to the CLI;
+        # a session must not see a difference between the two.
+        import json
+        import os
+        import subprocess
+        import sys
+        import tempfile
+
+        here = os.path.dirname(os.path.abspath(__file__))
+        with tempfile.TemporaryDirectory() as directory:
+            source = os.path.join(directory, "main.py")
+            with open(source, "w", encoding="utf-8") as handle:
+                handle.write("\ufeff" + SAMPLE)
+            output = os.path.join(directory, "out.py")
+            source_map = os.path.join(directory, "map.json")
+            cli = subprocess.run(
+                [sys.executable, os.path.join(here, "pylive_instrument.py"),
+                 "--input", source, "--output", output, "--source-map", source_map,
+                 "--uri", "file:///w/src/main.py", "--version", "4", "--file-id", "2"],
+                capture_output=True, text=True, check=True,
+            )
+            request = {
+                "id": 7, "source": "\ufeff" + SAMPLE, "uri": "file:///w/src/main.py",
+                "version": 4, "fileId": 2, "autoInspect": True, "manual": [],
+                "output": output, "sourceMap": source_map,
+            }
+            worker = subprocess.run(
+                [sys.executable, os.path.join(here, "pylive_worker.py")],
+                input=json.dumps(request) + "\nnot json\n",
+                capture_output=True, text=True, check=True,
+            )
+            answers = [json.loads(line) for line in worker.stdout.splitlines()]
+            self.assertEqual(answers[0]["id"], 7)
+            self.assertEqual(answers[0]["json"], cli.stdout.strip())
+            with open(output, encoding="utf-8") as handle:
+                self.assertEqual(answers[0]["generated"], handle.read())
+            # A bad line is answered, not fatal to the worker.
+            self.assertIn("error", answers[1])
+
 
 if __name__ == "__main__":
     unittest.main()

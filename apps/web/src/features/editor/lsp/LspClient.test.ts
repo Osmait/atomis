@@ -5,7 +5,7 @@
 // notification may reach the server before the initialize handshake is done.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as Monaco from "monaco-editor";
-import { LspClient } from "./LspClient.js";
+import { LSP_IDLE_CLOSE_CODE, LspClient } from "./LspClient.js";
 
 class FakeWebSocket {
 	static instances: FakeWebSocket[] = [];
@@ -13,13 +13,16 @@ class FakeWebSocket {
 	static readonly CONNECTING = 0;
 	readyState = FakeWebSocket.CONNECTING;
 	sent: string[] = [];
-	listeners = new Map<string, ((event: { data?: string }) => void)[]>();
+	listeners = new Map<
+		string,
+		((event: { data?: string; code?: number }) => void)[]
+	>();
 	constructor(public url: string) {
 		FakeWebSocket.instances.push(this);
 	}
 	addEventListener(
 		name: string,
-		handler: (event: { data?: string }) => void,
+		handler: (event: { data?: string; code?: number }) => void,
 	): void {
 		const bucket = this.listeners.get(name) ?? [];
 		bucket.push(handler);
@@ -40,9 +43,9 @@ class FakeWebSocket {
 			handler({ data: JSON.stringify(message) });
 	}
 	/** The server-side close: readyState drops and the close event fires. */
-	drops(): void {
+	drops(code = 1006): void {
 		this.readyState = 3;
-		for (const handler of this.listeners.get("close") ?? []) handler({});
+		for (const handler of this.listeners.get("close") ?? []) handler({ code });
 	}
 }
 
@@ -230,6 +233,20 @@ describe("LspClient", () => {
 		socket.drops();
 		socket.drops();
 		expect(closures).toBe(1);
+	});
+
+	it("tells an idle stop from a lost connection", async () => {
+		const idle = connectClient();
+		idle.socket.opens();
+		await idle.completeHandshake();
+		idle.socket.drops(LSP_IDLE_CLOSE_CODE);
+		expect(idle.client.pausedForIdle).toBe(true);
+
+		const lost = connectClient();
+		lost.socket.opens();
+		await lost.completeHandshake();
+		lost.socket.drops();
+		expect(lost.client.pausedForIdle).toBe(false);
 	});
 
 	it("dispose does not re-notify the owner through onClose", async () => {

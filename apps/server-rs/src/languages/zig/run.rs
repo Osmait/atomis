@@ -22,6 +22,7 @@ use crate::languages::runtime::{
     cancelled_outcome, reset_generated, Events, InstrumentationOutput, ProbeForwarder,
     RunnerEvent, RunnerOutcome, TerminalState,
 };
+use crate::languages::zig::compile_server;
 use crate::languages::zig::diagnostics::{discover_tests, match_runner_name, parse_compiler_diagnostics};
 
 fn instrument_error(path: &str, message: &str) -> AppDiagnostic {
@@ -197,6 +198,123 @@ pub async fn run(
     }
 
     emit(RunnerEvent::State(RunState::Compiling));
+    // The incremental compile server first, when the session qualifies;
+    // `None` from it means "build the classic way", silently.
+    let compile_started = std::time::Instant::now();
+    let fast = if compile_server::eligible(&session.id, &session.root).await {
+        fast_compile(session, settings, !test_catalog.is_empty(), &cancel).await
+    } else {
+        None
+    };
+    if cancel.is_cancelled() {
+        metrics.compilation_ms = compile_started.elapsed().as_secs_f64() * 1000.0;
+        return cancelled_outcome(metrics, "superseded");
+    }
+    let (executable, test_executable) = match fast {
+        Some(Ok(built)) => {
+            metrics.compilation_ms = compile_started.elapsed().as_secs_f64() * 1000.0;
+            emit(RunnerEvent::Diagnostic {
+                owner: "compiler".to_string(),
+                diagnostics: Vec::new(),
+            });
+            built
+        }
+        Some(Err(errors)) => {
+            metrics.compilation_ms = compile_started.elapsed().as_secs_f64() * 1000.0;
+            // What the classic build would have streamed on stderr.
+            emit(RunnerEvent::Output {
+                stream: Stream::Stderr,
+                chunk: errors.clone(),
+                category: OutputCategory::Error,
+                source_location: None,
+            });
+            emit(RunnerEvent::Diagnostic {
+                owner: "compiler".to_string(),
+                diagnostics: parse_compiler_diagnostics(&errors, &generated_path_str),
+            });
+            metrics.exit_code = Some(1);
+            metrics.reason = Some("compiler error".to_string());
+            return RunnerOutcome {
+                result: metrics,
+                terminal_state: TerminalState::CompileError,
+            };
+        }
+        None => match classic_compile(session, settings, &test_catalog, &cancel, &events, &generated_path_str, &mut metrics).await {
+            Ok(executable) => (executable, session.root.join("zig-out/bin/atomis-tests")),
+            Err(outcome) => return outcome,
+        },
+    };
+
+    run_executable(
+        session,
+        settings,
+        Executables { program: executable, tests: test_executable },
+        probes,
+        file_ids,
+        &test_catalog,
+        cancel,
+        events,
+        generated_path_str,
+        metrics,
+    )
+    .await
+}
+
+struct Executables {
+    program: std::path::PathBuf,
+    tests: std::path::PathBuf,
+}
+
+/// The program and, when there are tests, the test binary, each from its
+/// compile server, in parallel. `None`: build the classic way instead.
+/// `Some(Err)`: the compiler's errors, in its text format.
+async fn fast_compile(
+    session: &Session,
+    settings: &SessionSettings,
+    has_tests: bool,
+    cancel: &CancellationToken,
+) -> Option<Result<(std::path::PathBuf, std::path::PathBuf), String>> {
+    use compile_server::{Kind, Update};
+    let sandbox = session.sandbox(settings);
+    let program = compile_server::update(&session.id, Kind::Program, &session.root, sandbox.as_ref(), cancel);
+    let tests = async {
+        if has_tests {
+            compile_server::update(&session.id, Kind::Tests, &session.root, sandbox.as_ref(), cancel).await
+        } else {
+            // Never run: a placeholder that reads as "built".
+            Some(Update::Built(session.root.join("zig-out/bin/atomis-tests")))
+        }
+    };
+    match tokio::join!(program, tests) {
+        (Some(Update::Built(program)), Some(Update::Built(tests))) => Some(Ok((program, tests))),
+        // The program's errors first; a test-only error (in a file the
+        // program does not import) after them. Both come from the same
+        // sources, so most errors appear in both — the parser dedupes.
+        (Some(program), Some(tests)) => {
+            let mut errors = String::new();
+            for update in [program, tests] {
+                if let Update::Failed(text) = update {
+                    errors.push_str(&text);
+                }
+            }
+            Some(Err(errors))
+        }
+        _ => None,
+    }
+}
+
+/// `zig build instrumented [tests]`: the path for tests, package
+/// dependencies, libc, other systems, and whenever the compile server
+/// cannot be used. On failure, the finished outcome to return.
+async fn classic_compile(
+    session: &Session,
+    settings: &SessionSettings,
+    test_catalog: &[TestCase],
+    cancel: &CancellationToken,
+    events: &Events,
+    generated_path_str: &str,
+    metrics: &mut RunResult,
+) -> Result<std::path::PathBuf, RunnerOutcome> {
     let mut compile_args: Vec<String> = vec!["build".into(), "instrumented".into()];
     if !test_catalog.is_empty() {
         compile_args.push("tests".into());
@@ -244,12 +362,15 @@ pub async fn run(
     .await;
     metrics.compilation_ms = compile.duration_ms;
     if compile.cancelled || cancel.is_cancelled() {
-        return cancelled_outcome(metrics, "superseded");
+        return Err(cancelled_outcome(metrics.clone(), "superseded"));
     }
+    let emit = |event: RunnerEvent| {
+        let _ = events.send(event);
+    };
     if compile.exit_code != Some(0) || compile.limit.is_some() {
         emit(RunnerEvent::Diagnostic {
             owner: "compiler".to_string(),
-            diagnostics: parse_compiler_diagnostics(&compile.stderr, &generated_path_str),
+            diagnostics: parse_compiler_diagnostics(&compile.stderr, generated_path_str),
         });
         metrics.exit_code = compile.exit_code;
         metrics.signal = compile.signal.clone();
@@ -268,15 +389,34 @@ pub async fn run(
                 compile_failure_reason(&compile)
             },
         );
-        return RunnerOutcome {
-            result: metrics,
+        return Err(RunnerOutcome {
+            result: metrics.clone(),
             terminal_state: TerminalState::CompileError,
-        };
+        });
     }
     emit(RunnerEvent::Diagnostic {
         owner: "compiler".to_string(),
         diagnostics: Vec::new(),
     });
+    Ok(session.root.join("zig-out/bin/atomis-session"))
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_executable(
+    session: &Session,
+    settings: &SessionSettings,
+    executables: Executables,
+    probes: Vec<ProbeDescriptor>,
+    file_ids: HashMap<u32, String>,
+    test_catalog: &[TestCase],
+    cancel: CancellationToken,
+    events: Events,
+    generated_path_str: String,
+    mut metrics: RunResult,
+) -> RunnerOutcome {
+    let emit = |event: RunnerEvent| {
+        let _ = events.send(event);
+    };
 
     emit(RunnerEvent::State(RunState::Running));
     let mut forwarder = ProbeForwarder::new(&probes, events.clone());
@@ -294,7 +434,6 @@ pub async fn run(
             });
         }),
     );
-    let executable = session.root.join("zig-out/bin/atomis-session");
     let run_events = events.clone();
     let execution = {
         let forwarder = &mut forwarder;
@@ -302,7 +441,7 @@ pub async fn run(
         let parser = &mut stderr_parser;
         let reader = &mut probe_reader;
         let execution = supervisor::run(
-            &executable.to_string_lossy(),
+            &executables.program.to_string_lossy(),
             &[],
             RunOptions {
                 cwd: session.root.join("src"),
@@ -380,7 +519,7 @@ pub async fn run(
                 source: Some("runtime".to_string()),
             }],
         });
-        run_tests(session, settings, &test_catalog, &cancel, &events).await;
+        run_tests(session, settings, test_catalog, &executables.tests, &cancel, &events).await;
         metrics.reason = Some("abnormal exit".to_string());
         return RunnerOutcome {
             result: metrics,
@@ -391,7 +530,7 @@ pub async fn run(
         owner: "runtime".to_string(),
         diagnostics: Vec::new(),
     });
-    run_tests(session, settings, &test_catalog, &cancel, &events).await;
+    run_tests(session, settings, test_catalog, &executables.tests, &cancel, &events).await;
     RunnerOutcome {
         result: metrics,
         terminal_state: TerminalState::Succeeded,
@@ -420,6 +559,7 @@ async fn run_tests(
     session: &Session,
     settings: &SessionSettings,
     catalog: &[TestCase],
+    executable: &std::path::Path,
     cancel: &CancellationToken,
     events: &Events,
 ) {
@@ -501,7 +641,6 @@ async fn run_tests(
         }
     }));
 
-    let executable = session.root.join("zig-out/bin/atomis-tests");
     let stderr_state = Arc::clone(&state);
     let execution = supervisor::run(
         &executable.to_string_lossy(),

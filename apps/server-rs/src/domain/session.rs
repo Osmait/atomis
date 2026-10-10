@@ -745,9 +745,17 @@ impl SessionManager {
         }
     }
 
+    /// Live sessions, for the metrics endpoint.
+    pub async fn count(&self) -> usize {
+        self.sessions.lock().await.len()
+    }
+
     pub async fn destroy(&self, id: &str) {
+        crate::languages::zig::compile_server::forget(id).await;
+        crate::languages::instrument_worker::forget(id).await;
         let session = self.sessions.lock().await.remove(id);
         if let Some(session) = session {
+            crate::languages::go::direct::forget(&session.root).await;
             if let Some(workspace_id) = &session.workspace_id {
                 // Persistent: the files stay, only the in-memory session goes.
                 crate::domain::workspace::touch(workspace_id).await;

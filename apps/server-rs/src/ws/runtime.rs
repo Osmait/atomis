@@ -62,11 +62,19 @@ pub async fn handle_runtime(state: Arc<AppState>, session: Arc<Session>, socket:
     let writer = tokio::spawn(async move {
         use futures_util::SinkExt;
         while let Some(event) = outbox_rx.recv().await {
-            if sink
-                .send(Message::Text(to_json(&event).into()))
-                .await
-                .is_err()
-            {
+            // The last leg of a run in an ATOMIS_TRACE timeline: from the
+            // result being ready to it being on the socket.
+            let span = match &event {
+                ServerEvent::RunFinished { run_id, .. } => {
+                    tracing::info_span!("send result", run = %run_id.get(..8).unwrap_or(run_id))
+                }
+                _ => tracing::Span::none(),
+            };
+            let sent = {
+                use tracing::Instrument;
+                sink.send(Message::Text(to_json(&event).into())).instrument(span).await
+            };
+            if sent.is_err() {
                 break;
             }
         }

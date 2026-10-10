@@ -42,6 +42,29 @@ pub(crate) async fn doctor_route(
     Json(json!({ "checks": crate::languages::doctor::run_doctor().await })).into_response()
 }
 
+/// Prometheus text format. Guarded like every other read: it says how busy
+/// the server is and which toolchains people use. A scraper presents the
+/// access token as `Authorization: Bearer`, and its Host must be one the
+/// server answers to (`ATOMIS_ALLOWED_ORIGINS` when deployed).
+pub(crate) async fn metrics_route(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Response {
+    if !allowed_read(&state, &headers) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let gauges = crate::metrics::Gauges {
+        sessions: state.sessions.count().await,
+        zig_compile_servers: crate::languages::zig::compile_server::count().await,
+        lsp_servers: state.lsp_registry.running().await,
+    };
+    (
+        [(axum::http::header::CONTENT_TYPE, "text/plain; version=0.0.4")],
+        crate::metrics::render(&gauges),
+    )
+        .into_response()
+}
+
 pub(crate) async fn create_session(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,

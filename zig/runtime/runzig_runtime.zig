@@ -28,10 +28,22 @@ var sequence: std.atomic.Value(u64) = .init(0);
 
 extern "c" fn write(fd: c_int, buffer: [*]const u8, count: usize) isize;
 
+/// One write(2). On Linux without libc, straight to the kernel: the
+/// server's incremental compile server builds sessions without libc, which
+/// Zig 0.16 cannot yet link incrementally. Everywhere else, through libc.
+fn writeSome(fd: c_int, bytes: []const u8) isize {
+    const builtin = @import("builtin");
+    if (builtin.os.tag == .linux and !builtin.link_libc) {
+        const result = std.os.linux.write(fd, bytes.ptr, bytes.len);
+        return if (std.os.linux.errno(result) == .SUCCESS) @intCast(result) else -1;
+    }
+    return write(fd, bytes.ptr, bytes.len);
+}
+
 fn writeAllFd(fd: c_int, bytes: []const u8) void {
     var offset: usize = 0;
     while (offset < bytes.len) {
-        const result = write(fd, bytes.ptr + offset, bytes.len - offset);
+        const result = writeSome(fd, bytes[offset..]);
         if (result <= 0) return;
         offset += @intCast(result);
     }

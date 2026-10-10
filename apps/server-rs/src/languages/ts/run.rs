@@ -231,6 +231,7 @@ pub async fn run(
 
     emit(RunnerEvent::State(RunState::Instrumenting));
     let test_catalog = discover_ts_tests(&snapshot.files);
+    let mut tests = (!test_catalog.is_empty()).then(|| start_tests(session, settings, &test_catalog, &cancel));
     emit(RunnerEvent::TestCatalog(test_catalog.clone()));
     let _ = reset_generated(&session.root).await;
     let instrumenter = packs::instrumenter_path(Language::Ts);
@@ -247,6 +248,12 @@ pub async fn run(
             command_prefix_args: vec![instrumenter.to_string_lossy().into_owned()],
             extra_args: &|_| Vec::new(),
             timeout_ms: 10_000,
+            worker: Some(crate::languages::instrument_worker::WorkerSpec {
+                program: "node".to_string(),
+                script: packs::project_root().join("ts/instrumenter/worker.mjs"),
+                per_session: false,
+                lang: None,
+            }),
         },
     )
     .await;
@@ -269,18 +276,22 @@ pub async fn run(
     }
 
     // Type checking surfaces diagnostics but never blocks the run: node
-    // strips types regardless, matching the language's semantics.
-    emit(RunnerEvent::State(RunState::Compiling));
+    // strips types regardless, matching the language's semantics. So the
+    // two run side by side — they used to run one after the other, ~67 ms
+    // of checking before ~49 ms of running — and the type diagnostics
+    // arrive when tsc is done.
+    emit(RunnerEvent::State(RunState::Running));
     let tsc_entry = packs::project_root().join("node_modules/typescript/bin/tsc");
+    let tsc_args: [String; 5] = [
+        tsc_entry.to_string_lossy().into_owned(),
+        "-p".into(),
+        session.root.join("tsconfig.json").to_string_lossy().into_owned(),
+        "--pretty".into(),
+        "false".into(),
+    ];
     let typecheck = supervisor::run(
         "node",
-        &[
-            tsc_entry.to_string_lossy().into_owned(),
-            "-p".into(),
-            session.root.join("tsconfig.json").to_string_lossy().into_owned(),
-            "--pretty".into(),
-            "false".into(),
-        ],
+        &tsc_args,
         RunOptions {
             cwd: session.root.clone(),
             limits: ProcessLimits::new(TSC_TIMEOUT_MS, 2 * 1024 * 1024, 512 * 1024),
@@ -290,21 +301,7 @@ pub async fn run(
             sandbox: session.sandbox(settings),
             callbacks: StreamCallbacks::default(),
         },
-    )
-    .await;
-    metrics.compilation_ms = typecheck.duration_ms;
-    if typecheck.cancelled || cancel.is_cancelled() {
-        return cancelled_outcome(metrics, "superseded");
-    }
-    emit(RunnerEvent::Diagnostic {
-        owner: "compiler".to_string(),
-        diagnostics: parse_tsc_diagnostics(&format!(
-            "{}\n{}",
-            typecheck.stdout, typecheck.stderr
-        )),
-    });
-
-    emit(RunnerEvent::State(RunState::Running));
+    );
     let runtime_module = session.root.join("generated/__atomis_runtime.mjs");
     let entry = session.root.join("generated/main.ts");
     let execution = execute_program(
@@ -325,8 +322,18 @@ pub async fn run(
             timeout_ms: settings.timeout_ms,
             parse_stdout_markers: true,
         },
-    )
-    .await;
+    );
+    let (typecheck, execution) = tokio::join!(typecheck, execution);
+    metrics.compilation_ms = typecheck.duration_ms;
+    if !typecheck.cancelled && !cancel.is_cancelled() {
+        emit(RunnerEvent::Diagnostic {
+            owner: "compiler".to_string(),
+            diagnostics: parse_tsc_diagnostics(&format!(
+                "{}\n{}",
+                typecheck.stdout, typecheck.stderr
+            )),
+        });
+    }
     if let Some(outcome) = classify_execution(&mut metrics, &execution, &cancel) {
         return outcome;
     }
@@ -363,7 +370,7 @@ pub async fn run(
                 source: Some("runtime".to_string()),
             }],
         });
-        run_tests(session, settings, &test_catalog, &cancel, &events).await;
+        run_tests(&test_catalog, tests.take(), &cancel, &events).await;
         metrics.reason = Some("abnormal exit".to_string());
         return RunnerOutcome {
             result: metrics,
@@ -374,24 +381,30 @@ pub async fn run(
         owner: "runtime".to_string(),
         diagnostics: Vec::new(),
     });
-    run_tests(session, settings, &test_catalog, &cancel, &events).await;
+    run_tests(&test_catalog, tests.take(), &cancel, &events).await;
     RunnerOutcome {
         result: metrics,
         terminal_state: TerminalState::Succeeded,
     }
 }
 
-async fn run_tests(
+/// `node --test` for the visible test files, started with the run rather
+/// than after the program: they import from `src/`, not the instrumented
+/// copy, so nothing the run produces is needed. Killed if the run ends early.
+struct TestRun(tokio::task::JoinHandle<supervisor::ProcessResult>);
+
+impl Drop for TestRun {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+fn start_tests(
     session: &Session,
     settings: &SessionSettings,
     catalog: &[TestCase],
     cancel: &CancellationToken,
-    events: &Events,
-) {
-    if catalog.is_empty() || cancel.is_cancelled() {
-        return;
-    }
-    let _ = events.send(RunnerEvent::State(RunState::Testing));
+) -> TestRun {
     let mut test_files: Vec<String> = Vec::new();
     for test in catalog {
         let path = session.root.join(&test.path).to_string_lossy().into_owned();
@@ -401,24 +414,42 @@ async fn run_tests(
     }
     let mut args: Vec<String> = vec!["--test".into(), "--test-reporter=tap".into()];
     args.extend(test_files);
-    let execution = supervisor::run(
-        "node",
-        &args,
-        RunOptions {
-            cwd: session.root.join("src"),
-            limits: ProcessLimits::new(
-                (settings.timeout_ms + 5000).max(10_000),
-                2 * 1024 * 1024,
-                512 * 1024,
-            ),
-            cancel: cancel.clone(),
-            probe_fd: false,
-            env: Vec::new(),
-            sandbox: session.sandbox(settings),
-            callbacks: StreamCallbacks::default(),
-        },
-    )
-    .await;
+    let cwd = session.root.join("src");
+    let timeout = (settings.timeout_ms + 5000).max(10_000);
+    let sandbox = session.sandbox(settings);
+    let cancel = cancel.clone();
+    TestRun(tokio::spawn(async move {
+        supervisor::run(
+            "node",
+            &args,
+            RunOptions {
+                cwd,
+                limits: ProcessLimits::new(timeout, 2 * 1024 * 1024, 512 * 1024),
+                cancel,
+                probe_fd: false,
+                env: Vec::new(),
+                sandbox,
+                callbacks: StreamCallbacks::default(),
+            },
+        )
+        .await
+    }))
+}
+
+async fn run_tests(
+    catalog: &[TestCase],
+    tests: Option<TestRun>,
+    cancel: &CancellationToken,
+    events: &Events,
+) {
+    let Some(mut tests) = tests else { return };
+    if catalog.is_empty() || cancel.is_cancelled() {
+        return;
+    }
+    let _ = events.send(RunnerEvent::State(RunState::Testing));
+    let Ok(execution) = (&mut tests.0).await else {
+        return;
+    };
     if execution.cancelled || cancel.is_cancelled() {
         return;
     }

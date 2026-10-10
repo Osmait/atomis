@@ -9,6 +9,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
+use tracing::Instrument;
 
 use crate::protocol::{Language, RunState, ServerEvent};
 use crate::languages::runtime::{self, RunnerEvent};
@@ -16,6 +17,28 @@ use crate::domain::session::Session;
 use crate::util::{now_ms, random_uuid};
 
 pub type Outbox = UnboundedSender<ServerEvent>;
+
+/// How many runs may compile or execute at once, across every session:
+/// `ATOMIS_MAX_CONCURRENT_RUNS`, unlimited when unset or `0`.
+///
+/// A hard ceiling for small plans, off by default because measuring it
+/// argued against it: on 2 vCPUs with 8 people, one slot per CPU tripled
+/// the median run (a 40 ms Python run queued behind 1-2 s Zig builds,
+/// where the scheduler used to interleave them) and still did not beat
+/// unlimited at the tail. What had pushed memory to the container's limit
+/// under load was every new session rebuilding Go's standard library,
+/// fixed by sharing its cache; unlimited now peaks under 1 GB with 16.
+fn run_slots(raw: Option<&str>) -> usize {
+    raw.and_then(|value| value.trim().parse::<usize>().ok())
+        .filter(|slots| *slots > 0)
+        .unwrap_or(tokio::sync::Semaphore::MAX_PERMITS)
+}
+
+static RUN_SLOTS: std::sync::LazyLock<tokio::sync::Semaphore> = std::sync::LazyLock::new(|| {
+    tokio::sync::Semaphore::new(run_slots(
+        std::env::var("ATOMIS_MAX_CONCURRENT_RUNS").ok().as_deref(),
+    ))
+});
 
 /// What actually executes a run. Injected so the scheduler's gating —
 /// supersession, cancellation, panic recovery — is testable without a
@@ -153,14 +176,29 @@ impl RunScheduler {
         let session = Arc::clone(&self.session);
         let settings = session.settings.lock().await.clone();
         let watchdog_run = run_id.clone();
+        // The run's row in an ATOMIS_TRACE timeline; everything below lands
+        // on it, the phases included.
+        let run_span = tracing::info_span!(
+            "run",
+            run = %run_id.get(..8).unwrap_or(&run_id),
+            language = target.as_str(),
+            version,
+        );
         let run_task = tokio::spawn(async move {
+            let phase_parent = tracing::Span::current();
             let (events_tx, mut events_rx) = tokio::sync::mpsc::unbounded_channel::<RunnerEvent>();
             let forward_scheduler = Arc::clone(&scheduler);
             let forward_session = Arc::clone(&session);
             let forward_run = run_id.clone();
             let forward_token = token.clone();
             let forwarder = tokio::spawn(async move {
+                // One span per state the runner reports, each closed by the
+                // next: the phases, as the runner itself sees them.
+                let mut phase: Option<tracing::Span> = None;
                 while let Some(event) = events_rx.recv().await {
+                    if let RunnerEvent::State(state) = &event {
+                        phase = Some(tracing::info_span!(parent: &phase_parent, "phase", label = ?state));
+                    }
                     let current = {
                         let inner = forward_scheduler.inner.lock().await;
                         !forward_token.is_cancelled()
@@ -176,19 +214,52 @@ impl RunScheduler {
                         &forward_session.id,
                     ));
                 }
+                drop(phase);
             });
 
-            let outcome = (scheduler.runner)(
-                target,
-                Arc::clone(&session),
-                snapshot.clone(),
-                settings,
-                token.clone(),
-                events_tx.clone(),
-            )
+            let started = std::time::Instant::now();
+            // Waiting for a slot is part of the wait the person sees, so it
+            // stays inside the measured run; a run superseded while queued
+            // leaves the queue without ever starting.
+            let queued = crate::metrics::METRICS.run_queued();
+            let slot = async {
+                tokio::select! {
+                    slot = RUN_SLOTS.acquire() => slot.ok(),
+                    () = token.cancelled() => None,
+                }
+            }
+            .instrument(tracing::info_span!("queued"))
             .await;
+            drop(queued);
+            let in_flight = slot.as_ref().map(|_| crate::metrics::METRICS.run_started());
+            let outcome = match slot {
+                Some(_slot) => {
+                    (scheduler.runner)(
+                        target,
+                        Arc::clone(&session),
+                        snapshot.clone(),
+                        settings,
+                        token.clone(),
+                        events_tx.clone(),
+                    )
+                    .instrument(tracing::info_span!("runner"))
+                    .await
+                }
+                None => None,
+            };
             drop(events_tx);
-            let _ = forwarder.await;
+            let _ = forwarder.instrument(tracing::info_span!("drain events")).await;
+            drop(in_flight);
+            // Counted whether or not anyone is still waiting for it: a
+            // superseded run cost the same CPU as one that was shown.
+            if let Some(outcome) = &outcome {
+                crate::metrics::METRICS.run_finished(
+                    target,
+                    outcome.terminal_state,
+                    started.elapsed().as_secs_f64(),
+                    &outcome.result,
+                );
+            }
 
             let current = {
                 let inner = scheduler.inner.lock().await;
@@ -219,7 +290,7 @@ impl RunScheduler {
                 inner.active_run = None;
                 inner.cancel = None;
             }
-        });
+        }.instrument(run_span));
 
         // A panic anywhere in the runner unwinds past every cleanup above:
         // the slot stays taken and the UI stays on Compiling forever. The
@@ -486,6 +557,16 @@ mod tests {
             scheduler.inner.lock().await.active_run.is_none(),
             "the slot must be free for the next run"
         );
+    }
+
+    #[test]
+    fn runs_are_unlimited_unless_a_ceiling_is_configured() {
+        let unlimited = tokio::sync::Semaphore::MAX_PERMITS;
+        assert_eq!(run_slots(None), unlimited);
+        assert_eq!(run_slots(Some(" 4 ")), 4);
+        // Zero would queue every run forever; it means "no ceiling".
+        assert_eq!(run_slots(Some("0")), unlimited);
+        assert_eq!(run_slots(Some("many")), unlimited);
     }
 
     #[tokio::test]

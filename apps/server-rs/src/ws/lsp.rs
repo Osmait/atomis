@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 use std::process::Stdio;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use axum::extract::ws::{Message, WebSocket};
@@ -19,6 +20,46 @@ use crate::protocol::Language;
 use crate::domain::session::Session;
 
 const MAX_LSP_MESSAGE: usize = 8 * 1024 * 1024;
+
+/// Close code for a language server stopped because nobody used it. The
+/// client reads it as "paused", not "broken", and starts a fresh one the
+/// next time the editor needs it.
+pub const IDLE_CLOSE_CODE: u16 = 4000;
+
+/// How long a language server may go without a message from its editor
+/// before it is stopped: `ATOMIS_LSP_IDLE_SECS`, ten minutes by default,
+/// `0` to keep them for as long as their tab is open.
+///
+/// A language server holds hundreds of MB from the moment its tab opens
+/// (rust-analyzer and gopls about half a GB each) and nothing frees it while
+/// the tab stays open — on a host that bills resident memory by the minute,
+/// a tablet left on the editor overnight costs more than a day of use.
+pub fn idle_timeout_from_env() -> Option<std::time::Duration> {
+    idle_timeout(std::env::var("ATOMIS_LSP_IDLE_SECS").ok().as_deref())
+}
+
+/// The soft memory limit gopls runs under: `ATOMIS_GOPLS_MEMLIMIT`, 128 MiB
+/// by default, `off` to leave gopls to Go's own default.
+///
+/// Measured on a session workspace with a warm gopls cache: 126 MB resident
+/// by default, 71 MB under 128 MiB, 130 MB under 256 MiB, at the price of
+/// about 0.7 CPU-seconds more of garbage collection while it settles. The
+/// limit is soft — a larger project's live heap simply goes over it and
+/// the runtime caps the GC's share of CPU — so it cannot break gopls.
+fn gopls_memory_limit(raw: Option<&str>) -> Option<String> {
+    match raw.map(str::trim) {
+        None | Some("") => Some("128MiB".to_string()),
+        Some("off" | "0") => None,
+        Some(value) => Some(value.to_string()),
+    }
+}
+
+fn idle_timeout(raw: Option<&str>) -> Option<std::time::Duration> {
+    let seconds = raw
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .unwrap_or(600);
+    (seconds > 0).then(|| std::time::Duration::from_secs(seconds))
+}
 
 pub struct LspFramer {
     buffer: Vec<u8>,
@@ -163,6 +204,26 @@ impl LspRegistry {
 
     pub async fn register_session(&self, _session_id: &str) {}
 
+    /// Stops every language server whose editor has sent nothing for
+    /// `idle`, closing its socket with [`IDLE_CLOSE_CODE`]. The proxy leaves
+    /// the registry, so the editor's next connection starts a new server.
+    pub async fn reap_idle(&self, idle: std::time::Duration) -> usize {
+        let cutoff = crate::util::now_ms().saturating_sub(idle.as_millis() as u64);
+        let stale: Vec<Arc<LspProxy>> = {
+            let mut proxies = self.proxies.lock().await;
+            let keys: Vec<String> = proxies
+                .iter()
+                .filter(|(_, proxy)| proxy.last_used.load(Ordering::Relaxed) < cutoff)
+                .map(|(key, _)| key.clone())
+                .collect();
+            keys.iter().filter_map(|key| proxies.remove(key)).collect()
+        };
+        for proxy in &stale {
+            proxy.close_idle().await;
+        }
+        stale.len()
+    }
+
     pub async fn attach(
         &self,
         session: Arc<Session>,
@@ -177,6 +238,25 @@ impl LspRegistry {
             }))
         };
         proxy.attach(socket).await;
+    }
+
+    /// Language servers with a live process, per language, for the metrics
+    /// endpoint. A proxy whose server crashed and was not restarted holds
+    /// no memory, so it is not counted.
+    pub async fn running(&self) -> Vec<(&'static str, usize)> {
+        let proxies: Vec<Arc<LspProxy>> = self.proxies.lock().await.values().cloned().collect();
+        let mut counts: Vec<(&'static str, usize)> = Vec::new();
+        for proxy in proxies {
+            if proxy.state.lock().await.child_pid.is_none() {
+                continue;
+            }
+            let language = proxy.language.as_str();
+            match counts.iter_mut().find(|(name, _)| *name == language) {
+                Some((_, count)) => *count += 1,
+                None => counts.push((language, 1)),
+            }
+        }
+        counts
     }
 
     pub async fn close_session(&self, session_id: &str) {
@@ -222,6 +302,9 @@ pub struct LspProxy {
     session: Arc<Session>,
     language: Language,
     state: Mutex<ProxyState>,
+    /// When the editor last sent anything, in ms. The server's own chatter
+    /// (progress, diagnostics) does not count: it is not a sign of use.
+    last_used: AtomicU64,
 }
 
 impl LspProxy {
@@ -229,6 +312,7 @@ impl LspProxy {
         LspProxy {
             session,
             language,
+            last_used: AtomicU64::new(crate::util::now_ms()),
             state: Mutex::new(ProxyState {
                 child_stdin: None,
                 socket: None,
@@ -250,6 +334,7 @@ impl LspProxy {
     }
 
     async fn attach(self: &Arc<Self>, socket: WebSocket) {
+        self.last_used.store(crate::util::now_ms(), Ordering::Relaxed);
         let (sink, mut stream) = socket.split();
         let sink = Arc::new(Mutex::new(sink));
         {
@@ -277,6 +362,7 @@ impl LspProxy {
                         if !value.is_object() {
                             break;
                         }
+                        proxy.last_used.store(crate::util::now_ms(), Ordering::Relaxed);
                         let mut state = proxy.state.lock().await;
                         if let Some(stdin) = state.child_stdin.as_mut() {
                             let _ = stdin.write_all(&LspFramer::frame(&value)).await;
@@ -317,6 +403,13 @@ impl LspProxy {
         // A language server is a system tool too: an inherited bundle path
         // would break it the same way it breaks a compiler.
         crate::exec::supervisor::scrub_bundle_env(&mut builder);
+        if self.language == Language::Go {
+            if let Some(limit) =
+                gopls_memory_limit(std::env::var("ATOMIS_GOPLS_MEMLIMIT").ok().as_deref())
+            {
+                builder.env("GOMEMLIMIT", limit);
+            }
+        }
         builder
             .args(&args)
             .current_dir(&self.session.root)
@@ -502,6 +595,22 @@ impl LspProxy {
         Self::send_socket(&self.state, message.to_string()).await;
     }
 
+    /// Tells the editor why before stopping: a bare drop reads as a crash.
+    async fn close_idle(self: &Arc<Self>) {
+        let socket = self.state.lock().await.socket.clone();
+        if let Some(socket) = socket {
+            let _ = socket
+                .lock()
+                .await
+                .send(Message::Close(Some(axum::extract::ws::CloseFrame {
+                    code: IDLE_CLOSE_CODE,
+                    reason: "idle".into(),
+                })))
+                .await;
+        }
+        self.close().await;
+    }
+
     async fn close(self: &Arc<Self>) {
         let mut state = self.state.lock().await;
         state.closing = true;
@@ -613,6 +722,24 @@ mod framer_tests {
         // A body that is not JSON.
         let mut framer = LspFramer::new();
         assert!(framer.push(b"Content-Length: 3\r\n\r\nnop").is_err());
+    }
+
+    #[test]
+    fn gopls_gets_a_soft_memory_limit_unless_turned_off() {
+        assert_eq!(gopls_memory_limit(None).as_deref(), Some("128MiB"));
+        assert_eq!(gopls_memory_limit(Some("512MiB")).as_deref(), Some("512MiB"));
+        assert_eq!(gopls_memory_limit(Some("off")), None);
+        assert_eq!(gopls_memory_limit(Some("0")), None);
+    }
+
+    #[test]
+    fn the_idle_timeout_defaults_to_ten_minutes_and_zero_disables_it() {
+        use std::time::Duration;
+        assert_eq!(idle_timeout(None), Some(Duration::from_secs(600)));
+        assert_eq!(idle_timeout(Some(" 90 ")), Some(Duration::from_secs(90)));
+        assert_eq!(idle_timeout(Some("0")), None);
+        // A typo keeps the default rather than silently disabling it.
+        assert_eq!(idle_timeout(Some("ten")), Some(Duration::from_secs(600)));
     }
 
     #[test]

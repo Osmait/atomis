@@ -109,14 +109,23 @@ describe("persistence loaders", () => {
 		expect(loadSettings()).toMatchObject({ debounceMs: 500, timeoutMs: 100 });
 		stubStorage({
 			"atomis.settings.v1": JSON.stringify({
-				debounceMs: 100,
+				debounceMs: 20,
 				timeoutMs: 99_999,
 			}),
 		});
 		expect(loadSettings()).toMatchObject({
-			debounceMs: 300,
+			debounceMs: 100,
 			timeoutMs: 10_000,
 		});
+	});
+
+	it("reads the old default debounce as the current default", () => {
+		// No control sets the debounce, so a stored 400 is the previous
+		// default saved with the other settings, not something to keep.
+		stubStorage({
+			"atomis.settings.v1": JSON.stringify({ debounceMs: 400, autoRun: false }),
+		});
+		expect(loadSettings()).toMatchObject({ debounceMs: 150, autoRun: false });
 	});
 
 	it("discards stored settings fields of the wrong type", () => {

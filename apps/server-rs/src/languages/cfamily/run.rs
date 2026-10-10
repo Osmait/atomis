@@ -167,6 +167,23 @@ async fn runtime_pch(
     }
 }
 
+/// `-fuse-ld=lld` when lld is installed: it links a session's program in
+/// ~25 ms where the system linker takes ~40, on every run. Looked up once;
+/// without it clang uses its default linker as before.
+fn linker_args() -> &'static [&'static str] {
+    static LLD: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    let available = *LLD.get_or_init(|| {
+        std::env::var_os("PATH").is_some_and(|path| {
+            std::env::split_paths(&path).any(|dir| dir.join("ld.lld").is_file())
+        })
+    });
+    if available {
+        &["-fuse-ld=lld"]
+    } else {
+        &[]
+    }
+}
+
 async fn runtime_pch_is_fresh(
     pch: &std::path::Path,
     header: &std::path::Path,
@@ -388,6 +405,14 @@ pub async fn run(
             ],
             extra_args: &|_| Vec::new(),
             timeout_ms: 15_000,
+            // Its own worker per session, inside the session's sandbox:
+            // the instrumenter runs clang on the user's file.
+            worker: Some(crate::languages::instrument_worker::WorkerSpec {
+                program: "node".to_string(),
+                script: packs::project_root().join("cfamily/instrumenter/worker.mjs"),
+                per_session: true,
+                lang: Some(lang_flag),
+            }),
         },
     )
     .await;
@@ -453,6 +478,7 @@ pub async fn run(
                 .into_owned(),
         );
     }
+    compile_args.extend(linker_args().iter().map(|arg| arg.to_string()));
     compile_args.push("-o".into());
     compile_args.push(executable.to_string_lossy().into_owned());
     compile_args.push("-lm".into());
@@ -683,6 +709,7 @@ async fn run_tests(
         );
     }
     link_args.push(test_main_path.to_string_lossy().into_owned());
+    link_args.extend(linker_args().iter().map(|arg| arg.to_string()));
     link_args.push("-o".into());
     link_args.push(test_executable.to_string_lossy().into_owned());
     link_args.push("-lm".into());

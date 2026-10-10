@@ -191,6 +191,13 @@ export function App(): React.JSX.Element {
 	);
 
 	const lspClientsRef = useRef<Partial<Record<Language, LspClient>>>({});
+	/**
+	 * Languages whose server was stopped for being idle. An edit in one of
+	 * them starts a new client; any other closed client stays closed until a
+	 * file is opened, or a language without a server would reconnect on
+	 * every keystroke.
+	 */
+	const lspPausedRef = useRef(new Set<Language>());
 	const sessionRef = useRef<CreateSessionResponse | undefined>(undefined);
 	const activeLanguageRef = useRef<Language>("zig");
 	const decorationsRef = useRef<
@@ -348,9 +355,11 @@ export function App(): React.JSX.Element {
 			// to stay cached — every ensure kept handing it back. Dropped on
 			// close (by identity, in case a newer client took the slot), so
 			// the next ensure builds a live one.
+			lspPausedRef.current.delete(language);
 			client.onClose = () => {
 				if (lspClientsRef.current[language] === client)
 					delete lspClientsRef.current[language];
+				if (client.pausedForIdle) lspPausedRef.current.add(language);
 			};
 			client.connect(
 				websocketUrl("/ws/lsp", created, { lang: language }),
@@ -820,7 +829,12 @@ export function App(): React.JSX.Element {
 			const model = editorRef.current?.getModel();
 			const language = languageForPath(path);
 			if (model && language)
-				lspClientsRef.current[language]?.change(model, version, source);
+				(
+					lspClientsRef.current[language] ??
+					(lspPausedRef.current.has(language)
+						? ensureLspClient(language, model)
+						: undefined)
+				)?.change(model, version, source);
 			if (language && settingsRef.current.autoRun)
 				lastRunLanguageRef.current = language;
 			sendRuntime({
@@ -836,7 +850,15 @@ export function App(): React.JSX.Element {
 					: { baseRevision: revisionRef.current }),
 			});
 		},
-		[activePathRef, revisionRef, sendRuntime, session, setProjectFiles, setStale],
+		[
+			activePathRef,
+			ensureLspClient,
+			revisionRef,
+			sendRuntime,
+			session,
+			setProjectFiles,
+			setStale,
+		],
 	);
 
 	const loadDemoWorkspace = useCallback((): void => {

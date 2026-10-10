@@ -1,4 +1,5 @@
 pub mod run;
+pub mod compile_server;
 pub mod diagnostics;
 
 use tokio_util::sync::CancellationToken;

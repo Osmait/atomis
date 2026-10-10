@@ -27,6 +27,10 @@ pub struct InstrumentConfig<'a> {
     /// Extra per-file flags (e.g. `--entry` for main.rs, `--lang c`).
     pub extra_args: &'a (dyn Fn(&str) -> Vec<String> + Sync),
     pub timeout_ms: u64,
+    /// A long-lived worker for this instrumenter, tried before spawning
+    /// `command` per file (see `instrument_worker`). Only for instrumenters
+    /// that take no `extra_args`.
+    pub worker: Option<crate::languages::instrument_worker::WorkerSpec>,
 }
 
 pub struct InstrumentOutcome {
@@ -85,6 +89,30 @@ pub async fn instrument_files(
             .root
             .join("generated")
             .join(format!(".atomis-{file_id}.json"));
+        if let Some(spec) = &config.worker {
+            let started = std::time::Instant::now();
+            if let Some(json) = instrument_with_worker(
+                spec,
+                session,
+                &source_path,
+                &output_path,
+                &source_map_path,
+                file,
+                file_id,
+                snapshot.version,
+                settings,
+            )
+            .await
+            {
+                outcome.duration_ms += started.elapsed().as_secs_f64() * 1000.0;
+                if cancel.is_cancelled() {
+                    outcome.cancelled = true;
+                    return outcome;
+                }
+                record_metadata(&mut outcome, &config, &file.path, &json, snapshot.version);
+                continue;
+            }
+        }
         let mut args = config.command_prefix_args.clone();
         args.extend((config.extra_args)(&file.path));
         args.extend([
@@ -154,48 +182,121 @@ pub async fn instrument_files(
             ));
             continue;
         }
-        let metadata: InstrumentationOutput = match serde_json::from_str(&instrument.stdout) {
-            Ok(metadata) => metadata,
-            Err(error) => {
-                outcome.diagnostics.push(instrument_error(
-                    config.source_name,
-                    &file.path,
-                    &format!("Invalid instrumenter response: {error}"),
-                ));
-                continue;
-            }
-        };
-        if metadata.protocol_version != 1 || metadata.document_version != snapshot.version {
-            outcome.diagnostics.push(instrument_error(
-                config.source_name,
-                &file.path,
-                "Instrumenter protocol/version mismatch",
-            ));
-            continue;
-        }
-        outcome
-            .probes
-            .extend(metadata.probes.into_iter().map(|mut probe| {
-                probe.path = Some(format!("src/{}", file.path));
-                probe
-            }));
-        if metadata.generated_path.is_none() {
-            outcome
-                .diagnostics
-                .extend(metadata.parse_diagnostics.into_iter().map(|item| AppDiagnostic {
-                    message: item.message,
-                    path: Some(format!("src/{}", file.path)),
-                    severity: Severity::Error,
-                    line: item.line.unwrap_or(1),
-                    column: item.column.unwrap_or(1),
-                    end_line: None,
-                    end_column: None,
-                    code: None,
-                    source: Some(config.source_name.to_string()),
-                }));
-        }
+        record_metadata(&mut outcome, &config, &file.path, &instrument.stdout, snapshot.version);
     }
     outcome
+}
+
+/// Reads one file's instrumenter answer into the outcome: its probes, or
+/// the reason it produced none.
+fn record_metadata(
+    outcome: &mut InstrumentOutcome,
+    config: &InstrumentConfig<'_>,
+    path: &str,
+    stdout: &str,
+    version: u64,
+) {
+    let metadata: InstrumentationOutput = match serde_json::from_str(stdout) {
+        Ok(metadata) => metadata,
+        Err(error) => {
+            outcome.diagnostics.push(instrument_error(
+                config.source_name,
+                path,
+                &format!("Invalid instrumenter response: {error}"),
+            ));
+            return;
+        }
+    };
+    if metadata.protocol_version != 1 || metadata.document_version != version {
+        outcome.diagnostics.push(instrument_error(
+            config.source_name,
+            path,
+            "Instrumenter protocol/version mismatch",
+        ));
+        return;
+    }
+    outcome
+        .probes
+        .extend(metadata.probes.into_iter().map(|mut probe| {
+            probe.path = Some(format!("src/{path}"));
+            probe
+        }));
+    if metadata.generated_path.is_none() {
+        outcome
+            .diagnostics
+            .extend(metadata.parse_diagnostics.into_iter().map(|item| AppDiagnostic {
+                message: item.message,
+                path: Some(format!("src/{path}")),
+                severity: Severity::Error,
+                line: item.line.unwrap_or(1),
+                column: item.column.unwrap_or(1),
+                end_line: None,
+                end_column: None,
+                code: None,
+                source: Some(config.source_name.to_string()),
+            }));
+    }
+}
+
+/// One file through the instrumenter worker, writing what the CLI would
+/// have written. `None`: the worker could not do it; use the CLI.
+#[allow(clippy::too_many_arguments)]
+async fn instrument_with_worker(
+    spec: &crate::languages::instrument_worker::WorkerSpec,
+    session: &crate::domain::session::Session,
+    source_path: &std::path::Path,
+    output_path: &std::path::Path,
+    source_map_path: &std::path::Path,
+    file: &crate::protocol::ProjectFile,
+    file_id: u32,
+    version: u64,
+    settings: &SessionSettings,
+) -> Option<String> {
+    // The CLI refuses anything over 1 MiB with a message; let it.
+    let source = tokio::fs::read_to_string(source_path).await.ok()?;
+    if source.len() > 1024 * 1024 {
+        return None;
+    }
+    let output = output_path.to_string_lossy();
+    let source_map = source_map_path.to_string_lossy();
+    let input_path = source_path.to_string_lossy();
+    let sandbox = session.sandbox(settings);
+    let answer = crate::languages::instrument_worker::instrument(
+        spec,
+        &session.id,
+        sandbox.as_ref(),
+        &crate::languages::instrument_worker::Request {
+            source: &source,
+            input_path: &input_path,
+            lang: spec.lang,
+            uri: &file.uri,
+            version,
+            file_id,
+            auto_inspect: settings.auto_inspect,
+            manual: &settings.manual_probe_ids,
+            output: &output,
+            source_map: &source_map,
+        },
+    )
+    .await?;
+    if let Some(generated) = &answer.generated {
+        write_private(output_path, generated).await.ok()?;
+        write_private(source_map_path, &answer.json).await.ok()?;
+    }
+    Some(answer.json)
+}
+
+/// Owner-only, like the instrumenters' own writes.
+async fn write_private(path: &std::path::Path, text: &str) -> std::io::Result<()> {
+    use tokio::io::AsyncWriteExt;
+    let mut file = tokio::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)
+        .await?;
+    file.write_all(text.as_bytes()).await
 }
 
 pub struct ExecuteConfig {

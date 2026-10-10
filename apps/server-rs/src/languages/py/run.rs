@@ -133,7 +133,16 @@ fn python_command(root: &std::path::Path) -> String {
 
 fn py_env(root: &std::path::Path, with_runtime: bool) -> Vec<(String, String)> {
     let mut env = vec![
-        ("PYTHONDONTWRITEBYTECODE".into(), "1".into()),
+        // Bytecode goes to one cache in the workspace, never beside the
+        // sources (no __pycache__ in the file tree), and is written. With a
+        // prefix set Python looks for *every* module's bytecode there, the
+        // standard library's included, so a prefix nobody writes means
+        // compiling json, reprlib and the rest from source on every run:
+        // ~90 ms of a ~110 ms run. Writing it, a run imports in ~30 ms.
+        (
+            "PYTHONPYCACHEPREFIX".into(),
+            root.join(".pycache").to_string_lossy().into_owned(),
+        ),
         // Python 3.13 colours its own tracebacks, and honours FORCE_COLOR
         // from whatever launched us — which buries the "File …, line N"
         // frame in escape codes and costs us the error's location. This
@@ -181,6 +190,16 @@ pub async fn run(
             command_prefix_args: vec![instrumenter.to_string_lossy().into_owned()],
             extra_args: &|_| Vec::new(),
             timeout_ms: 10_000,
+            // The shared worker runs the system interpreter, whose `ast`
+            // may not match a session venv's Python; those use the CLI.
+            worker: (python_command(&session.root) == "python3").then(|| {
+                crate::languages::instrument_worker::WorkerSpec {
+                    program: "python3".to_string(),
+                    script: packs::project_root().join("python/instrumenter/pylive_worker.py"),
+                    per_session: false,
+                    lang: None,
+                }
+            }),
         },
     )
     .await;

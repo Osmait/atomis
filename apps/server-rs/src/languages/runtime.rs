@@ -95,18 +95,27 @@ pub const RUNTIME_FILES: [&str; 7] = [
 /// Clears the generated mirror while preserving every language runtime that
 /// is present, so alternating runs in the same multilingual workspace never
 /// destroy each other's support files.
+///
+/// The runtimes are never removed, not even briefly: this used to read them,
+/// delete the directory and write them back, and a superseded run still
+/// finishing beside the new one could read after the other's delete — both
+/// then rebuilt the directory without them, and every later run of the
+/// session failed on a missing runtime until the page was reloaded.
 pub async fn reset_generated(root: &Path) -> std::io::Result<()> {
     let generated = root.join("generated");
-    let mut preserved: Vec<(&str, Vec<u8>)> = Vec::new();
-    for name in RUNTIME_FILES {
-        if let Ok(content) = tokio::fs::read(generated.join(name)).await {
-            preserved.push((name, content));
-        }
-    }
-    let _ = tokio::fs::remove_dir_all(&generated).await;
     tokio::fs::create_dir_all(&generated).await?;
-    for (name, content) in preserved {
-        tokio::fs::write(generated.join(name), content).await?;
+    let mut entries = tokio::fs::read_dir(&generated).await?;
+    while let Some(entry) = entries.next_entry().await? {
+        if RUNTIME_FILES.iter().any(|name| entry.file_name() == *name) {
+            continue;
+        }
+        let path = entry.path();
+        // Already gone means a concurrent reset got there first.
+        let _ = if entry.file_type().await?.is_dir() {
+            tokio::fs::remove_dir_all(&path).await
+        } else {
+            tokio::fs::remove_file(&path).await
+        };
     }
     Ok(())
 }
@@ -186,5 +195,40 @@ impl ProbeForwarder {
         self.counts.insert(raw.probe_id.clone(), count);
         let path = self.paths.get(&raw.probe_id).cloned().flatten();
         let _ = self.events.send(RunnerEvent::Probe { raw, path, count });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Four resets at once, two hundred times: the delete-and-restore
+    /// version lost the runtime within a few dozen rounds.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn concurrent_resets_never_lose_a_runtime() {
+        let root = std::env::temp_dir().join(format!("atomis-reset-{}", crate::util::random_hex(8)));
+        let generated = root.join("generated");
+        tokio::fs::create_dir_all(generated.join("nested")).await.unwrap();
+        tokio::fs::write(generated.join("__atomis_runtime.mjs"), "runtime").await.unwrap();
+        tokio::fs::write(generated.join("main.ts"), "old").await.unwrap();
+        tokio::fs::write(generated.join("nested/util.ts"), "old").await.unwrap();
+        for _ in 0..200 {
+            let resets: Vec<_> = (0..4)
+                .map(|_| {
+                    let root = root.clone();
+                    tokio::spawn(async move { reset_generated(&root).await })
+                })
+                .collect();
+            for reset in resets {
+                reset.await.unwrap().unwrap();
+            }
+            assert_eq!(
+                tokio::fs::read_to_string(generated.join("__atomis_runtime.mjs")).await.unwrap(),
+                "runtime"
+            );
+        }
+        assert!(!generated.join("main.ts").exists());
+        assert!(!generated.join("nested").exists());
+        let _ = tokio::fs::remove_dir_all(&root).await;
     }
 }

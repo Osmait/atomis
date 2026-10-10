@@ -64,6 +64,13 @@ function completionKind(
  * every later request behind it. */
 const REQUEST_TIMEOUT_MS = 15_000;
 
+/**
+ * The close code the server uses when it stops a language server nobody
+ * has used for a while (`ATOMIS_LSP_IDLE_SECS`). Not a failure: the next
+ * edit starts a fresh one.
+ */
+export const LSP_IDLE_CLOSE_CODE = 4000;
+
 export class LspClient {
 	private socket: WebSocket | undefined;
 	private nextId = 1;
@@ -93,6 +100,9 @@ export class LspClient {
 	 */
 	public onClose: (() => void) | undefined;
 
+	/** Whether the server stopped this client for being unused. */
+	public pausedForIdle = false;
+
 	public constructor(
 		private readonly monaco: typeof Monaco,
 		private readonly model: Monaco.editor.ITextModel,
@@ -117,8 +127,13 @@ export class LspClient {
 		this.socket.addEventListener("message", (event) =>
 			this.receive(String(event.data)),
 		);
-		this.socket.addEventListener("close", () => {
-			this.onStatus(`${this.serverName} disconnected`);
+		this.socket.addEventListener("close", (event) => {
+			this.pausedForIdle = event.code === LSP_IDLE_CLOSE_CODE;
+			this.onStatus(
+				this.pausedForIdle
+					? `${this.serverName} paused while idle; it resumes when you type`
+					: `${this.serverName} disconnected`,
+			);
 			this.markClosed();
 		});
 		this.socket.addEventListener("error", () =>
