@@ -250,6 +250,17 @@ async fn main() {
     println!("ATOMIS_LISTENING={}", bound.port());
     tracing::info!(%bound, "atomis-server (rust) ready — code runs locally with your permissions");
 
+    // Nagle's algorithm holds a small write until the previous one is
+    // acknowledged, and the peer delays that ACK by up to 40 ms: every run
+    // state, value and result is a small WebSocket frame, so each run
+    // finished ~40 ms after its work did. Measured as a floor under every
+    // language, even runs that stopped at a syntax error.
+    let listener = axum::serve::ListenerExt::tap_io(listener, |tcp| {
+        if let Err(error) = tcp.set_nodelay(true) {
+            tracing::warn!(%error, "TCP_NODELAY could not be set");
+        }
+    });
+
     let shutdown_state = Arc::clone(&state);
     axum::serve(listener, app)
         .with_graceful_shutdown(async move {
