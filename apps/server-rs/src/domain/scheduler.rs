@@ -59,11 +59,18 @@ type Runner = Arc<
         + Sync,
 >;
 
+/// How long a new run waits for the one it superseded to wind down. A
+/// cancelled run's processes get SIGTERM, then SIGKILL 250 ms later; this
+/// only bounds a runner that ignores its token.
+const SUPERSEDED_GRACE: std::time::Duration = std::time::Duration::from_secs(3);
+
 struct Inner {
     debounce: Option<tokio::task::JoinHandle<()>>,
     cancel: Option<CancellationToken>,
     active_run: Option<String>,
     last_language: Language,
+    /// Fires once the latest run's task has ended, however it ended.
+    finished: Option<CancellationToken>,
 }
 
 pub struct RunScheduler {
@@ -71,6 +78,9 @@ pub struct RunScheduler {
     outbox: Outbox,
     inner: Mutex<Inner>,
     runner: Runner,
+    /// Held from cancelling the previous run to spawning the next, so two
+    /// starts (a debounced auto run and a manual one) cannot interleave.
+    start: Mutex<()>,
 }
 
 impl RunScheduler {
@@ -97,8 +107,10 @@ impl RunScheduler {
                 cancel: None,
                 active_run: None,
                 last_language: language,
+                finished: None,
             }),
             runner,
+            start: Mutex::new(()),
         })
     }
 
@@ -141,6 +153,7 @@ impl RunScheduler {
     }
 
     pub async fn run(self: &Arc<Self>, version: u64, language: Option<Language>) {
+        let _start = self.start.lock().await;
         let snapshot = self.session.current().await;
         if snapshot.version != version {
             return;
@@ -163,13 +176,32 @@ impl RunScheduler {
             return;
         }
         self.cancel_internal().await;
+        // Cancelling only asks. The superseded run may still be winding down
+        // — its processes dying, its runner short of its next check — and it
+        // shares generated/ with this one: started alongside it, this run had
+        // its freshly written sources deleted by the old run's reset.
+        let previous = self.inner.lock().await.finished.take();
+        if let Some(previous) = previous {
+            if tokio::time::timeout(SUPERSEDED_GRACE, previous.cancelled())
+                .await
+                .is_err()
+            {
+                tracing::warn!("a superseded run outlived its grace; starting anyway");
+            }
+            // The wait may have outlasted the edit this run was for.
+            if self.session.current().await.version != version {
+                return;
+            }
+        }
         let run_id = random_uuid();
         let token = CancellationToken::new();
+        let finished = CancellationToken::new();
         {
             let mut inner = self.inner.lock().await;
             inner.last_language = target;
             inner.cancel = Some(token.clone());
             inner.active_run = Some(run_id.clone());
+            inner.finished = Some(finished.clone());
         }
 
         let scheduler = Arc::clone(self);
@@ -297,7 +329,9 @@ impl RunScheduler {
         // watchdog is outside the blast radius.
         let watchdog = Arc::clone(self);
         tokio::spawn(async move {
-            if run_task.await.is_err() {
+            let ended = run_task.await;
+            finished.cancel();
+            if ended.is_err() {
                 let mut inner = watchdog.inner.lock().await;
                 let ours = inner.active_run.as_deref() == Some(watchdog_run.as_str());
                 if ours {
@@ -517,6 +551,41 @@ mod tests {
             }
         }
         assert_eq!(leaked, 0, "a superseded run must stay silent");
+    }
+
+    #[tokio::test]
+    async fn a_new_run_starts_only_after_the_superseded_one_has_wound_down() {
+        // Run 1 takes a while to let go once cancelled, as a runner past its
+        // last check does; run 2 must not start under it — they share
+        // generated/, and the old run's cleanup would delete the new run's
+        // sources.
+        let session = test_session(SessionSettings::default());
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let log = Arc::new(std::sync::Mutex::new(Vec::<&'static str>::new()));
+        let calls = Arc::new(AtomicUsize::new(0));
+        let runner: Runner = {
+            let log = Arc::clone(&log);
+            Arc::new(move |_, _, _, _, cancel: CancellationToken, _| {
+                let log = Arc::clone(&log);
+                let first = calls.fetch_add(1, Ordering::SeqCst) == 0;
+                Box::pin(async move {
+                    if first {
+                        cancel.cancelled().await;
+                        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+                        log.lock().unwrap().push("first ended");
+                    } else {
+                        log.lock().unwrap().push("second started");
+                    }
+                    None
+                }) as RunnerFuture
+            })
+        };
+        let scheduler = RunScheduler::with_runner(session, tx, runner);
+        scheduler.run(1, Some(Language::Zig)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        scheduler.run(1, Some(Language::Zig)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        assert_eq!(*log.lock().unwrap(), ["first ended", "second started"]);
     }
 
     #[tokio::test]
