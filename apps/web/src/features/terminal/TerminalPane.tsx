@@ -20,6 +20,7 @@ import { groupOutput } from "../../shared/lib/terminalFolds.js";
 import type { useRuntimeEvents } from "../runtime/useRuntimeEvents.js";
 import type { OwnedDiagnostic } from "../../shared/lib/diagnostics.js";
 import type { TerminalTab } from "./Terminal.js";
+import { InputPanel, lineCountLabel } from "./InputPanel.js";
 import type { WebLanguagePack } from "../editor/languagePacks.js";
 
 interface TerminalPaneProps {
@@ -60,6 +61,9 @@ interface TerminalPaneProps {
 	onRemoveDependency: (name: string) => void;
 	onOpenManifest: (manifest: string) => void;
 	sandboxed: boolean;
+	/** What the program reads on stdin, and how to change it. */
+	input: string;
+	onInputChange: (text: string) => void;
 }
 
 /**
@@ -106,6 +110,8 @@ export function TerminalPane(props: TerminalPaneProps): React.JSX.Element {
 		onRemoveDependency,
 		onOpenManifest,
 		sandboxed,
+		input,
+		onInputChange,
 	} = props;
 	const {
 		runState,
@@ -210,6 +216,8 @@ export function TerminalPane(props: TerminalPaneProps): React.JSX.Element {
 							{...(depsManifest ? { manifest: depsManifest } : {})}
 						/>
 					}
+					inputLines={input ? lineCountLabel(input) : ""}
+					inputPanel={<InputPanel onChange={onInputChange} value={input} />}
 					onTab={setTab}
 					onToggleDrawer={() => setDrawer((previous) => !previous)}
 					onToggleFold={onToggleFold}

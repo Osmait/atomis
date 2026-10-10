@@ -9,7 +9,7 @@ use std::os::fd::{FromRawFd, OwnedFd};
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_util::sync::CancellationToken;
 
 /// After the main process exits, how long surviving descendants may keep
@@ -69,6 +69,25 @@ pub struct RunOptions<'a> {
     /// build.zig, cargo build scripts and proc-macros are user code too.
     pub sandbox: Option<std::sync::Arc<crate::exec::sandbox::SandboxPolicy>>,
     pub callbacks: StreamCallbacks<'a>,
+}
+
+/// What a child reads on fd 0.
+pub enum Stdin {
+    /// /dev/null: immediate EOF. Every compiler, test run and tool.
+    Null,
+    /// Written whole, then closed — the run's Input text. Closing is what
+    /// lets a program that reads to EOF finish instead of waiting out the
+    /// timeout.
+    Text(std::sync::Arc<[u8]>),
+}
+
+/// Aborts the stdin writer when the run returns, however it returns.
+struct AbortOnDrop(tokio::task::JoinHandle<()>);
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
 }
 
 fn signal_name(code: i32) -> String {
@@ -152,17 +171,33 @@ fn scrub_value(value: &str, bundle: &str) -> Scrubbed {
 /// One child process, start to finish (see `run_inner`), as a `process`
 /// span named after the program in an ATOMIS_TRACE timeline.
 pub async fn run(command: &str, args: &[String], options: RunOptions<'_>) -> ProcessResult {
+    run_with_stdin(command, args, options, Stdin::Null).await
+}
+
+/// `run`, with something for the child to read: only the user's program
+/// gets anything but /dev/null.
+pub async fn run_with_stdin(
+    command: &str,
+    args: &[String],
+    options: RunOptions<'_>,
+    stdin: Stdin,
+) -> ProcessResult {
     use tracing::Instrument;
     let program = std::path::Path::new(command)
         .file_name()
         .map_or_else(|| command.to_string(), |name| name.to_string_lossy().into_owned());
     let first_arg = args.first().map(String::as_str).unwrap_or("");
-    run_inner(command, args, options)
+    run_inner(command, args, options, stdin)
         .instrument(tracing::info_span!("process", label = %program, arg = %first_arg))
         .await
 }
 
-async fn run_inner(command: &str, args: &[String], options: RunOptions<'_>) -> ProcessResult {
+async fn run_inner(
+    command: &str,
+    args: &[String],
+    options: RunOptions<'_>,
+    stdin: Stdin,
+) -> ProcessResult {
     let started = Instant::now();
     let mut result = ProcessResult::default();
 
@@ -171,7 +206,10 @@ async fn run_inner(command: &str, args: &[String], options: RunOptions<'_>) -> P
     scrub_bundle_env(&mut cmd);
     cmd.args(args)
         .current_dir(&options.cwd)
-        .stdin(Stdio::null())
+        .stdin(match stdin {
+            Stdin::Null => Stdio::null(),
+            Stdin::Text(_) => Stdio::piped(),
+        })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
@@ -256,6 +294,18 @@ async fn run_inner(command: &str, args: &[String], options: RunOptions<'_>) -> P
     };
     // Close the parent's copy of the probe write end so EOF arrives.
     drop(probe_writer_keepalive);
+
+    // Written from its own task: a child that fills its stdout pipe before
+    // reading stdin would otherwise block on us while we block on it. A
+    // child that exits without reading everything turns the write into
+    // EPIPE, which is not an error here — the program owes us no reads.
+    let _stdin_writer = match (stdin, child.stdin.take()) {
+        (Stdin::Text(bytes), Some(mut pipe)) => Some(AbortOnDrop(tokio::spawn(async move {
+            let _ = pipe.write_all(&bytes).await;
+            let _ = pipe.shutdown().await;
+        }))),
+        _ => None,
+    };
 
     let pid = child.id().map(|p| p as i32).unwrap_or(0);
     let mut stdout = child.stdout.take();
@@ -433,7 +483,10 @@ async fn run_inner(command: &str, args: &[String], options: RunOptions<'_>) -> P
 
 #[cfg(test)]
 mod tests {
-    use super::{run, scrub_value, ProcessLimits, RunOptions, Scrubbed, StreamCallbacks};
+    use super::{
+        run, run_with_stdin, scrub_value, ProcessLimits, RunOptions, Scrubbed, Stdin,
+        StreamCallbacks,
+    };
     use std::time::Duration;
     use tokio_util::sync::CancellationToken;
 
@@ -490,6 +543,69 @@ mod tests {
         .expect("the run must not wait for the background child");
         assert_eq!(result.exit_code, Some(0));
         assert!(!result.timed_out);
+    }
+
+    #[tokio::test]
+    async fn input_text_reaches_the_program_then_eof() {
+        // `cat` copies stdin until EOF: it only finishes because the input
+        // is closed after the text.
+        let result = tokio::time::timeout(
+            Duration::from_secs(10),
+            run_with_stdin(
+                "cat",
+                &[],
+                options(5_000, 1024 * 1024),
+                Stdin::Text("3\n5 7 9\n".as_bytes().into()),
+            ),
+        )
+        .await
+        .expect("EOF must reach the program");
+        assert_eq!(result.exit_code, Some(0));
+        assert!(!result.timed_out);
+        assert_eq!(result.stdout, "3\n5 7 9\n");
+    }
+
+    #[tokio::test]
+    async fn without_input_the_program_reads_eof_at_once() {
+        let result = run("cat", &[], options(5_000, 1024)).await;
+        assert_eq!(result.exit_code, Some(0));
+        assert_eq!(result.stdout, "");
+    }
+
+    #[tokio::test]
+    async fn large_input_echoed_back_does_not_deadlock() {
+        // Far past both pipe buffers: if the input were written inline, cat
+        // would block on a full stdout while we blocked on its full stdin.
+        let input: Vec<u8> = b"0123456789abcdef".repeat(32 * 1024);
+        let result = tokio::time::timeout(
+            Duration::from_secs(10),
+            run_with_stdin("cat", &[], options(8_000, 1024 * 1024), Stdin::Text(input.clone().into())),
+        )
+        .await
+        .expect("a large input must not deadlock the run");
+        assert_eq!(result.exit_code, Some(0));
+        assert_eq!(result.stdout.len(), input.len());
+    }
+
+    #[tokio::test]
+    async fn a_program_that_never_reads_still_finishes() {
+        // More input than a pipe holds, never read: the write ends in EPIPE
+        // when the program exits, and that is not the program's failure.
+        let input: Vec<u8> = vec![b'x'; 1024 * 1024];
+        let result = tokio::time::timeout(
+            Duration::from_secs(10),
+            run_with_stdin(
+                "sh",
+                &["-c".into(), "echo done".into()],
+                options(5_000, 1024),
+                Stdin::Text(input.into()),
+            ),
+        )
+        .await
+        .expect("unread input must not hold the run");
+        assert_eq!(result.exit_code, Some(0));
+        assert!(!result.timed_out);
+        assert_eq!(result.stdout, "done\n");
     }
 
     #[tokio::test]

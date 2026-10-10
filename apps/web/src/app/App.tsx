@@ -37,6 +37,7 @@ import { usePeekPanel } from "../features/editor/usePeekPanel.js";
 import { useQuickScope } from "../features/editor/useQuickScope.js";
 import { useProjectFiles } from "../features/files/useProjectFiles.js";
 import { useRuntimeEvents } from "../features/runtime/useRuntimeEvents.js";
+import { useRunInput } from "../features/runtime/useRunInput.js";
 import {
 	ENTRY_FILES,
 	languageForPath,
@@ -408,6 +409,7 @@ export function App(): React.JSX.Element {
 		[setDiagnostics],
 	);
 
+	const { input, setInput, flushInput } = useRunInput(session, sendRuntime);
 	const project = useProjectFiles({
 		session,
 		sendRuntime,
@@ -588,6 +590,9 @@ export function App(): React.JSX.Element {
 
 	const run = useCallback((): void => {
 		if (!session) return;
+		// Typed input still waiting out its delay goes first: the run reads
+		// what is on screen.
+		flushInput();
 		const language =
 			languageForPath(activePathRef.current) ?? activeLanguageRef.current;
 		lastRunLanguageRef.current = language;
@@ -598,7 +603,7 @@ export function App(): React.JSX.Element {
 			reason: "manual",
 			language,
 		});
-	}, [activePathRef, sendRuntime, session]);
+	}, [activePathRef, flushInput, sendRuntime, session]);
 	const stop = useCallback((): void => {
 		if (session)
 			sendRuntime({ type: "run.cancel", sessionId: session.sessionId });
@@ -1124,6 +1129,8 @@ export function App(): React.JSX.Element {
 									.join(", ") || status
 							}
 							narrow={narrow}
+							input={input}
+							onInputChange={setInput}
 							onAddDependency={(name) =>
 								sendRuntime({
 									type: "deps.add",

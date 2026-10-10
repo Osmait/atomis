@@ -236,6 +236,7 @@ pub async fn run(
             env: py_env(&session.root, true),
             timeout_ms: settings.timeout_ms,
             parse_stdout_markers: true,
+            stdin: session.stdin().await,
         },
     )
     .await;

@@ -671,6 +671,14 @@ async fn handle_message_inner(
             scheduler.run(version, Some(target)).await;
             Ok(())
         }
+        RuntimeClientMessage::InputUpdate { text, .. } => {
+            // New input is a new program run, like an edit: Auto Run picks
+            // it up, debounced, in the language that ran last.
+            if session.set_input(text).await? {
+                scheduler.document_updated(None).await;
+            }
+            Ok(())
+        }
         RuntimeClientMessage::RunCancel { .. } => {
             scheduler.cancel().await;
             let version = session.current().await.version;

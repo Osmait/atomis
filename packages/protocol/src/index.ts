@@ -26,6 +26,8 @@ export const MAX_SOURCE_BYTES = 1024 * 1024;
 export const MAX_PROJECT_FILES = 64;
 export const MAX_PROJECT_BYTES = 8 * 1024 * 1024;
 export const MAX_RUNTIME_MESSAGE_BYTES = MAX_SOURCE_BYTES + 64 * 1024;
+/** The Input text piped to a program's stdin (protocol.rs MAX_INPUT_BYTES). */
+export const MAX_INPUT_BYTES = 512 * 1024;
 
 export const runStates = [
 	"idle",
@@ -148,6 +150,8 @@ export interface CreateSessionResponse {
 	sandbox: boolean;
 	/** Set when the session is attached to a persistent workspace. */
 	workspace?: WorkspaceMeta;
+	/** The text piped to the program's stdin on every run. */
+	input: string;
 }
 
 export const sandboxSupports = [
@@ -341,6 +345,19 @@ export const runtimeClientMessageSchema = z.discriminatedUnion("type", [
 		})
 		.strict(),
 	z.object({ type: z.literal("run.cancel"), sessionId }).strict(),
+	z
+		.object({
+			type: z.literal("input.update"),
+			sessionId,
+			// Bytes, as the server counts them, not UTF-16 code units.
+			text: z
+				.string()
+				.refine(
+					(text) => new TextEncoder().encode(text).length <= MAX_INPUT_BYTES,
+					"Input exceeds 512 KiB",
+				),
+		})
+		.strict(),
 	z
 		.object({ type: z.literal("settings.update"), sessionId })
 		.extend(settings.shape)

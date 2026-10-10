@@ -11,6 +11,9 @@ pub const MAX_SOURCE_BYTES: usize = 1024 * 1024;
 pub const MAX_PROJECT_FILES: usize = 64;
 pub const MAX_PROJECT_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_RUNTIME_MESSAGE_BYTES: usize = MAX_SOURCE_BYTES + 64 * 1024;
+/// The Input text piped to a program's stdin: an Advent of Code input is a
+/// few dozen KiB, and it has to fit a runtime message.
+pub const MAX_INPUT_BYTES: usize = 512 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -230,6 +233,9 @@ pub struct CreateSessionResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub workspace: Option<WorkspaceMeta>,
+    /// The text piped to the program's stdin on every run; the workspace's
+    /// saved one, or empty.
+    pub input: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
@@ -414,6 +420,14 @@ pub enum RuntimeClientMessage {
         #[cfg_attr(test, ts(optional, type = "number"))]
         base_revision: Option<u64>,
     },
+    /// Replaces the Input text: what the program reads on stdin from the
+    /// next run on. Reruns like an edit when Auto Run is on.
+    #[serde(rename = "input.update")]
+    InputUpdate {
+        #[serde(rename = "sessionId")]
+        session_id: String,
+        text: String,
+    },
     #[serde(rename = "run.request")]
     RunRequest {
         #[serde(rename = "sessionId")]
@@ -500,6 +514,7 @@ impl RuntimeClientMessage {
             | RuntimeClientMessage::FileRename { session_id, .. }
             | RuntimeClientMessage::FileDelete { session_id, .. }
             | RuntimeClientMessage::WorkspaceReset { session_id, .. }
+            | RuntimeClientMessage::InputUpdate { session_id, .. }
             | RuntimeClientMessage::RunRequest { session_id, .. }
             | RuntimeClientMessage::RunCancel { session_id }
             | RuntimeClientMessage::SettingsUpdate { session_id, .. }
@@ -577,6 +592,12 @@ impl RuntimeClientMessage {
             RuntimeClientMessage::RunRequest { version, .. }
             | RuntimeClientMessage::WorkspaceReset { version, .. } => check_version(*version),
             RuntimeClientMessage::RunCancel { .. } => Ok(()),
+            RuntimeClientMessage::InputUpdate { text, .. } => {
+                if text.len() > MAX_INPUT_BYTES {
+                    return Err("Input exceeds 512 KiB".into());
+                }
+                Ok(())
+            }
             RuntimeClientMessage::SettingsUpdate {
                 debounce_ms,
                 timeout_ms,

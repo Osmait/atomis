@@ -54,6 +54,8 @@ function renderTerminal(
 		depsBusy: false,
 		depsCount: 0,
 		depsPanel: <div data-testid="deps-stub" />,
+		inputLines: "",
+		inputPanel: <div data-testid="input-stub" />,
 		dockEffective: "right",
 		drawer: false,
 		drawerScore: "0",
@@ -116,6 +118,25 @@ describe("Terminal", () => {
 		fireEvent.click(screen.getByLabelText("Terminal options"));
 		fireEvent.click(screen.getByText("Runtime"));
 		expect(handlers.onTab).toHaveBeenCalledWith("runtime");
+	});
+
+	it("offers the Input view in the menu and shows it", () => {
+		const handlers = renderTerminal();
+		fireEvent.click(screen.getByLabelText("Terminal options"));
+		fireEvent.click(screen.getByText("Input"));
+		expect(handlers.onTab).toHaveBeenCalledWith("input");
+		cleanup();
+		renderTerminal({ tab: "input" });
+		expect(screen.getByTestId("input-stub")).toBeTruthy();
+	});
+
+	it("says on Output that the program read input, and leads there", () => {
+		renderTerminal();
+		expect(screen.queryByText(/^stdin ·/)).toBeNull();
+		cleanup();
+		const handlers = renderTerminal({ inputLines: "3 lines" });
+		fireEvent.click(screen.getByText("stdin · 3 lines"));
+		expect(handlers.onTab).toHaveBeenCalledWith("input");
 	});
 
 	it("lists problems with their location and jumps on click", () => {

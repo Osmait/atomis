@@ -510,6 +510,7 @@ mod tests {
                 &root, &root, None,
             )),
             workspace_id: None,
+            input: tokio::sync::Mutex::new(Arc::from("")),
         })
     }
 

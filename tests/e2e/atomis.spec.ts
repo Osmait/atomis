@@ -232,6 +232,31 @@ pub fn main(init: std.process.Init) !void {
 	).toHaveCount(0);
 });
 
+test("the Input view feeds the program's stdin, and a change reruns it", async ({
+	page,
+}) => {
+	await openClean(page);
+	// Python runs main.py; the demo workspace carries one.
+	await page.getByRole("button", { name: "main.py", exact: true }).click();
+	await replaceEditor(
+		page,
+		'import sys\nname = sys.stdin.readline().strip()\nnumbers = [int(x) for x in sys.stdin.readline().split()]\nprint(f"hello {name}: {sum(numbers)}")\nprint("then:", repr(sys.stdin.read()))\n',
+	);
+	const terminal = page.locator(".panel-content");
+	// Nothing to read yet: end of file straight away, as before.
+	await expect(terminal).toContainText("hello : 0");
+
+	await openTermView(page, "Input");
+	await page.getByLabel("Program input").fill("Ada\n5 7 9\n");
+	await expect(page.locator(".input-footer")).toContainText("2 lines");
+	await openTermView(page, "Output");
+	// Auto Run picks the new input up like an edit — no Run pressed.
+	await expect(terminal).toContainText("hello Ada: 21");
+	await expect(terminal).toContainText("then: ''");
+	await page.getByRole("button", { name: "stdin · 2 lines" }).click();
+	await expect(page.getByLabel("Program input")).toHaveValue("Ada\n5 7 9\n");
+});
+
 test("Vim mode keeps native clipboard shortcuts", async ({
 	page,
 	context,

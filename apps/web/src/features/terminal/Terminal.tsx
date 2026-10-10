@@ -7,7 +7,7 @@ import type { TerminalRow } from "../../shared/lib/terminalFolds.js";
 import type { LogSourceLocation, TerminalEntry } from "../../shared/types.js";
 import { Lucide } from "../../shared/ui/Lucide.js";
 
-export type TerminalTab = "output" | "problems" | "runtime" | "deps";
+export type TerminalTab = "output" | "problems" | "runtime" | "deps" | "input";
 
 interface OutputEntryProps {
 	entry: TerminalEntry;
@@ -114,6 +114,9 @@ interface TerminalProps {
 	depsPanel: React.ReactNode;
 	depsCount: number;
 	depsBusy: boolean;
+	inputPanel: React.ReactNode;
+	/** "3 lines", or empty when the program reads nothing on stdin. */
+	inputLines: string;
 	children?: React.ReactNode;
 }
 
@@ -191,8 +194,21 @@ export function Terminal(props: TerminalProps): React.JSX.Element {
 							? `Problems${allProblems.length ? ` ${allProblems.length}` : ""}`
 							: tab === "deps"
 								? `Dependencies${props.depsCount ? ` ${props.depsCount}` : ""}`
-								: "Runtime"}
+								: tab === "input"
+									? "Input"
+									: "Runtime"}
 					</span>
+				)}
+				{/* Output is where a run's effect shows, so that is where to
+				    say it read something — and the way to what it read. */}
+				{tab === "output" && props.inputLines && (
+					<button
+						className="term-stdin-chip"
+						onClick={() => props.onTab("input")}
+						title="The program reads this on stdin — open Input"
+					>
+						stdin · {props.inputLines}
+					</button>
 				)}
 				<span className="term-menu-wrap">
 					<button
@@ -320,6 +336,18 @@ export function Terminal(props: TerminalProps): React.JSX.Element {
 								</span>
 								{props.depsBusy && <b className="spin">⟳</b>}
 							</button>
+							<button
+								className={tab === "input" ? "on" : ""}
+								onClick={() => {
+									props.onTab("input");
+									setMenuOpen(false);
+								}}
+								role="menuitem"
+							>
+								<Lucide icon="keyboard" size={13} />
+								<span>Input</span>
+								{props.inputLines && <b>{props.inputLines}</b>}
+							</button>
 							<span className="term-menu-sep" />
 							<button
 								onClick={() => {
@@ -428,6 +456,7 @@ export function Terminal(props: TerminalProps): React.JSX.Element {
 					</ul>
 				)}
 				{tab === "deps" && props.depsPanel}
+				{tab === "input" && props.inputPanel}
 				{tab === "runtime" && (
 					<div className="runtime-grid">
 						<span>State</span>

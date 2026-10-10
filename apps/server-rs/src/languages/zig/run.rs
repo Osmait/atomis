@@ -440,7 +440,8 @@ async fn run_executable(
         let mut probe_reader = ProbeReader::new(Box::new(move |event| forwarder.forward(event)));
         let parser = &mut stderr_parser;
         let reader = &mut probe_reader;
-        let execution = supervisor::run(
+        let stdin = session.stdin().await;
+        let execution = supervisor::run_with_stdin(
             &executables.program.to_string_lossy(),
             &[],
             RunOptions {
@@ -466,6 +467,7 @@ async fn run_executable(
                     probe: Some(Box::new(move |chunk: &[u8]| reader.push(chunk))),
                 },
             },
+            stdin,
         )
         .await;
         probe_reader.end();

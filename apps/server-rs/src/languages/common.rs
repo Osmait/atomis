@@ -309,6 +309,8 @@ pub struct ExecuteConfig {
     /// Whether stdout runs through the marker parser (non-zig languages log
     /// through stdout too); zig streams stdout as plain program output.
     pub parse_stdout_markers: bool,
+    /// The session's Input text, for the program to read on stdin.
+    pub stdin: supervisor::Stdin,
 }
 
 pub struct ExecuteOutcome {
@@ -362,7 +364,7 @@ pub async fn execute_program(
         let stderr_ref = &mut stderr_parser;
         let reader_ref = &mut probe_reader;
         let parse_stdout = config.parse_stdout_markers;
-        let result = supervisor::run(
+        let result = supervisor::run_with_stdin(
             &config.command,
             &config.args,
             RunOptions {
@@ -389,6 +391,7 @@ pub async fn execute_program(
                     probe: Some(Box::new(move |chunk: &[u8]| reader_ref.push(chunk))),
                 },
             },
+            config.stdin,
         )
         .await;
         probe_reader.end();

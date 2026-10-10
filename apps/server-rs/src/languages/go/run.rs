@@ -389,6 +389,7 @@ pub async fn run(
             env: Vec::new(),
             timeout_ms: settings.timeout_ms,
             parse_stdout_markers: true,
+            stdin: session.stdin().await,
         },
     )
     .await;
