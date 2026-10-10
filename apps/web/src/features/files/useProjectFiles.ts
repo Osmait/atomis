@@ -354,6 +354,37 @@ export function useProjectFiles(options: ProjectFilesOptions) {
 		setOpenTabs([entry]);
 	}, []);
 
+	/** A peer deletion/reset can remove our active tab without going through
+	 * the local file menu. Reconcile tabs, models and diagnostics together. */
+	const previousCatalogRef = useRef<readonly ProjectFile[]>(filesRef.current);
+	const reconcileCatalog = useCallback((files: readonly ProjectFile[]): void => {
+		const paths = new Set(files.map(file => file.path));
+		for (const old of previousCatalogRef.current) {
+			if (paths.has(old.path)) continue;
+			const language = languageForPath(old.path);
+			if (language) lspClientsRef.current[language]?.close(old.uri);
+			pruneDiagnosticsFor(old.path);
+		}
+		previousCatalogRef.current = files;
+		setOpenTabs(previous => {
+			const kept = previous.filter(path => paths.has(path));
+			if (!paths.has(activePathRef.current) && paths.has(entryRef.current) && !kept.includes(entryRef.current)) kept.push(entryRef.current);
+			return kept.length === previous.length && kept.every((path, index) => path === previous[index]) ? previous : kept;
+		});
+		if (!paths.has(activePathRef.current)) {
+			activePathRef.current = entryRef.current;
+			setActivePath(entryRef.current);
+		}
+		const monaco = monacoRef.current;
+		for (const file of files) {
+			const model = monaco?.editor.getModel(monaco.Uri.parse(file.uri));
+			if (!model || model.getValue() === file.source) continue;
+			model.setValue(file.source);
+			const language = languageForPath(file.path);
+			if (language) lspClientsRef.current[language]?.change(model, versionRef.current, file.source);
+		}
+	}, [entryRef, lspClientsRef, monacoRef, pruneDiagnosticsFor, versionRef]);
+
 	return {
 		activePath,
 		activePathRef,
@@ -382,5 +413,6 @@ export function useProjectFiles(options: ProjectFilesOptions) {
 		commitTreeDraft,
 		toggleFolder,
 		resetToEntry,
+		reconcileCatalog,
 	};
 }

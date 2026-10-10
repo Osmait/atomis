@@ -48,3 +48,30 @@ Server events include authoritative `project.files` catalogs, `run.state`, `prob
 ## Native probe channel
 
 The child inherits fd 1 for stdout, fd 2 for stderr/panics, and fd 3 for NDJSON probe records. Node adds session, run, version, timestamp and execution count. Records are capped at 64 KiB; the run channel is capped at 1 MiB and 10,000 events. The test binary uses the same fd 3 channel for its `test_start`/`test_result`/`test_summary` NDJSON records.
+## Workspace reliability
+
+Every accepted source mutation emits `document.saved { documentVersion }`.
+The client retains unacknowledged work for recovery. Shared file operations
+also advance the workspace revision and broadcast `project.changed { files,
+revision }`. Consecutive writes from one session may share the last
+acknowledged base revision; they cannot cross an intervening peer write.
+
+`workspace.reset { sessionId, version, scaffold, baseRevision? }` replaces
+the current source tree with the session language's minimal or demo scaffold.
+It keeps the workspace identity and retains the previous tree in a hidden
+`.src-backup-*` directory. The operation participates in collaboration just
+like file changes. It does not change the language preference for new workspaces.
+
+`GET /api/sessions/:id?token=...` reports whether credentials still name a
+live session (200 or 404), behind the usual server access checks. A client
+uses it after a disconnect to distinguish expiry from network failure.
+`POST /api/sessions` may include validated `files: [{ path, source }]` to
+restore a NEW scratch session; `files` and `workspace` cannot be combined.
+`POST /api/workspaces` also accepts `files` when creating a recovery copy.
+Existing persistent workspaces are never overwritten by the recovery API.
+
+Clean persistent sessions reopen their original workspace after expiry.
+If edits are unacknowledged, the app first saves the full local mirror in a
+separate workspace named `… (recovered)`. Scratch recovery restores every
+visible file and asset. Failed recovery leaves the local mirror available
+for retry; the editor is read-only while a replacement request is in progress.

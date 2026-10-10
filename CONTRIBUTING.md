@@ -31,7 +31,16 @@ pnpm test            # unit tests across every language's instrumenter
 pnpm test:e2e        # Playwright, desktop and touch
 ```
 
-CI runs all of it. `pnpm exec playwright install chromium` once per machine —
+CI runs all of it for code, app assets, tests, dependencies, and configuration
+changes. Pushes and PRs that only change `docs/**`, Markdown files, or `LICENSE`
+skip CI. A mixed documentation/code change still runs the full suite.
+Docker validation runs for `Dockerfile`, `.dockerignore`, and its own workflow;
+Docker and Release also keep their existing manual triggers.
+
+These path-filtered workflows must not become required checks without a
+skip-safe gate: [GitHub leaves skipped workflow checks pending](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/skip-workflow-runs).
+
+Run `pnpm exec playwright install chromium` once per machine —
 the touch projects run Chromium at phone and tablet size rather than WebKit,
 because the repo installs one browser on purpose.
 

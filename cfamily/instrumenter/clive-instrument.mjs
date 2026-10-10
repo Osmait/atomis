@@ -277,11 +277,9 @@ export function instrument(source, options) {
 
 		if (
 			parent?.kind === "CompoundStmt" &&
-			node.kind !== "DeclStmt" &&
-			node.kind !== "CompoundStmt" &&
-			node.kind !== "IfStmt" &&
-			node.kind !== "ReturnStmt" &&
-			node.kind !== "SwitchStmt" &&
+			// A comma marker can only extend an expression, never a control
+			// statement (e.g. a try/catch containing cout/cerr further inside).
+			(node.kind.endsWith("Expr") || node.kind.endsWith("Operator")) &&
 			inMain &&
 			range
 		) {

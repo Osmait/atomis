@@ -19,6 +19,7 @@ const BACKLOG: usize = 256;
 
 #[derive(Debug, Clone)]
 pub enum WorkspaceChange {
+    Files { workspace: String, origin: String },
     /// How many sessions are in this workspace, including the recipient.
     Peers { workspace: String, count: usize },
     /// One session accepted an edit; every other session in the workspace
@@ -47,6 +48,8 @@ struct State {
     /// per file: it answers "has anything moved since you last looked", which
     /// is the question a stale write needs answered.
     revisions: HashMap<String, u64>,
+    /// Start of the uninterrupted suffix of writes from one session.
+    writers: HashMap<String, (String, u64)>,
     /// One writer at a time per workspace — see [`Collab::edit_lock`].
     edit_locks: HashMap<String, std::sync::Arc<Mutex<()>>>,
 }
@@ -117,15 +120,36 @@ impl Collab {
         std::sync::Arc::clone(state.edit_locks.entry(workspace.to_string()).or_default())
     }
 
-    /// Whether a write built on `base` would be accepted right now, without
-    /// recording or announcing anything.
-    pub async fn check_base(&self, workspace: &str, base: Option<u64>) -> Result<(), Conflict> {
+    pub async fn check_writer_base(&self, workspace: &str, origin: &str, base: Option<u64>) -> Result<(), Conflict> {
+        let state = self.state.lock().await;
+        let current = state.revisions.get(workspace).copied().unwrap_or(0);
+        if writer_base_ok(&state, workspace, origin, base, current) { Ok(()) }
+        else { Err(Conflict { current }) }
+    }
+
+    pub async fn revision(&self, workspace: &str) -> u64 {
+        self.state.lock().await.revisions.get(workspace).copied().unwrap_or(0)
+    }
+
+    async fn advance(&self, workspace: &str, origin: &str, base: Option<u64>) -> Result<u64, Conflict> {
         let mut state = self.state.lock().await;
-        let current = *state.revisions.entry(workspace.to_string()).or_insert(0);
-        match base {
-            Some(base) if base != current => Err(Conflict { current }),
-            _ => Ok(()),
+        let current = state.revisions.get(workspace).copied().unwrap_or(0);
+        if !writer_base_ok(&state, workspace, origin, base, current) {
+            return Err(Conflict { current });
         }
+        if state.writers.get(workspace).is_none_or(|(writer, _)| writer != origin) {
+            state.writers.insert(workspace.to_string(), (origin.to_string(), current));
+        }
+        state.revisions.insert(workspace.to_string(), current + 1);
+        Ok(current + 1)
+    }
+
+    pub async fn record_files(&self, workspace: &str, origin: &str, base: Option<u64>) -> Result<u64, Conflict> {
+        let revision = self.advance(workspace, origin, base).await?;
+        let _ = self.changes.send(WorkspaceChange::Files {
+            workspace: workspace.to_string(), origin: origin.to_string(),
+        });
+        Ok(revision)
     }
 
     /// Accepts an edit if it was built on the current revision, and tells
@@ -140,17 +164,7 @@ impl Collab {
         source: &str,
         base: Option<u64>,
     ) -> Result<u64, Conflict> {
-        let revision = {
-            let mut state = self.state.lock().await;
-            let current = state.revisions.entry(workspace.to_string()).or_insert(0);
-            if let Some(base) = base {
-                if base != *current {
-                    return Err(Conflict { current: *current });
-                }
-            }
-            *current += 1;
-            *current
-        };
+        let revision = self.advance(workspace, origin, base).await?;
         let _ = self.changes.send(WorkspaceChange::Document {
             workspace: workspace.to_string(),
             origin: origin.to_string(),
@@ -176,9 +190,49 @@ impl Default for Collab {
     }
 }
 
+fn writer_base_ok(state: &State, workspace: &str, origin: &str, base: Option<u64>, current: u64) -> bool {
+    match base {
+        None => true,
+        Some(base) if base == current => true,
+        Some(base) => base < current && state.writers.get(workspace)
+            .is_some_and(|(writer, start)| writer == origin && base >= *start),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn rapid_writes_from_one_session_can_share_an_unacknowledged_base() {
+        let collab = Collab::new();
+        collab.join("w", "a").await;
+        for expected in 1..=3 {
+            collab.check_writer_base("w", "a", Some(0)).await.unwrap();
+            assert_eq!(collab.record_edit("w", "a", "main.py", "text", Some(0)).await.unwrap(), expected);
+        }
+        assert!(collab.check_writer_base("w", "a", Some(99)).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn own_write_shortcut_never_crosses_a_peer_write() {
+        let collab = Collab::new();
+        collab.record_edit("w", "a", "main.py", "a", Some(0)).await.unwrap();
+        collab.record_edit("w", "b", "main.py", "b", Some(1)).await.unwrap();
+        assert!(collab.record_edit("w", "a", "main.py", "stale", Some(0)).await.is_err());
+        assert!(collab.record_edit("w", "a", "main.py", "stale", Some(1)).await.is_err());
+        collab.record_edit("w", "a", "main.py", "fresh", Some(2)).await.unwrap();
+        assert!(collab.record_edit("w", "a", "main.py", "still stale", Some(1)).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn file_operations_advance_revision_and_notify_peers() {
+        let collab = Collab::new();
+        let mut receiver = collab.subscribe();
+        assert_eq!(collab.record_files("w", "a", Some(0)).await.unwrap(), 1);
+        assert!(matches!(receiver.try_recv(), Ok(WorkspaceChange::Files { workspace, origin }) if workspace == "w" && origin == "a"));
+        assert!(collab.check_writer_base("w", "b", Some(0)).await.is_err());
+    }
 
     #[tokio::test]
     async fn a_write_built_on_the_current_revision_is_accepted() {

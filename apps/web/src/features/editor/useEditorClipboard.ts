@@ -20,12 +20,18 @@ export function useEditorClipboard({
 	setEditorContextMenu,
 	setStatus,
 }: EditorClipboardDeps): {
-	copyFromEditor: (textOverride?: string) => Promise<void>;
+	copyFromEditor: (
+		textOverride?: string,
+		sourceEditor?: MonacoApi.editor.ICodeEditor,
+	) => Promise<void>;
 	pasteIntoEditor: () => Promise<void>;
 } {
-	const copyFromEditor = useCallback(async (textOverride?: string): Promise<void> => {
+	const copyFromEditor = useCallback(async (
+		textOverride?: string,
+		sourceEditor?: MonacoApi.editor.ICodeEditor,
+	): Promise<void> => {
 		setEditorContextMenu(undefined);
-		const editor = editorRef.current;
+		const editor = sourceEditor ?? editorRef.current;
 		let text = textOverride;
 		if (text === undefined) {
 			const model = editor?.getModel();
@@ -42,7 +48,7 @@ export function useEditorClipboard({
 				`Copy failed: ${error instanceof Error ? error.message : String(error)}`,
 			);
 		}
-		editor?.focus();
+		if (editor?.getDomNode()?.isConnected) editor.focus();
 	}, [editorRef, setEditorContextMenu, setStatus]);
 
 	const pasteIntoEditor = useCallback(async (): Promise<void> => {

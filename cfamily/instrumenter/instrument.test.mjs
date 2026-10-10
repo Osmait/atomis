@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { instrument } from "./clive-instrument.mjs";
 
 function run(source, lang) {
@@ -70,6 +72,36 @@ test("C++: recovery keeps unknown-type declarations probed", () => {
 	assert.match(result.generated, /"price", price\);/);
 	assert.match(result.generated, /"name", name\);/);
 	assert.match(result.generated, /, __atomis_log\(1, 1, 7, \d+\)/);
+});
+
+test("C++: output inside try/catch does not instrument the enclosing statement", () => {
+	const source = `#include <iostream>
+#include <stdexcept>
+int main() {
+	try {
+		std::cout << "hello";
+		throw std::runtime_error("expected");
+	} catch (const std::exception &e) {
+		std::cerr << e.what();
+	}
+	return 0;
+}
+`;
+	const result = run(source, "cpp");
+	assert.doesNotMatch(result.generated, /\}, __atomis_log/);
+	assert.equal((result.generated.match(/__atomis_log\(/g) ?? []).length, 2);
+	const dir = mkdtempSync(join(tmpdir(), "clive-compile-"));
+	try {
+		const input = join(dir, "main.cpp");
+		writeFileSync(input, result.generated);
+		const output = spawnSync("clang++", [
+			"-std=c++20", "-fsyntax-only", "-include",
+			fileURLToPath(new URL("../runtime/atomis_runtime.hpp", import.meta.url)), input,
+		], { encoding: "utf8" });
+		assert.equal(output.status, 0, output.stderr);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 });
 
 test("passthrough for already instrumented sources", () => {

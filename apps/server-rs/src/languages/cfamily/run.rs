@@ -126,17 +126,15 @@ async fn runtime_pch(
     // with an error the diagnostics regex cannot map to any source line.
     let stamp_path = target.join(format!("{}-runtime.pch.toolchain", config.runtime_header));
     let stamp = runtime_pch_stamp(config.compiler, &header);
-    let fresh = match (tokio::fs::metadata(&pch).await, tokio::fs::metadata(&header).await) {
-        (Ok(built), Ok(source)) => match (built.modified(), source.modified()) {
-            (Ok(built), Ok(source)) => built >= source,
-            _ => false,
-        },
-        _ => false,
-    } && tokio::fs::read_to_string(&stamp_path)
-        .await
-        .is_ok_and(|stored| stored == stamp);
-    if fresh {
+    if runtime_pch_is_fresh(&pch, &header, &stamp_path, &stamp).await {
         return (Some(pch), 0.0);
+    }
+    // A cancelled/failed rebuild can leave a partial PCH. Never leave an old
+    // success stamp alongside that file, even when the header path is unchanged.
+    if let Err(error) = tokio::fs::remove_file(&stamp_path).await {
+        if error.kind() != std::io::ErrorKind::NotFound {
+            return (None, 0.0);
+        }
     }
     let result = supervisor::run(
         config.compiler,
@@ -184,6 +182,24 @@ fn linker_args() -> &'static [&'static str] {
     } else {
         &[]
     }
+}
+
+async fn runtime_pch_is_fresh(
+    pch: &std::path::Path,
+    header: &std::path::Path,
+    stamp_path: &std::path::Path,
+    stamp: &str,
+) -> bool {
+    let fresh = match (tokio::fs::metadata(pch).await, tokio::fs::metadata(header).await) {
+        (Ok(built), Ok(source)) => match (built.modified(), source.modified()) {
+            (Ok(built), Ok(source)) => built >= source,
+            _ => false,
+        },
+        _ => false,
+    };
+    fresh && tokio::fs::read_to_string(stamp_path)
+        .await
+        .is_ok_and(|stored| stored == stamp)
 }
 
 /// Identity of the compiler binary itself (size + mtime of what PATH
@@ -871,8 +887,81 @@ async fn run_tests(
 
 #[cfg(test)]
 mod tests {
-    use super::runtime_pch_stamp;
+    use super::{compiler_stamp, runtime_pch_is_fresh, runtime_pch_stamp, CFamilyConfig, C_CONFIG, CPP_CONFIG};
     use std::path::Path;
+
+    struct PchFixture(std::path::PathBuf);
+
+    impl Drop for PchFixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    // Use real clang PCHs: both headers predate the cache, just like AppImage
+    // resources that retain their packaging timestamps across launches.
+    async fn check_pch_relocation(config: CFamilyConfig) {
+        let fixture = PchFixture(std::env::temp_dir().join(format!(
+            "atomis-pch-{}", crate::util::random_hex(8)
+        )));
+        let old_dir = fixture.0.join("mount-old");
+        let new_dir = fixture.0.join("mount-new");
+        std::fs::create_dir_all(&old_dir).unwrap();
+        std::fs::create_dir_all(&new_dir).unwrap();
+        let old_header = old_dir.join(config.runtime_header);
+        let new_header = new_dir.join(config.runtime_header);
+        for header in [&old_header, &new_header] {
+            std::fs::write(header, "#define ATOMIS_PCH_TEST 42\n").unwrap();
+        }
+        let pch = fixture.0.join("runtime.pch");
+        let stamp_path = fixture.0.join("runtime.pch.toolchain");
+        let build = |header: &Path| {
+            let output = std::process::Command::new(config.compiler)
+                .arg(format!("-std={}", config.std))
+                .args(["-x", config.header_language])
+                .arg(header).arg("-o").arg(&pch).output()
+                .expect("C/C++ PCH regression tests require clang and clang++");
+            assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        };
+        build(&old_header);
+        let old_stamp = runtime_pch_stamp(config.compiler, &old_header);
+        let new_stamp = runtime_pch_stamp(config.compiler, &new_header);
+        std::fs::write(&stamp_path, &old_stamp).unwrap();
+        assert!(runtime_pch_is_fresh(&pch, &old_header, &stamp_path, &old_stamp).await);
+
+        std::fs::remove_dir_all(&old_dir).unwrap();
+        assert!(!runtime_pch_is_fresh(&pch, &new_header, &stamp_path, &new_stamp).await);
+
+        // Older desktop builds only stamped the compiler, not the header path.
+        std::fs::write(&stamp_path, compiler_stamp(config.compiler)).unwrap();
+        assert!(!runtime_pch_is_fresh(&pch, &new_header, &stamp_path, &new_stamp).await);
+
+        build(&new_header);
+        std::fs::write(&stamp_path, &new_stamp).unwrap();
+        assert!(runtime_pch_is_fresh(&pch, &new_header, &stamp_path, &new_stamp).await);
+        let source = fixture.0.join(if config.compiler == "clang" { "main.c" } else { "main.cpp" });
+        std::fs::write(&source, "int main(void) { return ATOMIS_PCH_TEST == 42 ? 0 : 1; }\n").unwrap();
+        let output = std::process::Command::new(config.compiler)
+            .arg(format!("-std={}", config.std))
+            .arg("-include-pch").arg(&pch).arg("-fsyntax-only").arg(&source)
+            .output().unwrap();
+        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+
+        // An interrupted rebuild must not make a newer, partial file reusable.
+        std::fs::remove_file(&stamp_path).unwrap();
+        std::fs::write(&pch, "partial PCH").unwrap();
+        assert!(!runtime_pch_is_fresh(&pch, &new_header, &stamp_path, &new_stamp).await);
+    }
+
+    #[tokio::test]
+    async fn c_pch_rejects_previous_mount_and_legacy_cache() {
+        check_pch_relocation(C_CONFIG).await;
+    }
+
+    #[tokio::test]
+    async fn cpp_pch_rejects_previous_mount_and_legacy_cache() {
+        check_pch_relocation(CPP_CONFIG).await;
+    }
 
     #[test]
     fn pch_stamp_changes_when_the_runtime_header_moves() {

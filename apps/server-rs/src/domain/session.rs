@@ -111,6 +111,64 @@ impl Session {
         self.snapshot.lock().await.clone()
     }
 
+    /// Caller holds the workspace edit lock. Keep the per-connection version,
+    /// but refresh the file catalog before validating a shared mutation/run.
+    pub async fn refresh_files(&self) -> Result<Snapshot, String> {
+        if self.workspace_id.is_none() { return Ok(self.current().await); }
+        let mut snapshot = self.snapshot.lock().await;
+        let files = crate::domain::workspace::read_sources(&self.source_root).await
+            .into_iter().map(|(path, source)| self.project_file(&path, source)).collect();
+        let version = snapshot.version;
+        self.commit(&mut snapshot, version, files)
+    }
+
+    /// Stage a complete replacement before moving the current source tree.
+    /// Used for an explicit reset or restoring a newly created session only.
+    pub async fn replace_files(&self, version: u64, sources: &[crate::protocol::SourceFile]) -> Result<Snapshot, String> {
+        crate::protocol::validate_source_files(sources)?;
+        if !sources.iter().any(|file| file.path == packs::pack(self.language).entry_file) {
+            return Err("Recovery is missing the language entry file".into());
+        }
+        let mut snapshot = self.snapshot.lock().await;
+        if version < snapshot.version { return Err("Regressive reset version".into()); }
+        let staging = self.root.join(format!(".src-stage-{}", random_hex(8)));
+        let backup = self.root.join(format!(".src-backup-{}", random_hex(8)));
+        tokio::fs::create_dir_all(&staging).await.map_err(|e| e.to_string())?;
+        for file in sources {
+            let destination = staging.join(&file.path);
+            if let Some(parent) = destination.parent() {
+                tokio::fs::create_dir_all(parent).await.map_err(|e| e.to_string())?;
+            }
+            tokio::fs::write(destination, &file.source).await.map_err(|e| e.to_string())?;
+        }
+        tokio::fs::rename(&self.source_root, &backup).await.map_err(|e| e.to_string())?;
+        if let Err(error) = tokio::fs::rename(&staging, &self.source_root).await {
+            let _ = tokio::fs::rename(&backup, &self.source_root).await;
+            return Err(error.to_string());
+        }
+        let files = sources.iter().map(|file| self.project_file(&file.path, file.source.clone())).collect();
+        let result = self.commit(&mut snapshot, version, files);
+        // The previous source tree remains recoverable on disk. In a scratch
+        // session it is removed with the session, like the compiler caches.
+        result
+    }
+
+    pub async fn reset_files(&self, version: u64, scaffold: crate::protocol::WorkspaceScaffold) -> Result<Snapshot, String> {
+        Self::assert_version(&self.current().await, version)?;
+        let mut sources = Vec::new();
+        for pack in &PACKS {
+            if !self.support.get(&pack.id).is_some_and(|support| support.present) { continue; }
+            if scaffold == crate::protocol::WorkspaceScaffold::Minimal && pack.id != self.language { continue; }
+            sources.push(crate::protocol::SourceFile { path: pack.entry_file.into(), source: pack.default_source.into() });
+            if scaffold == crate::protocol::WorkspaceScaffold::Demo {
+                for (path, source) in pack.extra_files {
+                    sources.push(crate::protocol::SourceFile { path: (*path).into(), source: (*source).into() });
+                }
+            }
+        }
+        self.replace_files(version, &sources).await
+    }
+
     fn project_file(&self, path: &str, source: String) -> ProjectFile {
         ProjectFile {
             path: path.to_string(),

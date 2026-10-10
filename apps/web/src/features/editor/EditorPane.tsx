@@ -24,6 +24,7 @@ interface EditorPaneProps {
 	path: string;
 	language: string;
 	value: string;
+	readOnly?: boolean;
 	onMount: OnMount;
 	onChange: (value: string | undefined) => void;
 }
@@ -39,6 +40,7 @@ interface EditorPaneProps {
 export function EditorPane(props: EditorPaneProps): React.JSX.Element {
 	const { appearance, palette, zen } = props;
 	const options: MonacoApi.editor.IStandaloneEditorConstructionOptions = {
+		readOnly: props.readOnly ?? false,
 		automaticLayout: true,
 		fontFamily: fontStack(appearance.font),
 		fontLigatures: true,
