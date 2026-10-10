@@ -51,6 +51,21 @@
 	font-size: 12px;
 }
 
+/* Output's reminder that the run read stdin, and the way to it. */
+.term-stdin-chip {
+	font-size: 11px;
+	color: var(--subtext);
+	padding: 1px 8px;
+	border: 1px solid var(--surface1);
+	border-radius: 999px;
+	white-space: nowrap;
+}
+
+.term-stdin-chip:hover {
+	color: var(--text);
+	border-color: var(--mauve);
+}
+
 .term-menu-wrap {
 	margin-left: auto;
 	position: relative;
@@ -100,6 +115,15 @@
 	border-radius: 4px;
 	color: var(--subtext);
 	text-align: left;
+}
+
+/* A line of explanation inside a menu, e.g. why items are disabled. */
+.term-menu-note {
+	margin: 2px 8px 4px;
+	max-width: 190px;
+	font-size: 11px;
+	line-height: 1.4;
+	color: var(--dim);
 }
 
 .term-menu button:hover {

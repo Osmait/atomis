@@ -67,6 +67,16 @@ describe("groupOutput", () => {
 		expect(fold.entries[0]?.index).toBe(1);
 	});
 
+	it("leaves a REPL's answers unfolded when the program reads input", () => {
+		const answers = [0, 1, 2, 3].map((n) => loopLine(`redis> (integer) ${n}\n`, n + 1));
+		expect(groupOutput(answers, { loops: false }).map((row) => row.kind)).toEqual([
+			"line",
+			"line",
+			"line",
+			"line",
+		]);
+	});
+
 	it("folds the error trace after a panic line", () => {
 		const trace = (chunk: string): TerminalEntry =>
 			line(chunk, { stream: "stderr", category: "error" });

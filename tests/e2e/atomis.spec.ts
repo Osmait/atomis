@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { confirmDialog } from "./helpers.js";
 import { resetPreferences } from "./reset.js";
 
 test.beforeEach(async ({ request, baseURL }) => {
@@ -225,11 +226,179 @@ pub fn main(init: std.process.Init) !void {
 	await expect(
 		page.getByRole("button", { name: "data/notes.txt" }),
 	).toBeVisible();
-	page.once("dialog", (dialog) => dialog.accept());
 	await treeAction(page, "Delete file");
+	await confirmDialog(page, "Delete file");
 	await expect(
 		page.getByRole("button", { name: "data/notes.txt" }),
 	).toHaveCount(0);
+});
+
+test("the Input view feeds the program's stdin, and a change reruns it", async ({
+	page,
+}) => {
+	await openClean(page);
+	// Python runs main.py; the demo workspace carries one.
+	await page.getByRole("button", { name: "main.py", exact: true }).click();
+	await replaceEditor(
+		page,
+		'import sys\nname = sys.stdin.readline().strip()\nnumbers = [int(x) for x in sys.stdin.readline().split()]\nprint(f"hello {name}: {sum(numbers)}")\nprint("then:", repr(sys.stdin.read()))\n',
+	);
+	const terminal = page.locator(".panel-content");
+	// Nothing to read yet: end of file straight away, as before.
+	await expect(terminal).toContainText("hello : 0");
+
+	await openTermView(page, "Input");
+	await page.getByLabel("Program input").fill("Ada\n5 7 9\n");
+	await expect(page.locator(".input-footer")).toContainText("2 lines");
+	await openTermView(page, "Output");
+	// Auto Run picks the new input up like an edit — no Run pressed.
+	await expect(terminal).toContainText("hello Ada: 21");
+	await expect(terminal).toContainText("then: ''");
+	await page.getByRole("button", { name: "stdin · 2 lines" }).click();
+	await expect(page.getByLabel("Program input")).toHaveValue("Ada\n5 7 9\n");
+});
+
+test("an interactive Run waits for typed input, line by line, and EOF ends it", async ({
+	page,
+}) => {
+	await openClean(page);
+	await page.getByRole("button", { name: "main.py", exact: true }).click();
+	await replaceEditor(
+		page,
+		'name = input("Name? ")\nprint(f"hi {name}")\nage = int(input("Age? "))\nprint(f"next year {age + 1}")\n',
+	);
+	await openTermView(page, "Input");
+	await page.getByRole("radio", { name: "Typed in the terminal" }).click();
+	await openTermView(page, "Output");
+
+	const terminal = page.locator(".panel-content");
+	const field = page.getByLabel("Input for the running program");
+	await page.locator(".run-button").click();
+	await expect(field).toBeVisible();
+	await expect(field).toBeFocused();
+	// The prompt has no newline, and output waits for one to attach its
+	// source line — but a program that went quiet to wait gets it shown.
+	await expect(terminal).toContainText("Name?");
+	// Longer than a plain run's whole budget (2 s): a person is typing.
+	await page.waitForTimeout(3000);
+	await field.fill("Ada");
+	await field.press("Enter");
+	await expect(terminal).toContainText("hi Ada");
+	await field.fill("41");
+	await field.press("Enter");
+	await expect(terminal).toContainText("next year 42");
+	// The program is done with its input: the line goes with it.
+	await expect(field).toHaveCount(0);
+	await expect(page.locator(".state-succeeded")).toBeVisible();
+	// What was typed is in the output, where the program's reply follows.
+	await expect(page.locator(".output-entry pre.input")).toHaveText(["Ada", "41"]);
+
+	// EOF before an answer: the program reads end of file.
+	await page.locator(".run-button").click();
+	await expect(field).toBeVisible();
+	await page.getByRole("button", { name: "EOF" }).click();
+	await expect(terminal).toContainText("EOFError");
+	await expect(field).toHaveCount(0);
+});
+
+test("a demo opens from the gallery in a scratch session, ready to answer", async ({
+	page,
+}) => {
+	await openClean(page);
+	await treeAction(page, "Open a demo…");
+	const gallery = page.getByRole("dialog", { name: "Demos" });
+	await gallery.getByLabel("Filter demos").fill("python");
+	await gallery.getByRole("button", { name: "Calculator REPL in Python" }).click();
+	await expect(gallery).toHaveCount(0);
+	await expect(page.locator(".branch-status")).toContainText("scratch");
+	await expect(page.locator(".tree-file")).toHaveCount(1);
+	await expect(page.locator(".global-status")).toContainText("main.py");
+
+	// Auto Run plays the demo's sample session from its Input text…
+	const terminal = page.locator(".panel-content");
+	await expect(terminal).toContainText("total of 2 results: 7.5");
+	await expect(page.getByRole("button", { name: /stdin · \d+ lines/ })).toBeVisible();
+	// …and Run reads what you type: the demo switched Run to it.
+	await page.locator(".run-button").click();
+	const field = page.getByLabel("Input for the running program");
+	await field.fill("6 * 7");
+	await field.press("Enter");
+	await expect(terminal).toContainText("42");
+	await field.fill("quit");
+	await field.press("Enter");
+	await expect(terminal).toContainText("bye");
+	await expect(field).toHaveCount(0);
+});
+
+test("the mini Redis demo keeps its data from one run to the next", async ({
+	page,
+}) => {
+	await openClean(page);
+	await treeAction(page, "Open a demo…");
+	await page
+		.getByRole("dialog", { name: "Demos" })
+		.getByRole("button", { name: "Mini Redis in Python" })
+		.click();
+	const terminal = page.locator(".panel-content");
+	// Auto Run plays the sample: a first visit, on a new database.
+	await expect(terminal).toContainText("loaded 0 keys");
+	await expect(terminal).toContainText("redis> (integer) 1");
+	// An edit is a new run, a new process: the count comes from the file.
+	await page.getByRole("textbox", { name: "Editor content" }).focus();
+	await page.keyboard.press("ControlOrMeta+End");
+	await page.keyboard.type("\n# rerun\n");
+	await expect(terminal).toContainText("loaded 2 keys");
+	await expect(terminal).toContainText("redis> (integer) 2");
+});
+
+test("a file is deleted from its own row, after a confirmation that Cancel backs out of", async ({
+	page,
+}) => {
+	await openClean(page);
+	await treeAction(page, "New file");
+	await fillTreeDraft(page, "scratch.txt");
+	const file = page.getByRole("button", { name: "scratch.txt", exact: true });
+	await expect(file).toBeVisible();
+	// Not the active file: the row's own menu acts on its row, not on
+	// whatever the editor shows.
+	await page.getByRole("button", { name: "main.zig", exact: true }).click();
+	const row = page.locator(".tree-file-row", { has: file });
+	const askToDelete = async (): Promise<void> => {
+		await row.hover();
+		await row.getByRole("button", { name: "File actions" }).click();
+		await page.getByRole("menuitem", { name: "Delete", exact: true }).click();
+		await expect(
+			page.getByRole("alertdialog", { name: "Delete src/scratch.txt?" }),
+		).toBeVisible();
+	};
+
+	await askToDelete();
+	await page.getByRole("alertdialog").getByRole("button", { name: "Cancel" }).click();
+	await expect(page.getByRole("alertdialog")).toHaveCount(0);
+	await expect(file).toBeVisible();
+
+	await askToDelete();
+	await confirmDialog(page, "Delete file");
+	await expect(file).toHaveCount(0);
+	// The entry file has no Delete: it is what the run starts from.
+	await page
+		.locator(".tree-file-row", { has: page.getByRole("button", { name: "main.zig", exact: true }) })
+		.getByRole("button", { name: "File actions" })
+		.click();
+	await expect(page.getByRole("menuitem", { name: "Delete", exact: true })).toBeDisabled();
+	await expect(page.getByText("The run starts here, so it stays put.")).toBeVisible();
+	await page.keyboard.press("Escape");
+	// Another language's entry name is just a file here: the demo's main.c
+	// in a Zig workspace goes like any other.
+	const mainC = page.getByRole("button", { name: "main.c", exact: true });
+	await page.locator(".tree-file-row", { has: mainC }).hover();
+	await page
+		.locator(".tree-file-row", { has: mainC })
+		.getByRole("button", { name: "File actions" })
+		.click();
+	await page.getByRole("menuitem", { name: "Delete", exact: true }).click();
+	await confirmDialog(page, "Delete file");
+	await expect(mainC).toHaveCount(0);
 });
 
 test("Vim mode keeps native clipboard shortcuts", async ({
@@ -931,16 +1100,19 @@ test("programs that open TCP/HTTP servers are killed at the timeout", async ({
 
 	// A Node HTTP server blocks forever: the run must end as timed_out and
 	// the process-group kill must leave nothing listening on the port.
+	// Ports below Linux's ephemeral range (32768–60999): one inside it can be
+	// the local end of any outgoing connection on the machine at that moment,
+	// and the server's bind() then fails with "Address already in use".
 	await page.getByRole("button", { name: "main.ts", exact: true }).click();
 	await replaceEditor(
 		page,
-		'import { createServer } from "node:http";\n\nconst server = createServer((_req, res) => {\n\tres.end("hola");\n});\nserver.listen(39123, "127.0.0.1", () => {\n\tconsole.log("escuchando en 39123");\n});\n',
+		'import { createServer } from "node:http";\n\nconst server = createServer((_req, res) => {\n\tres.end("hola");\n});\nserver.listen(28123, "127.0.0.1", () => {\n\tconsole.log("escuchando en 28123");\n});\n',
 	);
 	await expect(page.locator(".state-timed_out")).toBeVisible({
 		timeout: 30_000,
 	});
 	await expect(page.locator(".panel-content")).toContainText(
-		"escuchando en 39123",
+		"escuchando en 28123",
 	);
 	// The condition the old fixed sleep stood in for: the process-group kill
 	// finishing, observable as the port refusing connections. Poll for it.
@@ -949,7 +1121,7 @@ test("programs that open TCP/HTTP servers are killed at the timeout", async ({
 			() =>
 				page.evaluate(async () => {
 					try {
-						await fetch("http://127.0.0.1:39123/", {
+						await fetch("http://127.0.0.1:28123/", {
 							mode: "no-cors",
 							signal: AbortSignal.timeout(1000),
 						});
@@ -966,7 +1138,7 @@ test("programs that open TCP/HTTP servers are killed at the timeout", async ({
 	await page.getByRole("button", { name: "main.py", exact: true }).click();
 	await replaceEditor(
 		page,
-		'import socketserver\n\n\nclass Handler(socketserver.BaseRequestHandler):\n    def handle(self):\n        self.request.sendall(b"hola")\n\n\nwith socketserver.TCPServer(("127.0.0.1", 39124), Handler) as server:\n    print("escuchando en 39124")\n    server.serve_forever()\n',
+		'import socketserver\n\n\nclass Handler(socketserver.BaseRequestHandler):\n    def handle(self):\n        self.request.sendall(b"hola")\n\n\nwith socketserver.TCPServer(("127.0.0.1", 28124), Handler) as server:\n    print("escuchando en 28124")\n    server.serve_forever()\n',
 	);
 	await expect(page.locator(".state-timed_out")).toBeVisible({
 		timeout: 30_000,
@@ -977,7 +1149,7 @@ test("programs that open TCP/HTTP servers are killed at the timeout", async ({
 			() =>
 				page.evaluate(async () => {
 					try {
-						await fetch("http://127.0.0.1:39124/", {
+						await fetch("http://127.0.0.1:28124/", {
 							mode: "no-cors",
 							signal: AbortSignal.timeout(1000),
 						});
@@ -1555,9 +1727,9 @@ test("workspace starts minimal, loads the demo and clears back", async ({
 	await expect(page.getByText("43 : i32", { exact: true })).toBeVisible();
 	await expect(page.locator(".test-score")).toHaveText("2/2");
 
-	page.on("dialog", (dialog) => void dialog.accept());
 	await page.locator(".tree-menu-btn").click();
 	await page.getByRole("menuitem", { name: "Load demo workspace" }).click();
+	await confirmDialog(page, "Load demo");
 	await expect(page.locator(".file-tree")).toBeVisible();
 	await expect(page.locator(".state-succeeded")).toBeVisible({
 		timeout: 60_000,
@@ -1570,6 +1742,7 @@ test("workspace starts minimal, loads the demo and clears back", async ({
 
 	await page.locator(".tree-menu-btn").click();
 	await page.getByRole("menuitem", { name: "Clear workspace" }).click();
+	await confirmDialog(page, "Clear workspace");
 	await expect(page.locator(".file-tree")).toBeVisible();
 	await expect(page.locator(".tree-file")).toHaveCount(1, {
 		timeout: 60_000,
@@ -1604,6 +1777,9 @@ test("vim gets quick-scope targets and editor-integrated commands", async ({
 	await setToggle(page, "Vim Mode", true);
 	await page.locator(".monaco-editor").click();
 	await page.keyboard.press("Escape");
+	// Vim attaches asynchronously: keys typed before it is in NORMAL mode go
+	// into the buffer as text, and no quick-scope target ever appears.
+	await expect(page.locator(".mode-chip")).toContainText(/NORMAL/i);
 	await page.keyboard.type("gg");
 	// clever-f: pressing f alone must not draw anything…
 	await page.keyboard.press("f");
@@ -1874,9 +2050,9 @@ test("persistent workspaces keep their files across reloads", async ({
 	await expect(page.locator(".branch-status b")).toHaveText(before ?? "");
 	await expect(page.getByText("41 : i32", { exact: true })).toBeVisible();
 
-	page.on("dialog", (dialog) => void dialog.accept());
 	await treeAction(page, "Switch workspace…");
 	await page.getByLabel(`Delete ${name}`).click();
+	await confirmDialog(page, "Delete workspace");
 	await expect(page.locator(".branch-status")).toContainText("scratch", {
 		timeout: 30_000,
 	});

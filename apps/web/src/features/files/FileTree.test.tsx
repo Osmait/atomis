@@ -33,6 +33,7 @@ function renderTree(
 		onDeleteActive: vi.fn(),
 		onHideTree: vi.fn(),
 		onLoadDemo: vi.fn(),
+		onOpenDemos: vi.fn(),
 		onSwitchWorkspace: vi.fn(),
 		onClearWorkspace: vi.fn(),
 		onDraftChange: vi.fn(),
@@ -122,6 +123,23 @@ describe("FileTree", () => {
 	it("marks the keyboard selection while the tree zone is focused", () => {
 		renderTree({ focused: true, treeSel: 2 });
 		expect(screen.getByLabelText("main.zig").className).toContain("kb-sel");
+	});
+
+	it("opens a file's menu from its own ⋯, which also closes it", () => {
+		const handlers = renderTree();
+		// Its own label: a lookup by the file's name still finds one button.
+		expect(screen.getAllByRole("button", { name: /helper\.zig/ })).toHaveLength(1);
+		const [helperActions] = screen.getAllByLabelText("File actions");
+		fireEvent.click(helperActions!);
+		expect(handlers.onOpenContextMenu).toHaveBeenCalledWith(
+			expect.objectContaining({ path: "utils/helper.zig" }),
+		);
+		cleanup();
+		const open = renderTree({ menuPath: "utils/helper.zig" });
+		const [shown] = screen.getAllByLabelText("File actions");
+		expect(shown!.getAttribute("aria-expanded")).toBe("true");
+		fireEvent.click(shown!);
+		expect(open.onOpenContextMenu).toHaveBeenCalledWith(undefined);
 	});
 
 	it("reports the right-clicked row to the context menu", () => {

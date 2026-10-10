@@ -1,5 +1,6 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import type { CreateSessionResponse, RuntimeServerEvent } from "../../packages/protocol/src/index.js";
+import { confirmDialog } from "./helpers.js";
 
 interface ClientWindow { reliabilitySocket?: WebSocket; reliabilityEvents: RuntimeServerEvent[] }
 interface RecoveryWindow { recoverySockets: WebSocket[] }
@@ -84,6 +85,55 @@ test("shared file create, rename and delete synchronize; stale edits cannot resu
   await peer.close();
 });
 
+test("a workspace keeps its Input text across sessions; a scratch session starts empty",async({page,request,baseURL})=>{
+  const id=await workspace(request,baseURL!);
+  const created=await session(request,baseURL!,id);
+  expect(created.input).toBe("");
+  await connect(page,created);
+  await send(page,created,[{type:"input.update",text:"3\n5 7 9\n"}]);
+  await expect.poll(async()=>(await session(request,baseURL!,id)).input).toBe("3\n5 7 9\n");
+  // Emptied, it is gone from disk too.
+  await send(page,created,[{type:"input.update",text:""}]);
+  await expect.poll(async()=>(await session(request,baseURL!,id)).input).toBe("");
+  expect((await session(request,baseURL!)).input).toBe("");
+});
+
+test("a new session's input seeds a scratch session only, never a workspace",async({request,baseURL})=>{
+  const seeded=await request.post("/api/sessions",{headers:{origin:baseURL!},data:{language:"py",input:"7\n"}});
+  expect(seeded.ok()).toBe(true);
+  expect(((await seeded.json()) as CreateSessionResponse).input).toBe("7\n");
+  const id=await workspace(request,baseURL!);
+  const refused=await request.post("/api/sessions",{headers:{origin:baseURL!},data:{language:"py",workspace:id,input:"7\n"}});
+  expect(refused.status()).toBe(400);
+  expect((await session(request,baseURL!,id)).input).toBe("");
+});
+
+test("an input over the limit is refused and the previous one kept",async({page,request,baseURL})=>{
+  const id=await workspace(request,baseURL!);
+  const created=await session(request,baseURL!,id);await connect(page,created);
+  await send(page,created,[{type:"input.update",text:"kept\n"}]);
+  await expect.poll(async()=>(await session(request,baseURL!,id)).input).toBe("kept\n");
+  await send(page,created,[{type:"input.update",text:"x".repeat(512*1024+1)}]);
+  await expect.poll(async()=>(await events(page)).some(event=>event.type==="server.error"&&(event.details??"").includes("Input exceeds"))).toBe(true);
+  expect((await session(request,baseURL!,id)).input).toBe("kept\n");
+});
+
+test("only the workspace's own entry is protected; other languages' main files delete like any file",async({page,request,baseURL})=>{
+  const id=await workspace(request,baseURL!);
+  const created=await session(request,baseURL!,id);await connect(page,created);
+  // A Python workspace with a main.c added by hand: the C entry name, but
+  // the user's own file.
+  await send(page,created,[{type:"file.create",version:2,path:"main.c",source:"int main(void) { return 0; }\n",baseRevision:await revision(page)}]);
+  await saved(page,2);
+  await send(page,created,[{type:"file.rename",version:3,path:"main.c",newPath:"other.c",baseRevision:await revision(page)}]);
+  await saved(page,3);
+  await send(page,created,[{type:"file.delete",version:4,path:"other.c",baseRevision:await revision(page)}]);
+  await saved(page,4);
+  await send(page,created,[{type:"file.delete",version:5,path:"main.py",baseRevision:await revision(page)}]);
+  await expect.poll(async()=>(await events(page)).some(event=>event.type==="server.error"&&event.message.includes("main.py cannot be deleted"))).toBe(true);
+  expect((await session(request,baseURL!,id)).files.map(file=>file.path)).toEqual(["main.py"]);
+});
+
 test("persistent reset replaces sources and synchronizes the new catalog",async({page,context,request,baseURL})=>{
   const id=await workspace(request,baseURL!);
   const a=await session(request,baseURL!,id),b=await session(request,baseURL!,id);
@@ -120,14 +170,15 @@ test("the app resets a persistent workspace in place and closes removed tabs",as
   await page.addInitScript(workspaceId=>localStorage.setItem("atomis.workspace.v1",workspaceId),id);
   await page.goto("/");
   await expect(page.locator(".tree-file")).toHaveCount(1);
-  page.on("dialog",dialog=>void dialog.accept());
   await page.locator(".tree-menu-btn").click();
   await page.getByRole("menuitem",{name:"Load demo workspace"}).click();
+  await confirmDialog(page,"Load demo");
   await expect.poll(()=>page.locator(".tree-file").count()).toBeGreaterThan(1);
   await page.getByRole("button",{name:"main.zig",exact:true}).click();
   await expect(page.locator(".global-status")).toContainText("main.zig");
   await page.locator(".tree-menu-btn").click();
   await page.getByRole("menuitem",{name:"Clear workspace"}).click();
+  await confirmDialog(page,"Clear workspace");
   await expect(page.locator(".tree-file")).toHaveCount(1);
   await expect(page.locator(".global-status")).toContainText("main.py");
   expect((await session(request,baseURL!,id)).files.map(file=>file.path)).toEqual(["main.py"]);

@@ -22,6 +22,7 @@ const SYNCED_KEYS: ReadonlySet<string> = new Set([
 	"atomis.chrome.v1",
 	"atomis.value-fmt.v1",
 	"atomis.vim-mode.v1",
+	"atomis.stdin-mode.v1",
 	"atomis.language.v1",
 	"atomis.scaffold.v1",
 	"atomis.inline-logs.v1",

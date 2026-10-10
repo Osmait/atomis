@@ -1,10 +1,11 @@
 import type React from "react";
 import type { TreeContextMenuState } from "../features/files/useProjectFiles.js";
-import { ENTRY_FILES } from "../features/editor/languagePacks.js";
 import { Lucide } from "../shared/ui/Lucide.js";
 
 interface TreeContextMenuProps {
 	menu: TreeContextMenuState;
+	/** The workspace language's entry: the run starts there, so it stays. */
+	entryFile: string;
 	onClose: () => void;
 	onOpen: (path: string) => void;
 	onRename: (path: string) => void;
@@ -17,6 +18,7 @@ interface TreeContextMenuProps {
  * actions targeted at the row's folder (or the root). */
 export function TreeContextMenu(props: TreeContextMenuProps): React.JSX.Element {
 	const { menu } = props;
+	const isEntry = menu.path === props.entryFile;
 	return (
 		<div
 			className="term-menu tree-context-menu"
@@ -42,7 +44,7 @@ export function TreeContextMenu(props: TreeContextMenuProps): React.JSX.Element 
 						<span>Open</span>
 					</button>
 					<button
-						disabled={ENTRY_FILES.has(menu.path)}
+						disabled={isEntry}
 						onClick={() => {
 							props.onClose();
 							if (menu.path) props.onRename(menu.path);
@@ -53,7 +55,7 @@ export function TreeContextMenu(props: TreeContextMenuProps): React.JSX.Element 
 						<span>Rename</span>
 					</button>
 					<button
-						disabled={ENTRY_FILES.has(menu.path)}
+						disabled={isEntry}
 						onClick={() => {
 							props.onClose();
 							if (menu.path) props.onDelete(menu.path);
@@ -63,6 +65,14 @@ export function TreeContextMenu(props: TreeContextMenuProps): React.JSX.Element 
 						<Lucide icon="trash-2" size={13} />
 						<span>Delete</span>
 					</button>
+					{/* Said, not just greyed out: two disabled items with no
+					    reason read as broken, and a touch screen has no
+					    tooltip to explain them. */}
+					{isEntry && (
+						<p className="term-menu-note">
+							The run starts here, so it stays put.
+						</p>
+					)}
 					<span className="term-menu-sep" />
 				</>
 			)}

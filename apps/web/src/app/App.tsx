@@ -27,8 +27,10 @@ import { StatusBar, ZenPill } from "./StatusBar.js";
 import type { TerminalTab } from "../features/terminal/Terminal.js";
 import { TerminalPane } from "../features/terminal/TerminalPane.js";
 import { WorkspacePicker } from "../features/workspaces/WorkspacePicker.js";
+import { DemoPicker } from "../features/demos/DemoPicker.js";
 import { updateVimAppCommands } from "../features/editor/vimExtensions.js";
 import { useDismissable } from "../shared/ui/useDismissable.js";
+import { confirmAction, ConfirmHost } from "../shared/ui/confirm.js";
 import { useEditorDecorations } from "../features/editor/useEditorDecorations.js";
 import { useGlobalShortcuts } from "./useGlobalShortcuts.js";
 import { useKeyboardNav, type TreeNavRow } from "./useKeyboardNav.js";
@@ -37,8 +39,8 @@ import { usePeekPanel } from "../features/editor/usePeekPanel.js";
 import { useQuickScope } from "../features/editor/useQuickScope.js";
 import { useProjectFiles } from "../features/files/useProjectFiles.js";
 import { useRuntimeEvents } from "../features/runtime/useRuntimeEvents.js";
+import { useRunInput } from "../features/runtime/useRunInput.js";
 import {
-	ENTRY_FILES,
 	languageForPath,
 	monacoLanguageFor,
 	WEB_LANGUAGE_PACKS,
@@ -136,6 +138,7 @@ export function App(): React.JSX.Element {
 	const [chrome, setChrome] = useState<ChromeSettings>(loadChrome);
 	const [paletteOpen, setPaletteOpen] = useState(false);
 	const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
+	const [demoPickerOpen, setDemoPickerOpen] = useState(false);
 	const [switching, setSwitching] = useState(false);
 
 
@@ -408,6 +411,36 @@ export function App(): React.JSX.Element {
 		[setDiagnostics],
 	);
 
+	const {
+		input,
+		setInput,
+		flushInput,
+		mode: stdinMode,
+		setMode: setStdinMode,
+	} = useRunInput(session, sendRuntime);
+	/** The interactive run whose input was ended with EOF: no more to type. */
+	const [stdinClosedRun, setStdinClosedRun] = useState<string>();
+	// Open while the run the server opened stdin for is the one running —
+	// another run starting, or this one ending, closes it by itself.
+	const stdinOpen =
+		runtime.stdinRunId !== undefined &&
+		runtime.stdinRunId === runtime.runId &&
+		runtime.stdinRunId !== stdinClosedRun &&
+		isBusy(runtime.runState);
+	const sendStdin = useCallback(
+		(text: string, eof: boolean): void => {
+			if (!session) return;
+			if (text) runtime.echoInput(text);
+			if (eof) setStdinClosedRun(runtime.stdinRunId);
+			sendRuntime({
+				type: "stdin.write",
+				sessionId: session.sessionId,
+				data: text,
+				...(eof ? { eof: true } : {}),
+			});
+		},
+		[runtime, sendRuntime, session],
+	);
 	const project = useProjectFiles({
 		session,
 		sendRuntime,
@@ -533,7 +566,7 @@ export function App(): React.JSX.Element {
 	// Opening a session is the same work on first load and on every
 	// workspace switch: tear the old one down, ask for a new one, and let
 	// the socket/LSP effects rebuild themselves around it.
-	const { switchToWorkspace, boot, retryBoot, recoverSession } = useSessionLifecycle({
+	const { switchToWorkspace, openDemo, boot, retryBoot, recoverSession } = useSessionLifecycle({
 		filesRef,
 		activeLanguageRef,
 		// Also the start of every switch attempt, which is why it clears the
@@ -588,6 +621,9 @@ export function App(): React.JSX.Element {
 
 	const run = useCallback((): void => {
 		if (!session) return;
+		// Typed input still waiting out its delay goes first: the run reads
+		// what is on screen.
+		flushInput();
 		const language =
 			languageForPath(activePathRef.current) ?? activeLanguageRef.current;
 		lastRunLanguageRef.current = language;
@@ -597,8 +633,10 @@ export function App(): React.JSX.Element {
 			version: versionRef.current,
 			reason: "manual",
 			language,
+			// Typed input only makes sense for a run you started and watch.
+			...(stdinMode === "terminal" ? { interactive: true } : {}),
 		});
-	}, [activePathRef, sendRuntime, session]);
+	}, [activePathRef, flushInput, sendRuntime, session, stdinMode]);
 	const stop = useCallback((): void => {
 		if (session)
 			sendRuntime({ type: "run.cancel", sessionId: session.sessionId });
@@ -792,7 +830,9 @@ export function App(): React.JSX.Element {
 	);
 	useDismissable(
 		Boolean(project.treeContextMenu),
-		".tree-context-menu",
+		// A row's ⋯ toggles the menu itself; dismissing on its press would
+		// close the menu only for the click to open it again.
+		".tree-context-menu, .file-actions",
 		useCallback(
 			() => setTreeContextMenu(undefined),
 			[setTreeContextMenu],
@@ -861,26 +901,24 @@ export function App(): React.JSX.Element {
 		],
 	);
 
-	const loadDemoWorkspace = useCallback((): void => {
-		if (
-			!window.confirm(
-				"Load the demo workspace? Current files will be replaced by every language's example.",
-			)
-		)
-			return;
-		if (!session) return;
+	const loadDemoWorkspace = useCallback(async (): Promise<void> => {
+		const confirmed = await confirmAction({
+			title: "Load the demo workspace?",
+			message: "Every file here is replaced by each language's example.",
+			confirmLabel: "Load demo",
+		});
+		if (!confirmed || !session) return;
 		sendRuntime({ type: "workspace.reset", sessionId: session.sessionId, version: ++versionRef.current, scaffold: "demo" });
 	}, [sendRuntime, session]);
 
-	const clearWorkspace = useCallback((): void => {
+	const clearWorkspace = useCallback(async (): Promise<void> => {
 		const entry = WEB_LANGUAGE_PACKS[session?.language ?? defaultTemplate].entryFile;
-		if (
-			!window.confirm(
-				`Clear the workspace? Only a fresh ${entry} will remain.`,
-			)
-		)
-			return;
-		if (!session) return;
+		const confirmed = await confirmAction({
+			title: "Clear the workspace?",
+			message: `Every file is deleted; only a fresh ${entry} remains.`,
+			confirmLabel: "Clear workspace",
+		});
+		if (!confirmed || !session) return;
 		sendRuntime({ type: "workspace.reset", sessionId: session.sessionId, version: ++versionRef.current, scaffold: "minimal" });
 	}, [defaultTemplate, sendRuntime, session]);
 
@@ -1020,6 +1058,9 @@ export function App(): React.JSX.Element {
 		: settings.sandbox
 			? "your code may call out; files stay confined"
 			: "sandbox off — the network is already open";
+	// The one file that cannot be renamed or deleted: the workspace
+	// language's entry. Other languages' main files are ordinary.
+	const entryFile = WEB_LANGUAGE_PACKS[session.language].entryFile;
 
 	return (
 		<main
@@ -1030,13 +1071,14 @@ export function App(): React.JSX.Element {
 			<div className="workspace">
 				{treeVisible && (
 					<Sidebar
-						activeIsEntry={ENTRY_FILES.has(activePath)}
+						activeIsEntry={activePath === entryFile}
 						activePath={activePath}
 						failsByFile={failsByFile}
 						focused={focusZone === "tree"}
-						onClearWorkspace={clearWorkspace}
+						onClearWorkspace={() => void clearWorkspace()}
 						onHideTree={() => updateLayout({ treeOpen: false })}
-						onLoadDemo={loadDemoWorkspace}
+						onLoadDemo={() => void loadDemoWorkspace()}
+						onOpenDemos={() => setDemoPickerOpen(true)}
 						onSelect={selectFile}
 						onSwitchWorkspace={openWorkspacePicker}
 						onToggleFolder={toggleFolder}
@@ -1124,6 +1166,13 @@ export function App(): React.JSX.Element {
 									.join(", ") || status
 							}
 							narrow={narrow}
+							input={input}
+							onInputChange={setInput}
+							onStdinEof={(text) => sendStdin(text, true)}
+							onStdinModeChange={setStdinMode}
+							onStdinSend={(text) => sendStdin(text, false)}
+							stdinMode={stdinMode}
+							stdinOpen={stdinOpen}
 							onAddDependency={(name) =>
 								sendRuntime({
 									type: "deps.add",
@@ -1182,11 +1231,12 @@ export function App(): React.JSX.Element {
 
 			{project.treeContextMenu && (
 				<TreeContextMenu
+					entryFile={entryFile}
 					menu={project.treeContextMenu}
 					onClose={() => project.setTreeContextMenu(undefined)}
 					onCreateFile={project.createFile}
 					onCreateFolder={project.createFolder}
-					onDelete={project.deleteFile}
+					onDelete={(path) => void project.deleteFile(path)}
 					onOpen={selectFile}
 					onRename={project.renameFile}
 				/>
@@ -1359,7 +1409,7 @@ export function App(): React.JSX.Element {
 					}}
 					onCreate={(name) => createNamedWorkspace(name, defaultTemplate)}
 					onDelete={(id) =>
-						deleteNamedWorkspace(id, id === session.workspace?.id)
+						void deleteNamedWorkspace(id, id === session.workspace?.id)
 					}
 					onOpen={switchToWorkspace}
 					onRename={renameNamedWorkspace}
@@ -1370,10 +1420,42 @@ export function App(): React.JSX.Element {
 						: {})}
 				/>
 			)}
+			{demoPickerOpen && session && (
+				<DemoPicker
+					onClose={() => setDemoPickerOpen(false)}
+					onOpen={(demo) => {
+						setDemoPickerOpen(false);
+						// A demo that reads typed input switches Run to it: that
+						// is what it is there to show.
+						if (demo.kind.stdinMode) setStdinMode(demo.kind.stdinMode);
+						openDemo({
+							language: demo.language,
+							files: demo.files,
+							...(demo.kind.input ? { input: demo.kind.input } : {}),
+						});
+					}}
+					runnable={(language) => {
+						const runner = session.toolchains[language]?.run;
+						return Boolean(runner) && runner !== "unavailable";
+					}}
+				/>
+			)}
+			{/* Last, so a confirmation opened from the workspace switcher
+			    sits above it. */}
+			<ConfirmHost />
 			{paletteOpen && (
 				<CommandPalette
 					activePath={activePath}
 					commands={[
+						{
+							id: "demos",
+							title: "Open a demo…",
+							hint: "examples",
+							act: () => {
+								setPaletteOpen(false);
+								setDemoPickerOpen(true);
+							},
+						},
 						{
 							id: "settings",
 							title: "Open settings",

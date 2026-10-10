@@ -26,6 +26,10 @@ export const MAX_SOURCE_BYTES = 1024 * 1024;
 export const MAX_PROJECT_FILES = 64;
 export const MAX_PROJECT_BYTES = 8 * 1024 * 1024;
 export const MAX_RUNTIME_MESSAGE_BYTES = MAX_SOURCE_BYTES + 64 * 1024;
+/** The Input text piped to a program's stdin (protocol.rs MAX_INPUT_BYTES). */
+export const MAX_INPUT_BYTES = 512 * 1024;
+/** One message of interactive input (protocol.rs MAX_TYPED_INPUT_BYTES). */
+export const MAX_TYPED_INPUT_BYTES = 64 * 1024;
 
 export const runStates = [
 	"idle",
@@ -148,6 +152,8 @@ export interface CreateSessionResponse {
 	sandbox: boolean;
 	/** Set when the session is attached to a persistent workspace. */
 	workspace?: WorkspaceMeta;
+	/** The text piped to the program's stdin on every run. */
+	input: string;
 }
 
 export const sandboxSupports = [
@@ -338,9 +344,37 @@ export const runtimeClientMessageSchema = z.discriminatedUnion("type", [
 			version: z.number().int().positive(),
 			reason: z.enum(["manual", "auto"]),
 			language: z.enum(languages).optional(),
+			// The program reads what is typed (stdin.write), not the Input.
+			interactive: z.boolean().optional(),
+		})
+		.strict(),
+	z
+		.object({
+			type: z.literal("stdin.write"),
+			sessionId,
+			data: z
+				.string()
+				.refine(
+					(data) => new TextEncoder().encode(data).length <= MAX_TYPED_INPUT_BYTES,
+					"Typed input exceeds 64 KiB",
+				),
+			eof: z.boolean().optional(),
 		})
 		.strict(),
 	z.object({ type: z.literal("run.cancel"), sessionId }).strict(),
+	z
+		.object({
+			type: z.literal("input.update"),
+			sessionId,
+			// Bytes, as the server counts them, not UTF-16 code units.
+			text: z
+				.string()
+				.refine(
+					(text) => new TextEncoder().encode(text).length <= MAX_INPUT_BYTES,
+					"Input exceeds 512 KiB",
+				),
+		})
+		.strict(),
 	z
 		.object({ type: z.literal("settings.update"), sessionId })
 		.extend(settings.shape)
@@ -434,6 +468,12 @@ export type RuntimeServerEvent =
 			documentVersion: number;
 			owner: string;
 			diagnostics: AppDiagnostic[];
+	  }
+	| {
+			/** This run's program reads typed input (stdin.write) while it runs. */
+			type: "stdin.open";
+			documentVersion: number;
+			runId: string;
 	  }
 	| {
 			type: "run.finished";

@@ -214,6 +214,31 @@ fn unsupportedInitializer(tree: Ast, init_node: Ast.Node.Index) bool {
     };
 }
 
+/// `allocator.alloc(T, n)` and its kin hand back memory with nothing in it
+/// yet. Rendering it right after the declaration reads that memory — and in
+/// a slice of slices (`[][]const u8`) the "strings" are garbage pointers the
+/// preview follows: a valid program died of a segfault it never caused.
+fn allocatesUninitialized(tree: Ast, init_node: Ast.Node.Index) bool {
+    var node = init_node;
+    while (true) switch (tree.nodeTag(node)) {
+        .@"try" => node = tree.nodeData(node).node,
+        .@"catch" => node = tree.nodeData(node).node_and_node[0],
+        .grouped_expression => node = tree.nodeData(node).node_and_token[0],
+        else => break,
+    };
+    var call_buffer: [1]Ast.Node.Index = undefined;
+    const call = tree.fullCall(&call_buffer, node) orelse return false;
+    if (tree.nodeTag(call.ast.fn_expr) != .field_access) return false;
+    const callee = tree.tokenSlice(tree.lastToken(call.ast.fn_expr));
+    const uninitialized = [_][]const u8{
+        "alloc",       "allocSentinel", "alignedAlloc",   "allocWithOptions",
+        "create",      "realloc",       "addManyAsSlice", "addManyAsArray",
+        "addOne",      "addManyAt",     "allocAdvanced",
+    };
+    for (uninitialized) |name| if (std.mem.eql(u8, callee, name)) return true;
+    return false;
+}
+
 fn probeId(uri: []const u8, start: usize, end: usize, name: []const u8) [32]u8 {
     var hash: [32]u8 = undefined;
     var hasher = std.crypto.hash.sha2.Sha256.init(.{});
@@ -311,6 +336,9 @@ pub fn instrument(
                 // Debug — inside a program that never asked to.
                 supported = false;
                 reason = "undefined value";
+            } else if (allocatesUninitialized(tree, init_node)) {
+                supported = false;
+                reason = "freshly allocated, still undefined";
             }
         } else {
             supported = false;
@@ -764,6 +792,34 @@ test "an undefined initializer is catalogued but never rendered" {
             try std.testing.expectEqualStrings("undefined value", probe.reason.?);
         }
     }
+}
+
+test "freshly allocated memory is catalogued but never rendered" {
+    // Rendering `keys` before it is filled read garbage slices: the demo
+    // mini-redis segfaulted inside the preview, never in its own code.
+    const source: [:0]const u8 =
+        "const std = @import(\"std\");\n" ++
+        "pub fn main() !void {\n" ++
+        "    const gpa = std.heap.page_allocator;\n" ++
+        "    const keys = try gpa.alloc([]const u8, 4);\n" ++
+        "    const one = (gpa.create(u32) catch unreachable);\n" ++
+        "    const filled = try gpa.dupe(u8, \"kept\");\n" ++
+        "    _ = .{ keys, one, filled };\n" ++
+        "}\n";
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const result = try instrument(arena.allocator(), source, "file:///alloc.zig", true, &.{}, 0);
+    var seen: usize = 0;
+    for (result.probes) |probe| {
+        if (std.mem.eql(u8, probe.name, "keys") or std.mem.eql(u8, probe.name, "one")) {
+            seen += 1;
+            try std.testing.expect(!probe.supported);
+            try std.testing.expectEqualStrings("freshly allocated, still undefined", probe.reason.?);
+        }
+        // Copying in is not allocating blank: that one shows its value.
+        if (std.mem.eql(u8, probe.name, "filled")) try std.testing.expect(probe.supported);
+    }
+    try std.testing.expectEqual(@as(usize, 2), seen);
 }
 
 test "generated code is not reinstrumented" {

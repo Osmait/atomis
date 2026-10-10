@@ -89,3 +89,14 @@ export async function doctorAvailable(
 		);
 	}, checkName);
 }
+
+/**
+ * Answers the app's confirmation dialog with its confirm button, named by
+ * the action ("Delete file", "Load demo"…). The app asks in its own dialog,
+ * not window.confirm, so `page.on("dialog")` never sees it.
+ */
+export async function confirmDialog(page: Page, action: string): Promise<void> {
+	const dialog = page.getByRole("alertdialog");
+	await dialog.getByRole("button", { name: action, exact: true }).click();
+	await expect(dialog).toHaveCount(0);
+}

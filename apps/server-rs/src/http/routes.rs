@@ -85,6 +85,14 @@ pub(crate) async fn create_session(
                 .into_response()
         }
     };
+    if let Some(input) = &request.input {
+        if request.workspace.is_some() {
+            return (StatusCode::BAD_REQUEST, Json(json!({ "error": "A workspace keeps its own input" }))).into_response();
+        }
+        if input.len() > protocol::MAX_INPUT_BYTES {
+            return (StatusCode::BAD_REQUEST, Json(json!({ "error": "Input exceeds 512 KiB" }))).into_response();
+        }
+    }
     if let Some(files) = &request.files {
         if request.workspace.is_some() {
             return (StatusCode::BAD_REQUEST, Json(json!({ "error": "Recovery cannot overwrite an existing workspace" }))).into_response();
@@ -102,7 +110,7 @@ pub(crate) async fn create_session(
         )
         .await
     {
-        Ok(response) => match restore_new_session(&state, response, request.files.as_deref()).await {
+        Ok(response) => match restore_new_session(&state, response, request.files.as_deref(), request.input).await {
             Ok(response) => Json(response).into_response(),
             Err(error) => internal(error),
         },
@@ -125,13 +133,22 @@ pub(crate) struct CreateWorkspaceRequest {
 async fn restore_new_session(
     state: &AppState, mut response: protocol::CreateSessionResponse,
     files: Option<&[protocol::SourceFile]>,
+    input: Option<String>,
 ) -> Result<protocol::CreateSessionResponse, String> {
+    if files.is_none() && input.is_none() {
+        return Ok(response);
+    }
+    let session = state.sessions.authenticate(&response.session_id, &response.auth_token).await.ok_or("Session vanished")?;
     if let Some(files) = files {
-        let session = state.sessions.authenticate(&response.session_id, &response.auth_token).await.ok_or("Session vanished")?;
         match session.replace_files(1, files).await {
             Ok(snapshot) => { response.files = snapshot.files; response.initial_source = snapshot.source; }
             Err(error) => { state.sessions.destroy(&response.session_id).await; return Err(error); }
         }
+    }
+    if let Some(input) = input {
+        // A scratch session: nothing is written to disk.
+        session.set_input(input.clone()).await?;
+        response.input = input;
     }
     Ok(response)
 }
@@ -221,7 +238,7 @@ pub(crate) async fn create_workspace(
     {
         Ok(created) => {
             let session_id = created.session_id.clone();
-            if let Err(error) = restore_new_session(&state, created, request.files.as_deref()).await {
+            if let Err(error) = restore_new_session(&state, created, request.files.as_deref(), None).await {
                 let _ = tokio::fs::remove_dir_all(&dir).await;
                 return internal(error);
             }

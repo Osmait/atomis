@@ -11,6 +11,11 @@ pub const MAX_SOURCE_BYTES: usize = 1024 * 1024;
 pub const MAX_PROJECT_FILES: usize = 64;
 pub const MAX_PROJECT_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_RUNTIME_MESSAGE_BYTES: usize = MAX_SOURCE_BYTES + 64 * 1024;
+/// The Input text piped to a program's stdin: an Advent of Code input is a
+/// few dozen KiB, and it has to fit a runtime message.
+pub const MAX_INPUT_BYTES: usize = 512 * 1024;
+/// One message of interactive input: a typed (or pasted) line.
+pub const MAX_TYPED_INPUT_BYTES: usize = 64 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -230,6 +235,9 @@ pub struct CreateSessionResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub workspace: Option<WorkspaceMeta>,
+    /// The text piped to the program's stdin on every run; the workspace's
+    /// saved one, or empty.
+    pub input: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
@@ -255,6 +263,9 @@ pub struct CreateSessionRequest {
     pub workspace: Option<String>,
     /// Restore a local mirror into a NEW scratch session only.
     pub files: Option<Vec<SourceFile>>,
+    /// The new scratch session's Input text (a demo's). Never a workspace's:
+    /// that one keeps its own.
+    pub input: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -414,6 +425,14 @@ pub enum RuntimeClientMessage {
         #[cfg_attr(test, ts(optional, type = "number"))]
         base_revision: Option<u64>,
     },
+    /// Replaces the Input text: what the program reads on stdin from the
+    /// next run on. Reruns like an edit when Auto Run is on.
+    #[serde(rename = "input.update")]
+    InputUpdate {
+        #[serde(rename = "sessionId")]
+        session_id: String,
+        text: String,
+    },
     #[serde(rename = "run.request")]
     RunRequest {
         #[serde(rename = "sessionId")]
@@ -422,6 +441,22 @@ pub enum RuntimeClientMessage {
         version: u64,
         reason: RunReason,
         language: Option<Language>,
+        /// The program reads what the user types (stdin.write) rather than
+        /// the Input text, with minutes rather than seconds to wait for it.
+        #[serde(default)]
+        #[cfg_attr(test, ts(optional))]
+        interactive: Option<bool>,
+    },
+    /// Typed input for the interactive run's program; `eof` closes its
+    /// stdin after `data`.
+    #[serde(rename = "stdin.write")]
+    StdinWrite {
+        #[serde(rename = "sessionId")]
+        session_id: String,
+        data: String,
+        #[serde(default)]
+        #[cfg_attr(test, ts(optional))]
+        eof: Option<bool>,
     },
     #[serde(rename = "run.cancel")]
     RunCancel {
@@ -500,6 +535,8 @@ impl RuntimeClientMessage {
             | RuntimeClientMessage::FileRename { session_id, .. }
             | RuntimeClientMessage::FileDelete { session_id, .. }
             | RuntimeClientMessage::WorkspaceReset { session_id, .. }
+            | RuntimeClientMessage::InputUpdate { session_id, .. }
+            | RuntimeClientMessage::StdinWrite { session_id, .. }
             | RuntimeClientMessage::RunRequest { session_id, .. }
             | RuntimeClientMessage::RunCancel { session_id }
             | RuntimeClientMessage::SettingsUpdate { session_id, .. }
@@ -577,6 +614,18 @@ impl RuntimeClientMessage {
             RuntimeClientMessage::RunRequest { version, .. }
             | RuntimeClientMessage::WorkspaceReset { version, .. } => check_version(*version),
             RuntimeClientMessage::RunCancel { .. } => Ok(()),
+            RuntimeClientMessage::InputUpdate { text, .. } => {
+                if text.len() > MAX_INPUT_BYTES {
+                    return Err("Input exceeds 512 KiB".into());
+                }
+                Ok(())
+            }
+            RuntimeClientMessage::StdinWrite { data, .. } => {
+                if data.len() > MAX_TYPED_INPUT_BYTES {
+                    return Err("Typed input exceeds 64 KiB".into());
+                }
+                Ok(())
+            }
             RuntimeClientMessage::SettingsUpdate {
                 debounce_ms,
                 timeout_ms,
@@ -835,6 +884,13 @@ pub enum ServerEvent {
         document_version: u64,
         owner: String,
         diagnostics: Vec<AppDiagnostic>,
+    },
+    /// This run's program reads typed input (stdin.write) while it runs.
+    #[serde(rename = "stdin.open", rename_all = "camelCase")]
+    StdinOpen {
+        #[cfg_attr(test, ts(type = "number"))]
+        document_version: u64,
+        run_id: String,
     },
     #[serde(rename = "run.finished", rename_all = "camelCase")]
     RunFinished {

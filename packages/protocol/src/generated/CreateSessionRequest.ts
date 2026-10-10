@@ -3,12 +3,17 @@ import type { Language } from "./Language";
 import type { SourceFile } from "./SourceFile";
 import type { WorkspaceScaffold } from "./WorkspaceScaffold";
 
-export type CreateSessionRequest = { language: Language | null, scaffold: WorkspaceScaffold | null,
+export type CreateSessionRequest = { language: Language | null, scaffold: WorkspaceScaffold | null, 
 /**
  * Attach to a persistent workspace instead of a throwaway session.
  */
-workspace: string | null,
+workspace: string | null, 
 /**
  * Restore a local mirror into a NEW scratch session only.
  */
-files: Array<SourceFile> | null, };
+files: Array<SourceFile> | null, 
+/**
+ * The new scratch session's Input text (a demo's). Never a workspace's:
+ * that one keeps its own.
+ */
+input: string | null, };

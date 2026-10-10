@@ -17,4 +17,9 @@ sandbox: boolean,
 /**
  * The persistent workspace this session is attached to, if any.
  */
-workspace?: WorkspaceMeta, };
+workspace?: WorkspaceMeta, 
+/**
+ * The text piped to the program's stdin on every run; the workspace's
+ * saved one, or empty.
+ */
+input: string, };
