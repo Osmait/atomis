@@ -339,6 +339,13 @@ pub fn child_env(policy: &SandboxPolicy) -> Vec<(String, String)> {
         ("GOPATH".to_string(), at(".gopath")),
         ("GOMODCACHE".to_string(), at(".gomodcache")),
         ("PYTHONPYCACHEPREFIX".to_string(), at(".pycache")),
+        // Caches a tool reads from its own variable before XDG_CACHE_HOME.
+        // Set here so one inherited from the server's environment (CI's
+        // setup-uv sets UV_CACHE_DIR) cannot point outside the sandbox and
+        // fail every install. The values are where they land by default.
+        ("UV_CACHE_DIR".to_string(), at(".cache/uv")),
+        ("GOCACHE".to_string(), at(".cache/go-build")),
+        ("npm_config_cache".to_string(), at(".npm")),
     ];
     if let Some(rustup) = rustup_home(policy.home.as_deref(), std::env::var_os("RUSTUP_HOME").as_deref()) {
         env.push(("RUSTUP_HOME".to_string(), rustup));
@@ -805,6 +812,9 @@ mod tests {
             "CARGO_HOME",
             "GOPATH",
             "PYTHONPYCACHEPREFIX",
+            "UV_CACHE_DIR",
+            "GOCACHE",
+            "npm_config_cache",
         ] {
             assert!(
                 env[key].starts_with("/tmp/atomis/abc"),
