@@ -329,6 +329,27 @@ test("a demo opens from the gallery in a scratch session, ready to answer", asyn
 	await expect(field).toHaveCount(0);
 });
 
+test("the mini Redis demo keeps its data from one run to the next", async ({
+	page,
+}) => {
+	await openClean(page);
+	await treeAction(page, "Open a demo…");
+	await page
+		.getByRole("dialog", { name: "Demos" })
+		.getByRole("button", { name: "Mini Redis in Python" })
+		.click();
+	const terminal = page.locator(".panel-content");
+	// Auto Run plays the sample: a first visit, on a new database.
+	await expect(terminal).toContainText("loaded 0 keys");
+	await expect(terminal).toContainText("redis> (integer) 1");
+	// An edit is a new run, a new process: the count comes from the file.
+	await page.getByRole("textbox", { name: "Editor content" }).focus();
+	await page.keyboard.press("ControlOrMeta+End");
+	await page.keyboard.type("\n# rerun\n");
+	await expect(terminal).toContainText("loaded 2 keys");
+	await expect(terminal).toContainText("redis> (integer) 2");
+});
+
 test("Vim mode keeps native clipboard shortcuts", async ({
 	page,
 	context,

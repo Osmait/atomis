@@ -15,6 +15,14 @@ import replTs from "../../../../../demos/repl/main.ts?raw";
 import replPy from "../../../../../demos/repl/main.py?raw";
 import replC from "../../../../../demos/repl/main.c?raw";
 import replCpp from "../../../../../demos/repl/main.cpp?raw";
+import redisZig from "../../../../../demos/redis/main.zig?raw";
+import redisRust from "../../../../../demos/redis/main.rs?raw";
+import redisGo from "../../../../../demos/redis/main.go?raw";
+// eslint-disable-next-line import/default
+import redisTs from "../../../../../demos/redis/main.ts?raw";
+import redisPy from "../../../../../demos/redis/main.py?raw";
+import redisC from "../../../../../demos/redis/main.c?raw";
+import redisCpp from "../../../../../demos/redis/main.cpp?raw";
 
 /** One idea, shown in every language that has a take on it. */
 export interface DemoKind {
@@ -52,6 +60,24 @@ export const DEMO_KINDS: readonly DemoKind[] = [
 			py: replPy,
 			c: replC,
 			cpp: replCpp,
+		},
+	},
+	{
+		id: "redis",
+		title: "Mini Redis",
+		summary:
+			"A key-value store with a redis-cli REPL — SET, GET, DEL, EXISTS, INCR, KEYS, DBSIZE, FLUSHALL. Every write goes to a log file that the next run replays into memory: run it twice and the data is still there.",
+		// Each Auto Run bumps `visits`: persistence you can watch.
+		input: "SET greeting hello\nINCR visits\nGET greeting\nKEYS\nQUIT\n",
+		stdinMode: "terminal",
+		sources: {
+			zig: redisZig,
+			rust: redisRust,
+			go: redisGo,
+			ts: redisTs,
+			py: redisPy,
+			c: redisC,
+			cpp: redisCpp,
 		},
 	},
 ];

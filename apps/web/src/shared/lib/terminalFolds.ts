@@ -45,13 +45,24 @@ function sourceKey(entry: TerminalEntry): string | undefined {
  * produced by the same source statement (loop traces) and the error trace
  * that follows a panic line. Every other entry stays a plain line.
  */
-export function groupOutput(entries: readonly TerminalEntry[]): TerminalRow[] {
+export function groupOutput(
+	entries: readonly TerminalEntry[],
+	options: {
+		/**
+		 * Fold runs of lines from one statement. Off for a program reading
+		 * stdin: a REPL answers every command from the same print, and that
+		 * conversation is the output, not a trace to tuck away.
+		 */
+		loops?: boolean;
+	} = {},
+): TerminalRow[] {
+	const foldLoops = options.loops ?? true;
 	const rows: TerminalRow[] = [];
 	let index = 0;
 	while (index < entries.length) {
 		const entry = entries[index];
 		if (!entry) break;
-		const key = sourceKey(entry);
+		const key = foldLoops ? sourceKey(entry) : undefined;
 		if (key) {
 			let end = index;
 			while (end < entries.length) {

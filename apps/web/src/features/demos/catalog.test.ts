@@ -20,6 +20,13 @@ describe("demo catalog", () => {
 		);
 	});
 
+	it("has the mini Redis in all seven languages", () => {
+		const redis = DEMO_KINDS.find((kind) => kind.id === "redis");
+		expect(demosOf(redis!).map((demo) => demo.language)).toEqual(
+			Object.keys(WEB_LANGUAGE_PACKS),
+		);
+	});
+
 	it("gives every demo a unique id", () => {
 		const ids = DEMO_KINDS.flatMap((kind) => demosOf(kind).map((demo) => demo.id));
 		expect(new Set(ids).size).toBe(ids.length);

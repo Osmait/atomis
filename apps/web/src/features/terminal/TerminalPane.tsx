@@ -157,7 +157,7 @@ export function TerminalPane(props: TerminalPaneProps): React.JSX.Element {
 	const failingCount = totalFails(failsByFile);
 	const testsDone = !busy && testSummary !== undefined;
 
-	const outputRows = groupOutput(output);
+	const outputRows = groupOutput(output, { loops: input === "" });
 	const tone = {
 		tests: testsTone({ testsDone, testCount: tests.length, failingCount }),
 		term: termTone({
