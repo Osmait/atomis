@@ -200,6 +200,17 @@ async fn main() {
         .route("/api/metrics", get(metrics_route))
         .route("/api/sessions", post(create_session).layer(axum::extract::DefaultBodyLimit::max(protocol::MAX_PROJECT_BYTES * 6 + 65536)))
         .route("/api/sessions/{id}", get(session_alive))
+        // A program run as a server, reached on the session's port.
+        .route(
+            "/api/sessions/{id}/http",
+            axum::routing::any(http::proxy::http_proxy_root)
+                .layer(axum::extract::DefaultBodyLimit::max(http::proxy::MAX_PROXY_BODY_BYTES)),
+        )
+        .route(
+            "/api/sessions/{id}/http/{*path}",
+            axum::routing::any(http::proxy::http_proxy)
+                .layer(axum::extract::DefaultBodyLimit::max(http::proxy::MAX_PROXY_BODY_BYTES)),
+        )
         .route(
             "/api/workspaces",
             get(list_workspaces).post(create_workspace).layer(axum::extract::DefaultBodyLimit::max(protocol::MAX_PROJECT_BYTES * 6 + 65536)),

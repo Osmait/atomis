@@ -173,7 +173,9 @@ pub async fn run(
     };
 
     emit(RunnerEvent::State(RunState::Instrumenting));
-    let test_catalog = discover_py_tests(&snapshot.files);
+    // Not as a server: the tests import main, which would start the server
+    // a second time and fight it for its port.
+    let test_catalog = if settings.serve { Vec::new() } else { discover_py_tests(&snapshot.files) };
     emit(RunnerEvent::TestCatalog(test_catalog.clone()));
     let _ = reset_generated(&session.root).await;
     let instrumenter = packs::instrumenter_path(Language::Py);
@@ -233,7 +235,7 @@ pub async fn run(
             command: python_command(&session.root),
             args: vec!["-u".into(), entry.to_string_lossy().into_owned()],
             cwd: session.root.join("src"),
-            env: py_env(&session.root, true),
+            env: [py_env(&session.root, true), session.program_env(settings)].concat(),
             timeout_ms: settings.program_timeout_ms(),
             parse_stdout_markers: true,
             stdin: session.stdin().await,

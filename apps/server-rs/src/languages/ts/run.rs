@@ -230,7 +230,9 @@ pub async fn run(
     };
 
     emit(RunnerEvent::State(RunState::Instrumenting));
-    let test_catalog = discover_ts_tests(&snapshot.files);
+    // Not as a server: the tests import main, which would start the server
+    // a second time and fight it for its port.
+    let test_catalog = if settings.serve { Vec::new() } else { discover_ts_tests(&snapshot.files) };
     let mut tests = (!test_catalog.is_empty()).then(|| start_tests(session, settings, &test_catalog, &cancel));
     emit(RunnerEvent::TestCatalog(test_catalog.clone()));
     let _ = reset_generated(&session.root).await;
@@ -318,7 +320,7 @@ pub async fn run(
                 entry.to_string_lossy().into_owned(),
             ],
             cwd: session.root.join("src"),
-            env: Vec::new(),
+            env: session.program_env(settings),
             timeout_ms: settings.program_timeout_ms(),
             parse_stdout_markers: true,
             stdin: session.stdin().await,

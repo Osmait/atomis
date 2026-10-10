@@ -22,4 +22,8 @@ workspace?: WorkspaceMeta,
  * The text piped to the program's stdin on every run; the workspace's
  * saved one, or empty.
  */
-input: string, };
+input: string, 
+/**
+ * The port the program listens on when run as a server (its PORT).
+ */
+httpPort: number, };

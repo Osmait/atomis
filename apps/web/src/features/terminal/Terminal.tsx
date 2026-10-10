@@ -7,7 +7,7 @@ import type { TerminalRow } from "../../shared/lib/terminalFolds.js";
 import type { LogSourceLocation, TerminalEntry } from "../../shared/types.js";
 import { Lucide } from "../../shared/ui/Lucide.js";
 
-export type TerminalTab = "output" | "problems" | "runtime" | "deps" | "input";
+export type TerminalTab = "output" | "problems" | "runtime" | "deps" | "input" | "http";
 
 interface OutputEntryProps {
 	entry: TerminalEntry;
@@ -119,6 +119,9 @@ interface TerminalProps {
 	inputLines: string;
 	/** Where an interactive run's program reads typed input, while it runs. */
 	stdinLine?: React.ReactNode;
+	httpPanel: React.ReactNode;
+	/** The port a program run as a server is serving on right now. */
+	servingPort?: number | undefined;
 	children?: React.ReactNode;
 }
 
@@ -198,11 +201,22 @@ export function Terminal(props: TerminalProps): React.JSX.Element {
 								? `Dependencies${props.depsCount ? ` ${props.depsCount}` : ""}`
 								: tab === "input"
 									? "Input"
-									: "Runtime"}
+									: tab === "http"
+										? "HTTP"
+										: "Runtime"}
 					</span>
 				)}
 				{/* Output is where a run's effect shows, so that is where to
 				    say it read something — and the way to what it read. */}
+				{tab === "output" && props.servingPort !== undefined && (
+					<button
+						className="term-stdin-chip serving"
+						onClick={() => props.onTab("http")}
+						title="The program is serving — open HTTP to call it"
+					>
+						● serving · PORT {props.servingPort}
+					</button>
+				)}
 				{tab === "output" && props.inputLines && (
 					<button
 						className="term-stdin-chip"
@@ -350,6 +364,18 @@ export function Terminal(props: TerminalProps): React.JSX.Element {
 								<span>Input</span>
 								{props.inputLines && <b>{props.inputLines}</b>}
 							</button>
+							<button
+								className={tab === "http" ? "on" : ""}
+								onClick={() => {
+									props.onTab("http");
+									setMenuOpen(false);
+								}}
+								role="menuitem"
+							>
+								<Lucide icon="code" size={13} />
+								<span>HTTP</span>
+								{props.servingPort !== undefined && <b>serving</b>}
+							</button>
 							<span className="term-menu-sep" />
 							<button
 								onClick={() => {
@@ -459,6 +485,7 @@ export function Terminal(props: TerminalProps): React.JSX.Element {
 				)}
 				{tab === "deps" && props.depsPanel}
 				{tab === "input" && props.inputPanel}
+				{tab === "http" && props.httpPanel}
 				{tab === "runtime" && (
 					<div className="runtime-grid">
 						<span>State</span>

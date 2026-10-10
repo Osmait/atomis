@@ -34,18 +34,46 @@ pub struct SessionSettings {
     /// Set on the run's own copy, never by the client: the program reads
     /// what the user types, so it gets time to wait for it.
     pub interactive: bool,
+    /// Run the program as a server: it gets PORT, may listen there (and
+    /// nowhere else), and runs until stopped, edited or idle — reached
+    /// through the session's HTTP proxy.
+    pub serve: bool,
 }
 
 impl SessionSettings {
     /// The user program's time budget. Everything else — compilers, test
     /// runs — keeps `timeout_ms` even in an interactive run.
     pub fn program_timeout_ms(&self) -> u64 {
-        if self.interactive {
+        if self.serve {
+            crate::domain::scheduler::SERVER_TIMEOUT_MS
+        } else if self.interactive {
             crate::domain::scheduler::INTERACTIVE_TIMEOUT_MS
         } else {
             self.timeout_ms
         }
     }
+}
+
+/// Where sessions' servers listen: below Linux's ephemeral range
+/// (32768–60999), where an outgoing connection could be holding the port.
+const HTTP_PORTS: std::ops::Range<u16> = 20_000..30_000;
+
+/// A port for a new session's server: free right now and no other
+/// session's. Checked by binding it, so another process on the machine is
+/// not handed out either.
+fn allocate_http_port(taken: &std::collections::HashSet<u16>) -> u16 {
+    use rand::Rng;
+    let free = |port: u16| {
+        !taken.contains(&port) && std::net::TcpListener::bind(("127.0.0.1", port)).is_ok()
+    };
+    let mut rng = rand::thread_rng();
+    for _ in 0..64 {
+        let port = rng.gen_range(HTTP_PORTS);
+        if free(port) {
+            return port;
+        }
+    }
+    HTTP_PORTS.clone().find(|port| free(*port)).unwrap_or(HTTP_PORTS.start)
 }
 
 impl Default for SessionSettings {
@@ -59,6 +87,7 @@ impl Default for SessionSettings {
             network: false,
             manual_probe_ids: Vec::new(),
             interactive: false,
+            serve: false,
         }
     }
 }
@@ -107,6 +136,13 @@ pub struct Session {
     pub workspace_id: Option<String>,
     /// The Input text, piped to the program's stdin on every run.
     pub input: Mutex<Arc<str>>,
+    /// Where this session's program listens when run as a server.
+    pub http_port: u16,
+    /// When the proxy last carried a request, in ms since the epoch: what
+    /// keeps an idle server from running for nothing.
+    pub last_http_ms: std::sync::atomic::AtomicU64,
+    /// Installed when the runtime socket attaches, before the first run.
+    pub pending_dependencies: std::sync::Mutex<Vec<String>>,
     /// Set by the scheduler for an interactive run: what the user types,
     /// taken by the program's spawn in place of the Input text.
     pub live_stdin: Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<crate::exec::supervisor::LiveInput>>>,
@@ -122,14 +158,33 @@ impl Session {
         if !settings.sandbox {
             return None;
         }
+        // Widening happens here, once, so every spawn of the session agrees
+        // on what the program is allowed to reach — and, as a server, on the
+        // one port it may listen on.
+        let mut policy = std::borrow::Cow::Borrowed(&*self.sandbox_policy);
         if settings.network {
-            // Widening happens here, once, so every spawn of the session
-            // agrees on what the program is allowed to reach.
-            return Some(std::sync::Arc::new(crate::exec::sandbox::with_outbound_network(
-                &self.sandbox_policy,
-            )));
+            policy = std::borrow::Cow::Owned(crate::exec::sandbox::with_outbound_network(&policy));
         }
-        Some(std::sync::Arc::clone(&self.sandbox_policy))
+        if settings.serve {
+            policy = std::borrow::Cow::Owned(crate::exec::sandbox::with_listen_port(&policy, self.http_port));
+        }
+        Some(match policy {
+            std::borrow::Cow::Borrowed(_) => std::sync::Arc::clone(&self.sandbox_policy),
+            std::borrow::Cow::Owned(widened) => std::sync::Arc::new(widened),
+        })
+    }
+
+    /// What the program's environment adds: where to listen, as a server.
+    /// `PORT` is what most frameworks read; `HOST` keeps it off other
+    /// interfaces, since the proxy reaches it on loopback.
+    pub fn program_env(&self, settings: &SessionSettings) -> Vec<(String, String)> {
+        if !settings.serve {
+            return Vec::new();
+        }
+        vec![
+            ("PORT".to_string(), self.http_port.to_string()),
+            ("HOST".to_string(), "127.0.0.1".to_string()),
+        ]
     }
 
     /// What the next run's program reads on stdin.
@@ -531,6 +586,11 @@ impl SessionManager {
     ) -> Result<CreateSessionResponse, String> {
         let id = random_hex(16);
         let token = random_base64url(32);
+        let http_port = {
+            let sessions = self.sessions.lock().await;
+            let taken = sessions.values().map(|session| session.http_port).collect();
+            allocate_http_port(&taken)
+        };
         // A persistent workspace keeps its own directory; an ephemeral
         // session gets a fresh one under the temp root.
         let workspace_meta = match &workspace {
@@ -735,6 +795,9 @@ impl SessionManager {
             sandbox_policy,
             workspace_id: workspace.clone(),
             input: Mutex::new(Arc::from(input.as_str())),
+            http_port,
+            last_http_ms: std::sync::atomic::AtomicU64::new(0),
+            pending_dependencies: std::sync::Mutex::new(Vec::new()),
             live_stdin: Mutex::new(None),
         });
         if let Some(workspace_id) = &workspace {
@@ -776,6 +839,7 @@ impl SessionManager {
             sandbox: crate::exec::sandbox::detect_support().available(),
             workspace: workspace_meta.map(|(_, meta)| meta),
             input,
+            http_port,
         })
     }
 

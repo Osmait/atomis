@@ -657,3 +657,293 @@
 	}
 }
 
+
+/* ── HTTP (programs run as servers) ─────────────────────── */
+
+.http-panel {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 10px 12px;
+	flex: 1;
+	min-height: 0;
+	overflow: auto;
+}
+
+.http-panel > * {
+	flex-shrink: 0;
+}
+
+.http-serve {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 12.5px;
+	color: var(--text);
+}
+
+.http-serve label {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	cursor: pointer;
+}
+
+.http-serve-state {
+	margin-left: auto;
+	font-size: 11px;
+	color: var(--dim);
+}
+
+.http-serve-state.on {
+	color: var(--green);
+}
+
+.http-hint {
+	margin: 0;
+	font-size: 11.5px;
+	line-height: 1.5;
+	color: var(--dim);
+}
+
+.http-hint code {
+	color: var(--subtext);
+}
+
+.http-request {
+	display: flex;
+	gap: 6px;
+}
+
+.http-request select,
+.http-request input,
+.http-panel textarea {
+	background: var(--panel-side);
+	border: 1px solid var(--panel-border);
+	border-radius: 6px;
+	color: var(--text);
+	font: inherit;
+	padding: 5px 8px;
+}
+
+.http-request input {
+	flex: 1;
+	min-width: 0;
+}
+
+.http-request select:focus,
+.http-request input:focus,
+.http-panel textarea:focus {
+	border-color: var(--mauve);
+	outline: none;
+}
+
+.http-request button {
+	padding: 0 14px;
+	border-radius: 6px;
+	background: var(--mauve);
+	color: var(--base);
+	font-weight: 600;
+}
+
+.http-panel textarea {
+	width: 100%;
+	min-height: 64px;
+	resize: vertical;
+	white-space: pre;
+	line-height: 1.5;
+}
+
+.http-section summary {
+	font-size: 11.5px;
+	color: var(--subtext);
+	cursor: pointer;
+	margin-bottom: 4px;
+}
+
+.http-response {
+	border-top: 1px solid var(--surface0);
+	padding-top: 8px;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.http-response header {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 10px;
+	font-size: 11.5px;
+	color: var(--dim);
+}
+
+.http-status.ok {
+	color: var(--green);
+}
+
+.http-status.redirect {
+	color: var(--yellow, var(--peach));
+}
+
+.http-status.client {
+	color: var(--peach);
+}
+
+.http-status.error,
+.http-error {
+	color: var(--red);
+}
+
+.http-error {
+	margin: 0;
+	font-size: 12px;
+	line-height: 1.5;
+}
+
+.http-response-body {
+	margin: 0;
+	padding: 8px 10px;
+	background: var(--panel-side);
+	border-radius: 6px;
+	max-height: 320px;
+	overflow: auto;
+	font-size: 12px;
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+.http-headers {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	font-size: 11.5px;
+	color: var(--subtext);
+	word-break: break-all;
+}
+
+.http-history {
+	border-top: 1px solid var(--surface0);
+	padding-top: 8px;
+	display: flex;
+	flex-direction: column;
+}
+
+.http-history h4 {
+	margin: 0 0 4px;
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--dim);
+}
+
+.http-history button {
+	display: flex;
+	gap: 8px;
+	padding: 4px 6px;
+	border-radius: 4px;
+	font-size: 12px;
+	color: var(--subtext);
+	text-align: left;
+}
+
+.http-history button:hover {
+	background: var(--surface0-dim);
+	color: var(--text);
+}
+
+.http-history-path {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.term-stdin-chip.serving {
+	color: var(--green);
+}
+
+@media (pointer: coarse) {
+	.http-request button,
+	.http-request select,
+	.http-request input {
+		min-height: 40px;
+	}
+}
+
+.http-endpoints {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.http-endpoints h4 {
+	margin: 0 0 4px;
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--dim);
+}
+
+.http-endpoint {
+	display: flex;
+	align-items: center;
+	border-radius: 4px;
+}
+
+.http-endpoint:hover {
+	background: var(--surface0-dim);
+}
+
+.http-endpoint-pick {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 4px 6px;
+	font-size: 12px;
+	color: var(--text);
+	text-align: left;
+}
+
+.http-method {
+	min-width: 52px;
+	font-size: 10.5px;
+	color: var(--subtext);
+}
+
+.http-method.get {
+	color: var(--green);
+}
+
+.http-method.post {
+	color: var(--yellow);
+}
+
+.http-method.put,
+.http-method.patch {
+	color: var(--peach);
+}
+
+.http-method.delete {
+	color: var(--red);
+}
+
+.http-endpoint-path {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.http-endpoint-source {
+	padding: 4px 6px;
+	font-size: 10.5px;
+	color: var(--dim);
+	white-space: nowrap;
+}
+
+.http-endpoint-source:hover {
+	color: var(--mauve);
+}

@@ -72,6 +72,8 @@ interface TerminalPaneProps {
 	stdinOpen: boolean;
 	onStdinSend: (text: string) => void;
 	onStdinEof: (text: string) => void;
+	httpPanel: React.ReactNode;
+	servingPort?: number | undefined;
 }
 
 /**
@@ -125,6 +127,8 @@ export function TerminalPane(props: TerminalPaneProps): React.JSX.Element {
 		stdinOpen,
 		onStdinSend,
 		onStdinEof,
+		httpPanel,
+		servingPort,
 	} = props;
 	const {
 		runState,
@@ -229,6 +233,8 @@ export function TerminalPane(props: TerminalPaneProps): React.JSX.Element {
 							{...(depsManifest ? { manifest: depsManifest } : {})}
 						/>
 					}
+					httpPanel={httpPanel}
+					servingPort={servingPort}
 					inputLines={input ? lineCountLabel(input) : ""}
 					inputPanel={
 						<InputPanel

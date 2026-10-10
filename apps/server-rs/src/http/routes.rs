@@ -85,6 +85,17 @@ pub(crate) async fn create_session(
                 .into_response()
         }
     };
+    if let Some(dependencies) = &request.dependencies {
+        if request.workspace.is_some() {
+            return (StatusCode::BAD_REQUEST, Json(json!({ "error": "A workspace installs its own dependencies" }))).into_response();
+        }
+        if dependencies.len() > protocol::MAX_SESSION_DEPENDENCIES {
+            return (StatusCode::BAD_REQUEST, Json(json!({ "error": "Too many dependencies" }))).into_response();
+        }
+        if let Some(error) = dependencies.iter().find_map(|name| protocol::validate_dependency_name(name).err()) {
+            return (StatusCode::BAD_REQUEST, Json(json!({ "error": error }))).into_response();
+        }
+    }
     if let Some(input) = &request.input {
         if request.workspace.is_some() {
             return (StatusCode::BAD_REQUEST, Json(json!({ "error": "A workspace keeps its own input" }))).into_response();
@@ -111,7 +122,15 @@ pub(crate) async fn create_session(
         .await
     {
         Ok(response) => match restore_new_session(&state, response, request.files.as_deref(), request.input).await {
-            Ok(response) => Json(response).into_response(),
+            Ok(response) => {
+                if let Some(dependencies) = request.dependencies.filter(|names| !names.is_empty()) {
+                    if let Some(session) = state.sessions.authenticate(&response.session_id, &response.auth_token).await {
+                        *session.pending_dependencies.lock().unwrap_or_else(std::sync::PoisonError::into_inner) =
+                            dependencies.iter().map(|name| name.trim().to_string()).collect();
+                    }
+                }
+                Json(response).into_response()
+            }
             Err(error) => internal(error),
         },
         Err(error) => (

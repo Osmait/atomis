@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
-import type { CreateSessionResponse, Language } from "../../packages/protocol/src/index.js";
+import type { CreateSessionResponse, JsonValue, Language } from "../../packages/protocol/src/index.js";
 
 /**
  * Every demo, run for real: opened the way the gallery opens it (its files
@@ -25,6 +25,7 @@ async function openDemo(
 	baseURL: string,
 	demo: string,
 	language: Language,
+	dependencies: string[] = [],
 ): Promise<CreateSessionResponse> {
 	// Specs are transpiled to CJS (no import.meta); the suite runs from the
 	// repository root, as security.spec does.
@@ -32,7 +33,7 @@ async function openDemo(
 	const source = readFileSync(resolvePath(process.cwd(), "demos", demo, entry), "utf8");
 	const response = await request.post("/api/sessions", {
 		headers: { origin: baseURL },
-		data: { language, files: [{ path: entry, source }] },
+		data: { language, files: [{ path: entry, source }], ...(dependencies.length ? { dependencies } : {}) },
 	});
 	expect(response.ok()).toBe(true);
 	const created = (await response.json()) as CreateSessionResponse;
@@ -172,5 +173,152 @@ for (const language of Object.keys(ENTRY) as Language[]) {
 		expect(third).toBe(
 			["loaded 0 keys (4 log entries) from redis.aof", ready, "redis> (integer) 0", "redis> bye"].join("\n"),
 		);
+	});
+}
+
+/** [method, path, body or null, status, expected JSON] — "" is an empty
+ * body, null is not compared. The same file scripts/rest-check.mjs reads. */
+type Step = [string, string, string | null, number, JsonValue];
+const CONTRACT = (
+	JSON.parse(readFileSync(resolvePath(process.cwd(), "demos/rest/contract.json"), "utf8")) as { steps: Step[] }
+).steps;
+
+/** JSON with object keys in order: languages disagree on key order. */
+const canonical = (value: JsonValue): string =>
+	JSON.stringify(value, (_, inner: JsonValue) =>
+		inner && typeof inner === "object" && !Array.isArray(inner)
+			? Object.fromEntries(Object.entries(inner).toSorted(([a], [b]) => a.localeCompare(b)))
+			: inner,
+	);
+
+/**
+ * Turns server mode on for the session, waits for the program to answer
+ * through the proxy (installs and a first compile can take minutes), then
+ * walks the contract. Returns each step's problem, or "" when it held.
+ */
+async function serveContract(page: Page, created: CreateSessionResponse, readyWithinMs: number): Promise<string[]> {
+	await page.goto("/api/health");
+	return page.evaluate(
+		async ({ session, contract, readyWithinMs: within }) => {
+			// Passed as text: the steps' JSON type is too deep for evaluate's.
+			const steps = JSON.parse(contract) as [string, string, string | null][];
+			const url = new URL("/ws/runtime", location.href);
+			url.protocol = "ws:";
+			url.searchParams.set("sessionId", session.sessionId);
+			url.searchParams.set("token", session.authToken);
+			const socket = new WebSocket(url);
+			// What the session said, for when the server never comes up: a
+			// failed install or a crash at import reads better than a timeout.
+			const log: string[] = [];
+			socket.addEventListener("message", (event) => {
+				const message = JSON.parse(String(event.data)) as {
+					type: string;
+					chunk?: string;
+					state?: string;
+					name?: string;
+					error?: string;
+					message?: string;
+					details?: string;
+				};
+				if (message.type === "output" || message.type === "deps.output") log.push(message.chunk ?? "");
+				if (message.type === "deps.state")
+					log.push(`[deps] ${message.state} ${message.name ?? ""} ${message.error ?? ""}\n`);
+				if (message.type === "server.error")
+					log.push(`[error] ${message.message ?? ""} ${message.details ?? ""}\n`);
+			});
+			await new Promise((resolve) => {
+				socket.addEventListener("open", resolve, { once: true });
+			});
+			socket.send(
+				JSON.stringify({
+					type: "settings.update",
+					sessionId: session.sessionId,
+					autoRun: true,
+					autoInspect: true,
+					debounceMs: 150,
+					timeoutMs: 2000,
+					manualProbeIds: [],
+					serve: true,
+				}),
+			);
+			const call = async (method: string, path: string, body: string | null) => {
+				const response = await fetch(`/api/sessions/${session.sessionId}/http${path}`, {
+					method,
+					headers: {
+						"x-atomis-session": session.authToken,
+						...(body === null ? {} : { "content-type": "application/json" }),
+					},
+					...(body === null ? {} : { body }),
+				});
+				return {
+					status: response.status,
+					text: await response.text(),
+					proxied: response.headers.has("x-atomis-proxy-error"),
+					type: response.headers.get("content-type") ?? "",
+				};
+			};
+			const deadline = Date.now() + within;
+			while ((await call("GET", "/health", null)).proxied) {
+				if (Date.now() > deadline)
+					return [`the server never answered /health. The session said:\n${log.join("").slice(-3000)}`];
+				await new Promise((resolve) => {
+					setTimeout(resolve, 1000);
+				});
+			}
+			const answers = [];
+			for (const [method, path, body] of steps) answers.push(await call(method, path, body));
+			socket.close();
+			return answers.map((answer) => JSON.stringify(answer));
+		},
+		{ session: created, contract: JSON.stringify(CONTRACT), readyWithinMs },
+	).then((answers) =>
+		answers.length === 1 && !answers[0]?.startsWith("{")
+			? answers
+			: answers.map((raw, index) => {
+					const answer = JSON.parse(raw) as { status: number; text: string; type: string };
+					const [method, path, , status, expected] = CONTRACT[index]!;
+					const step = `${method} ${path}`;
+					if (answer.status !== status) return `${step}: status ${answer.status}, expected ${status}`;
+					if (expected === "") return answer.text === "" ? "" : `${step}: expected an empty body`;
+					if (expected === null) return "";
+					if (!answer.type.includes("json")) return `${step}: content-type ${answer.type}`;
+					try {
+						return canonical(JSON.parse(answer.text)) === canonical(expected)
+							? ""
+							: `${step}: ${answer.text}, expected ${JSON.stringify(expected)}`;
+					} catch {
+						return `${step}: not JSON: ${answer.text.slice(0, 120)}`;
+					}
+				}),
+	);
+}
+
+for (const language of Object.keys(ENTRY) as Language[]) {
+	test(`the REST API demo keeps its contract in ${language}`, async ({ page, request, baseURL }) => {
+		test.setTimeout(4 * 60_000);
+		const created = await openDemo(request, baseURL!, "rest", language);
+		const problems = await serveContract(page, created, 3 * 60_000);
+		expect(problems.filter(Boolean)).toEqual([]);
+	});
+}
+
+/** The framework versions: their packages install when the session opens. */
+const FRAMEWORKS: [string, Language][] = [
+	["rest-express", "ts"],
+	["rest-fastapi", "py"],
+	["rest-gin", "go"],
+	["rest-axum", "rust"],
+];
+
+for (const [demo, language] of FRAMEWORKS) {
+	test(`the REST API demo keeps its contract on ${demo.slice("rest-".length)}`, async ({ page, request, baseURL }) => {
+		// Downloading packages, and for axum compiling them cold.
+		test.setTimeout(15 * 60_000);
+		const dependencies = JSON.parse(
+			readFileSync(resolvePath(process.cwd(), "demos", demo, "dependencies.json"), "utf8"),
+		) as string[];
+		const created = await openDemo(request, baseURL!, demo, language, dependencies);
+		const problems = await serveContract(page, created, 13 * 60_000);
+		expect(problems.filter(Boolean)).toEqual([]);
 	});
 }

@@ -16,4 +16,11 @@ files: Array<SourceFile> | null,
  * The new scratch session's Input text (a demo's). Never a workspace's:
  * that one keeps its own.
  */
-input: string | null, };
+input: string | null, 
+/**
+ * Packages the new scratch session installs when its runtime socket
+ * attaches, before its first run (a demo built on a framework). Each is
+ * what the Dependencies view would take; `name[a,b]` asks Cargo for
+ * features a and b.
+ */
+dependencies: Array<string> | null, };

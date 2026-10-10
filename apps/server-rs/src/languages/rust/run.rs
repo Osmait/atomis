@@ -657,7 +657,7 @@ pub async fn run(
             command: executable.to_string_lossy().into_owned(),
             args: Vec::new(),
             cwd: session.root.join("src"),
-            env: Vec::new(),
+            env: session.program_env(settings),
             timeout_ms: settings.program_timeout_ms(),
             parse_stdout_markers: true,
             stdin: session.stdin().await,

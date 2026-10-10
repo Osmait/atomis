@@ -196,8 +196,19 @@ pub async fn handle_runtime(state: Arc<AppState>, session: Arc<Session>, socket:
         })
     };
 
+    // A demo built on a framework arrives with packages to install first:
+    // its first run waits for them instead of failing on a missing import.
+    let pending_dependencies = std::mem::take(
+        &mut *session
+            .pending_dependencies
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner),
+    );
+
     // Initial run (or the degraded notice) exactly like the Node server.
-    if session
+    if !pending_dependencies.is_empty() {
+        // Installed below, once the dependency gate exists; the run follows.
+    } else if session
         .support
         .get(&session.language)
         .is_some_and(|s| s.run)
@@ -224,6 +235,9 @@ pub async fn handle_runtime(state: Arc<AppState>, session: Arc<Session>, socket:
         gate: Arc::new(tokio::sync::Mutex::new(())),
         cancel: tokio_util::sync::CancellationToken::new(),
     };
+    if !pending_dependencies.is_empty() {
+        install_then_run(&session, &scheduler, &outbox_tx, &deps, pending_dependencies);
+    }
 
     use futures_util::StreamExt;
     while let Some(message) = stream.next().await {
@@ -352,6 +366,45 @@ async fn send_deps_catalog(
 /// widened for this process alone, never for builds or user code.
 /// Hands a dependency command to its own task, so the message loop keeps
 /// serving edits and cancels while a package manager talks to the network.
+/// A new session's dependencies, one after another under the dependency
+/// gate (the Dependencies view shows each), then the session's first run.
+/// A failed install is reported and the rest still tried: the run that
+/// follows shows what is missing better than a silent stop would.
+fn install_then_run(
+    session: &Arc<Session>,
+    scheduler: &Arc<RunScheduler>,
+    outbox: &tokio::sync::mpsc::UnboundedSender<ServerEvent>,
+    deps: &DepsControl,
+    names: Vec<String>,
+) {
+    let Ok(guard) = Arc::clone(&deps.gate).try_lock_owned() else {
+        return;
+    };
+    let session = Arc::clone(session);
+    let scheduler = Arc::clone(scheduler);
+    let outbox = outbox.clone();
+    let cancel = deps.cancel.child_token();
+    tokio::spawn(async move {
+        let _guard = guard;
+        for name in names {
+            if cancel.is_cancelled() {
+                return;
+            }
+            if let Err(error) = run_deps_command(&session, &outbox, name, true, cancel.clone()).await {
+                let _ = outbox.send(ServerEvent::ServerError {
+                    recoverable: true,
+                    message: error,
+                    details: None,
+                });
+            }
+        }
+        if session.support.get(&session.language).is_some_and(|support| support.run) {
+            let version = session.current().await.version;
+            scheduler.run(version, Some(session.language)).await;
+        }
+    });
+}
+
 /// The gate refuses a second command while one runs; the socket's token
 /// reaches both child processes, so closing the tab leaves no headless npm.
 fn spawn_deps_command(
@@ -431,11 +484,11 @@ async fn run_deps_command(
     };
     let (command, leading) = template.split_first().ok_or("empty command")?;
     let mut args: Vec<String> = leading.iter().map(|arg| (*arg).to_string()).collect();
-    args.push(if installing {
-        name.clone()
+    if installing {
+        args.extend(crate::languages::deps::add_arguments(language, &name));
     } else {
-        crate::languages::deps::remove_argument(language, &name)
-    });
+        args.push(crate::languages::deps::remove_argument(language, &name));
+    }
 
     let _ = outbox.send(ServerEvent::DepsState {
         state: if installing {
@@ -712,21 +765,34 @@ async fn handle_message_inner(
             manual_probe_ids,
             sandbox,
             network,
+            serve,
             ..
         } => {
-            *session.settings.lock().await = SessionSettings {
-                auto_run,
-                auto_inspect,
-                debounce_ms,
-                timeout_ms,
-                manual_probe_ids,
-                // A client that predates the toggle keeps the default.
-                sandbox: sandbox.unwrap_or_else(|| {
-                    crate::exec::sandbox::detect_support().available()
-                }),
-                network: network.unwrap_or(false),
-                interactive: false,
+            let serve = serve.unwrap_or(false);
+            let switched = {
+                let mut settings = session.settings.lock().await;
+                let switched = settings.serve != serve;
+                *settings = SessionSettings {
+                    auto_run,
+                    auto_inspect,
+                    debounce_ms,
+                    timeout_ms,
+                    manual_probe_ids,
+                    // A client that predates the toggle keeps the default.
+                    sandbox: sandbox.unwrap_or_else(|| {
+                        crate::exec::sandbox::detect_support().available()
+                    }),
+                    network: network.unwrap_or(false),
+                    interactive: false,
+                    serve,
+                };
+                switched
             };
+            // Into server mode, the program restarts as one; out of it, the
+            // running server stops — the same path an edit takes.
+            if switched {
+                scheduler.document_updated(None).await;
+            }
             Ok(())
         }
     }

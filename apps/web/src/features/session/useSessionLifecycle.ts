@@ -20,6 +20,8 @@ export interface SessionSeed {
 	language: Language;
 	files: { path: string; source: string }[];
 	input?: string;
+	/** Installed before the first run (a demo built on a framework). */
+	dependencies?: string[];
 }
 
 interface SessionLifecycleOptions {
@@ -122,6 +124,7 @@ export function useSessionLifecycle(options: SessionLifecycleOptions) {
 								language: demo.language,
 								files: demo.files,
 								...(demo.input ? { input: demo.input } : {}),
+								...(demo.dependencies?.length ? { dependencies: demo.dependencies } : {}),
 							}
 						: {
 								language: loadDefaultTemplate(),

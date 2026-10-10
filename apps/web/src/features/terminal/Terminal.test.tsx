@@ -56,6 +56,7 @@ function renderTerminal(
 		depsPanel: <div data-testid="deps-stub" />,
 		inputLines: "",
 		inputPanel: <div data-testid="input-stub" />,
+		httpPanel: <div data-testid="http-stub" />,
 		dockEffective: "right",
 		drawer: false,
 		drawerScore: "0",

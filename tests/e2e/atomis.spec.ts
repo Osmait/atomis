@@ -401,6 +401,118 @@ test("a file is deleted from its own row, after a confirmation that Cancel backs
 	await expect(mainC).toHaveCount(0);
 });
 
+test("a program run as a server is called from the HTTP view", async ({
+	page,
+}) => {
+	await openClean(page);
+	await page.getByRole("button", { name: "main.py", exact: true }).click();
+	await replaceEditor(
+		page,
+		[
+			"import json",
+			"import os",
+			"from http.server import BaseHTTPRequestHandler, HTTPServer",
+			"",
+			"items = []",
+			"",
+			"",
+			"class Handler(BaseHTTPRequestHandler):",
+			"    def reply(self, status, payload):",
+			"        body = json.dumps(payload).encode()",
+			"        self.send_response(status)",
+			'        self.send_header("content-type", "application/json")',
+			"        self.end_headers()",
+			"        self.wfile.write(body)",
+			"",
+			"    def do_GET(self):",
+			'        self.reply(200, {"ok": True, "items": len(items), "auth": self.headers.get("authorization")})',
+			"",
+			"    def do_POST(self):",
+			'        item = json.loads(self.rfile.read(int(self.headers["content-length"])))',
+			"        items.append(item)",
+			"        self.reply(201, item)",
+			"",
+			"",
+			'HTTPServer((os.environ["HOST"], int(os.environ["PORT"])), Handler).serve_forever()',
+			"",
+		].join("\n"),
+	);
+	await openTermView(page, "HTTP");
+	await page.getByLabel("Run as a server").check();
+	await expect(page.locator(".http-serve-state")).toContainText("serving on PORT");
+
+	// Past a plain run's whole budget (2 s): a server keeps running.
+	await page.waitForTimeout(2500);
+	await page.getByLabel("Path").fill("/health");
+	await page.getByRole("button", { name: "Send" }).click();
+	const response = page.getByRole("region", { name: "Response" });
+	await expect(response.locator(".http-status")).toHaveText(/200/);
+	await expect(response.locator(".http-response-body")).toContainText('"items": 0');
+
+	await page.getByLabel("Method").selectOption("POST");
+	await page.getByLabel("Path").fill("/items");
+	await page.getByLabel("Request body").fill('{"name": "Ada"}');
+	await page.getByRole("button", { name: "Send" }).click();
+	await expect(response.locator(".http-status")).toHaveText(/201/);
+	await expect(response.locator(".http-response-body")).toContainText('"name": "Ada"');
+
+	// The program's own Authorization reaches it, untouched by Atomis's.
+	await page.getByLabel("Method").selectOption("GET");
+	await page.getByLabel("Path").fill("/health");
+	await page.locator(".http-section summary", { hasText: "Headers" }).first().click();
+	await page.getByLabel("Request headers").fill("Authorization: Bearer user-jwt");
+	await page.getByRole("button", { name: "Send" }).click();
+	await expect(response.locator(".http-response-body")).toContainText('"auth": "Bearer user-jwt"');
+	await expect(response.locator(".http-response-body")).toContainText('"items": 1');
+	await expect(page.getByRole("region", { name: "History" }).getByRole("button")).toHaveCount(3);
+
+	// Output says it is serving, and leads back here.
+	await openTermView(page, "Output");
+	await page.getByRole("button", { name: /serving · PORT/ }).click();
+	await expect(page.getByLabel("Run as a server")).toBeChecked();
+
+	// Off: the server stops, and a call says why instead of hanging.
+	await page.getByLabel("Run as a server").uncheck();
+	await expect(page.locator(".http-serve-state")).toHaveText("off");
+	await expect(async () => {
+		await page.getByRole("button", { name: "Send" }).click();
+		await expect(page.locator(".http-error")).toContainText("Nothing is listening", { timeout: 2000 });
+	}).toPass({ timeout: 20_000 });
+});
+
+test("the REST API demo opens serving, its endpoints listed and callable", async ({
+	page,
+}) => {
+	await openClean(page);
+	await treeAction(page, "Open a demo…");
+	await page
+		.getByRole("dialog", { name: "Demos" })
+		.getByRole("button", { name: "REST API in Python", exact: true })
+		.click();
+	// It opens in server mode, on the HTTP view, with its routes listed.
+	await expect(page.getByLabel("Run as a server")).toBeChecked();
+	await expect(page.locator(".http-serve-state")).toContainText("serving on PORT", { timeout: 60_000 });
+	const endpoints = page.getByRole("region", { name: "Endpoints" });
+	await expect(endpoints.locator(".http-endpoint")).toHaveCount(6);
+
+	const response = page.getByRole("region", { name: "Response" });
+	await endpoints.getByRole("button", { name: "POST /todos", exact: true }).click();
+	await page.getByLabel("Request body").fill('{"title": "Learn HTTP"}');
+	await expect(async () => {
+		await page.getByRole("button", { name: "Send" }).click();
+		await expect(response.locator(".http-status")).toHaveText(/201/, { timeout: 2000 });
+	}).toPass({ timeout: 30_000 });
+	await expect(response.locator(".http-response-body")).toContainText('"id": 1');
+
+	// A parameterised route is filled in, ready to send.
+	await endpoints.getByRole("button", { name: "GET /todos/{id}", exact: true }).click();
+	await expect(page.getByLabel("Path")).toHaveValue("/todos/1");
+	await page.getByRole("button", { name: "Send" }).click();
+	await expect(response.locator(".http-response-body")).toContainText('"title": "Learn HTTP"');
+	// The list shows what each route last answered.
+	await expect(endpoints.getByRole("button", { name: "GET /todos/{id}", exact: true })).toContainText("200");
+});
+
 test("Vim mode keeps native clipboard shortcuts", async ({
 	page,
 	context,

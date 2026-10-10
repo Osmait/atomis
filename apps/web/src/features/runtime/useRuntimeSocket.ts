@@ -41,6 +41,9 @@ interface RuntimeSocketOptions {
 	session: CreateSessionResponse | undefined;
 	handleRuntimeEvent: (event: RuntimeServerEvent) => void;
 	settingsRef: React.RefObject<Settings>;
+	/** Whether this session runs its program as a server: session state,
+	 * never a saved preference. */
+	serveRef?: React.RefObject<boolean>;
 	filesRef: ProjectFilesReader;
 	entryRef: React.RefObject<string>;
 	versionRef: React.RefObject<number>;
@@ -65,6 +68,7 @@ export function useRuntimeSocket(options: RuntimeSocketOptions) {
 		session,
 		handleRuntimeEvent,
 		settingsRef,
+		serveRef,
 		filesRef,
 		entryRef,
 		versionRef,
@@ -161,6 +165,7 @@ export function useRuntimeSocket(options: RuntimeSocketOptions) {
 				type: "settings.update",
 				sessionId: session.sessionId,
 				...settingsRef.current,
+				serve: serveRef?.current ?? false,
 			});
 			// Everything that happened while the socket was away, in order:
 			// creates before the edits that need them, versions ascending.
@@ -281,6 +286,7 @@ export function useRuntimeSocket(options: RuntimeSocketOptions) {
 		session,
 		setStatus,
 		settingsRef,
+		serveRef,
 		versionRef,
 	]);
 

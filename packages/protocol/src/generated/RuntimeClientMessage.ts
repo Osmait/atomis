@@ -13,4 +13,8 @@ baseRevision?: number, } | { "type": "file.create", sessionId: string, version: 
  * The program reads what the user types (stdin.write) rather than
  * the Input text, with minutes rather than seconds to wait for it.
  */
-interactive?: boolean, } | { "type": "stdin.write", sessionId: string, data: string, eof?: boolean, } | { "type": "run.cancel", sessionId: string, } | { "type": "settings.update", sessionId: string, autoRun: boolean, autoInspect: boolean, debounceMs: number, timeoutMs: number, manualProbeIds: Array<string>, sandbox: boolean | null, network: boolean | null, } | { "type": "deps.list", sessionId: string, } | { "type": "deps.add", sessionId: string, name: string, } | { "type": "deps.remove", sessionId: string, name: string, };
+interactive?: boolean, } | { "type": "stdin.write", sessionId: string, data: string, eof?: boolean, } | { "type": "run.cancel", sessionId: string, } | { "type": "settings.update", sessionId: string, autoRun: boolean, autoInspect: boolean, debounceMs: number, timeoutMs: number, manualProbeIds: Array<string>, sandbox: boolean | null, network: boolean | null, 
+/**
+ * Run the program as a server, reached through the HTTP proxy.
+ */
+serve?: boolean, } | { "type": "deps.list", sessionId: string, } | { "type": "deps.add", sessionId: string, name: string, } | { "type": "deps.remove", sessionId: string, name: string, };
