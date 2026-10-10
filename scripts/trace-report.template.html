@@ -191,10 +191,10 @@ function waterfall() {
 
 const FINDINGS = [
   ["The server is out of the way", "Between pressing Run and seeing the result, the server's own time is under a millisecond per run, the WebSocket round trip about 0.3 ms, and each fork+exec of a child about 0.7 ms. Everything else is the toolchains."],
-  ["TypeScript checks types, then runs, one after the other", "Type errors in a TS session do not stop the program, yet tsc runs to completion before node starts: ~67 ms of checking, then ~49 ms of running. Started together, the run would take about as long as the longer of the two."],
-  ["C/C++ pays for instrumenting twice over", "~45 ms per run instrumenting, mostly starting node and clang's AST dump, before a ~146 ms clang compile."],
-  ["Zig instruments in more time than it compiles", "With the compile server, Zig's build is ~4 ms and its instrumentation ~9 ms: the instrumenter is now the largest part of a Zig run."],
-  ["Rust and Go are their build tools", "cargo build (~74 ms) and go build (~97 ms) are almost all of those runs. What is left to win is inside cargo and the go command themselves."],
+  ["TypeScript now checks types while the program runs", "Type errors never block a TS run, yet tsc used to finish (~67 ms) before node started (~49 ms). They start together now, with node --test, and a run takes about as long as the longer of them: ~121 ms became ~78-84 ms."],
+  ["Zig's instrumenter was a Debug build", "With the compile server, Zig built in ~4 ms and instrumented in ~9: pnpm build shipped the instrumenter unoptimised. Built ReleaseSafe it takes ~1 ms, and a warm Zig run ~11 ms."],
+  ["Rust and Go now skip their build tools when they can", "cargo and the go command spent a third of each build around rustc, compile and link. Sessions without dependencies call those directly (go with the import configuration go list -export resolves once): Rust ~80 to ~55-63 ms, Go ~100 to ~78-84 ms. Anything with dependencies still goes through cargo and go build."],
+  ["C/C++ instruments through a sandboxed worker", "Its instrumenter starts once per session, inside that session's sandbox because it runs clang on the user's file: instrumenting fell from ~45 to ~20 ms. The rest is clang compiling (~146 ms on a quiet machine), which is the compiler's own cost. These timelines were taken with the machine under load from other work, which inflates clang the most."],
 ];
 
 function findings() {
