@@ -697,6 +697,7 @@ impl SessionManager {
         crate::languages::instrument_worker::forget(id).await;
         let session = self.sessions.lock().await.remove(id);
         if let Some(session) = session {
+            crate::languages::go::direct::forget(&session.root).await;
             if let Some(workspace_id) = &session.workspace_id {
                 // Persistent: the files stay, only the in-memory session goes.
                 crate::domain::workspace::touch(workspace_id).await;

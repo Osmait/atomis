@@ -310,26 +310,43 @@ pub async fn run(
     emit(RunnerEvent::State(RunState::Compiling));
     let executable = session.root.join("target/go-bin");
     let _ = tokio::fs::create_dir_all(session.root.join("target")).await;
-    let compile = supervisor::run(
-        "go",
-        &[
-            "build".into(),
-            LDFLAGS.into(),
-            "-o".into(),
-            executable.to_string_lossy().into_owned(),
-            "./generated".into(),
-        ],
-        RunOptions {
-            cwd: session.root.clone(),
-            limits: ProcessLimits::new(COMPILE_TIMEOUT_MS, 512 * 1024, 1024 * 1024),
-            cancel: cancel.clone(),
-            probe_fd: false,
-            env: go_env(&session.root),
-            sandbox: session.sandbox(settings),
-            callbacks: StreamCallbacks::default(),
-        },
-    )
+    // The compiler and linker directly when the session qualifies (see
+    // direct.rs); `go build` otherwise, or when that path gives up.
+    let direct = super::direct::build(&super::direct::Build {
+        root: &session.root,
+        executable: &executable,
+        env: go_env(&session.root),
+        sandbox: session.sandbox(settings),
+        cancel: &cancel,
+        timeout_ms: COMPILE_TIMEOUT_MS,
+        ldflags: &["-s", "-w"],
+    })
     .await;
+    let compile = match direct {
+        Some(compile) => compile,
+        None => {
+            supervisor::run(
+                "go",
+                &[
+                    "build".into(),
+                    LDFLAGS.into(),
+                    "-o".into(),
+                    executable.to_string_lossy().into_owned(),
+                    "./generated".into(),
+                ],
+                RunOptions {
+                    cwd: session.root.clone(),
+                    limits: ProcessLimits::new(COMPILE_TIMEOUT_MS, 512 * 1024, 1024 * 1024),
+                    cancel: cancel.clone(),
+                    probe_fd: false,
+                    env: go_env(&session.root),
+                    sandbox: session.sandbox(settings),
+                    callbacks: StreamCallbacks::default(),
+                },
+            )
+            .await
+        }
+    };
     metrics.compilation_ms = compile.duration_ms;
     if compile.cancelled || cancel.is_cancelled() {
         return cancelled_outcome(metrics, "superseded");
