@@ -299,6 +299,11 @@ async fn write_private(path: &std::path::Path, text: &str) -> std::io::Result<()
     file.write_all(text.as_bytes()).await
 }
 
+/// A parser lock: a panic while one was held already failed the run.
+pub(crate) fn lock_parser<'m, 'p>(parser: &'m std::sync::Mutex<MarkerParser<'p>>) -> std::sync::MutexGuard<'m, MarkerParser<'p>> {
+    parser.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 pub struct ExecuteConfig {
     pub command: String,
     pub sandbox: Option<std::sync::Arc<crate::exec::sandbox::SandboxPolicy>>,
@@ -329,7 +334,7 @@ pub async fn execute_program(
 ) -> ExecuteOutcome {
     let mut forwarder = ProbeForwarder::new(probes, events.clone());
     let stdout_events = events.clone();
-    let mut stdout_parser = MarkerParser::new(
+    let stdout_parser = MarkerParser::new(
         Stream::Stdout,
         false,
         file_ids.clone(),
@@ -343,7 +348,7 @@ pub async fn execute_program(
         }),
     );
     let stderr_events = events.clone();
-    let mut stderr_parser = MarkerParser::new(
+    let stderr_parser = MarkerParser::new(
         Stream::Stderr,
         true,
         file_ids.clone(),
@@ -357,11 +362,16 @@ pub async fn execute_program(
         }),
     );
     let plain_events = events.clone();
+    // Shared by the stream callbacks and the quiet one, which releases what
+    // both hold back while an interactive program waits for input.
+    let stdout_parser = std::sync::Mutex::new(stdout_parser);
+    let stderr_parser = std::sync::Mutex::new(stderr_parser);
+    let interactive = matches!(config.stdin, supervisor::Stdin::Live(_));
     let (result, probe_error) = {
         let forwarder = &mut forwarder;
         let mut probe_reader = ProbeReader::new(Box::new(move |event| forwarder.forward(event)));
-        let stdout_ref = &mut stdout_parser;
-        let stderr_ref = &mut stderr_parser;
+        let stdout_ref = &stdout_parser;
+        let stderr_ref = &stderr_parser;
         let reader_ref = &mut probe_reader;
         let parse_stdout = config.parse_stdout_markers;
         let result = supervisor::run_with_stdin(
@@ -377,7 +387,7 @@ pub async fn execute_program(
                 callbacks: StreamCallbacks {
                     stdout: Some(Box::new(move |chunk: &str| {
                         if parse_stdout {
-                            stdout_ref.push(chunk);
+                            lock_parser(stdout_ref).push(chunk);
                         } else {
                             let _ = plain_events.send(RunnerEvent::Output {
                                 stream: Stream::Stdout,
@@ -387,8 +397,14 @@ pub async fn execute_program(
                             });
                         }
                     })),
-                    stderr: Some(Box::new(move |chunk: &str| stderr_ref.push(chunk))),
+                    stderr: Some(Box::new(move |chunk: &str| lock_parser(stderr_ref).push(chunk))),
                     probe: Some(Box::new(move |chunk: &[u8]| reader_ref.push(chunk))),
+                    quiet: interactive.then(|| -> supervisor::QuietSink<'_> {
+                        Box::new(move || {
+                            lock_parser(stdout_ref).release();
+                            lock_parser(stderr_ref).release();
+                        })
+                    }),
                 },
             },
             config.stdin,
@@ -397,8 +413,8 @@ pub async fn execute_program(
         probe_reader.end();
         (result, probe_reader.error.clone())
     };
-    stdout_parser.flush();
-    stderr_parser.flush();
+    lock_parser(&stdout_parser).flush();
+    lock_parser(&stderr_parser).flush();
     ExecuteOutcome {
         result,
         probe_error,

@@ -3,7 +3,7 @@
 - This is **not a strong security sandbox**. Native Zig code executes locally with the user's permissions and can access files, processes and the network. Use Auto Run and review untrusted code.
 - Linux and macOS are supported; Windows process groups and fd 3 are outside this MVP.
 - Multi-file text projects are supported, but there is no external package/dependency manager and binary file editing is not supported.
-- Stdin is the Input text, given whole and then closed: a program cannot wait for typing yet (no interactive terminal). Test runs read no input.
+- Interactive input is line-based (Enter sends a line, Ctrl+D ends it): there is no TTY, so no raw keys, no curses, and `isatty(0)` is false. Only a manual Run is interactive, with a 5-minute budget; Auto Run always reads the Input text, so with typed input chosen an edit reruns the program against that text (usually end of file). Test runs read no input.
 - Value previews are bounded text, not expandable object trees. Arbitrary pointers are never dereferenced.
 - The generated-copy workaround for an observed `_ = name;` applies only when the AST assignment is the last statement on its line.
 - ZLS is restarted once after failure, but the browser asks for reload to reinitialize the restarted protocol session.

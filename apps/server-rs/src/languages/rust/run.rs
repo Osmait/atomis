@@ -658,7 +658,7 @@ pub async fn run(
             args: Vec::new(),
             cwd: session.root.join("src"),
             env: Vec::new(),
-            timeout_ms: settings.timeout_ms,
+            timeout_ms: settings.program_timeout_ms(),
             parse_stdout_markers: true,
             stdin: session.stdin().await,
         },
@@ -821,6 +821,7 @@ async fn run_tests(
                     })),
                     stderr: None,
                     probe: None,
+                    quiet: None,
                 },
             },
         )

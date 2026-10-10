@@ -234,7 +234,7 @@ pub async fn run(
             args: vec!["-u".into(), entry.to_string_lossy().into_owned()],
             cwd: session.root.join("src"),
             env: py_env(&session.root, true),
-            timeout_ms: settings.timeout_ms,
+            timeout_ms: settings.program_timeout_ms(),
             parse_stdout_markers: true,
             stdin: session.stdin().await,
         },
@@ -424,6 +424,7 @@ async fn run_tests(
                             .push_str(chunk);
                     })),
                     probe: Some(Box::new(move |chunk: &[u8]| reader_ref.push(chunk))),
+                    quiet: None,
                 },
             },
         )

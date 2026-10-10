@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+	loadStdinMode,
+	saveStdinMode,
+	type StdinMode,
+} from "../../shared/stores/settings.js";
+import {
 	MAX_INPUT_BYTES,
 	type CreateSessionResponse,
 	type RuntimeClientMessage,
@@ -26,6 +31,11 @@ export function useRunInput(
 	sendRuntime: (message: RuntimeClientMessage) => void,
 ) {
 	const [input, setInputState] = useState(session?.input ?? "");
+	const [mode, setModeState] = useState<StdinMode>(loadStdinMode);
+	const setMode = useCallback((next: StdinMode): void => {
+		setModeState(next);
+		saveStdinMode(next);
+	}, []);
 	const pendingRef = useRef<string | undefined>(undefined);
 	const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
 		undefined,
@@ -62,5 +72,5 @@ export function useRunInput(
 		[flush],
 	);
 
-	return { input, setInput, flushInput: flush };
+	return { input, setInput, flushInput: flush, mode, setMode };
 }

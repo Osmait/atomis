@@ -31,6 +31,21 @@ pub struct SessionSettings {
     /// Let the program itself open outbound connections. Off by default:
     /// a playground that can phone home is a different tool.
     pub network: bool,
+    /// Set on the run's own copy, never by the client: the program reads
+    /// what the user types, so it gets time to wait for it.
+    pub interactive: bool,
+}
+
+impl SessionSettings {
+    /// The user program's time budget. Everything else — compilers, test
+    /// runs — keeps `timeout_ms` even in an interactive run.
+    pub fn program_timeout_ms(&self) -> u64 {
+        if self.interactive {
+            crate::domain::scheduler::INTERACTIVE_TIMEOUT_MS
+        } else {
+            self.timeout_ms
+        }
+    }
 }
 
 impl Default for SessionSettings {
@@ -43,6 +58,7 @@ impl Default for SessionSettings {
             sandbox: crate::exec::sandbox::detect_support().available(),
             network: false,
             manual_probe_ids: Vec::new(),
+            interactive: false,
         }
     }
 }
@@ -87,6 +103,9 @@ pub struct Session {
     pub workspace_id: Option<String>,
     /// The Input text, piped to the program's stdin on every run.
     pub input: Mutex<Arc<str>>,
+    /// Set by the scheduler for an interactive run: what the user types,
+    /// taken by the program's spawn in place of the Input text.
+    pub live_stdin: Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<crate::exec::supervisor::LiveInput>>>,
 }
 
 impl Session {
@@ -111,6 +130,9 @@ impl Session {
 
     /// What the next run's program reads on stdin.
     pub async fn stdin(&self) -> crate::exec::supervisor::Stdin {
+        if let Some(live) = self.live_stdin.lock().await.take() {
+            return crate::exec::supervisor::Stdin::Live(live);
+        }
         let text = Arc::clone(&*self.input.lock().await);
         if text.is_empty() {
             crate::exec::supervisor::Stdin::Null
@@ -715,6 +737,7 @@ impl SessionManager {
             sandbox_policy,
             workspace_id: workspace.clone(),
             input: Mutex::new(Arc::from(input.as_str())),
+            live_stdin: Mutex::new(None),
         });
         if let Some(workspace_id) = &workspace {
             crate::domain::workspace::touch(workspace_id).await;

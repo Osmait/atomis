@@ -1,10 +1,13 @@
 import type React from "react";
 import { MAX_INPUT_BYTES } from "@atomis/protocol";
 import { inputBytes } from "../runtime/useRunInput.js";
+import type { StdinMode } from "../../shared/stores/settings.js";
 
 interface InputPanelProps {
 	value: string;
 	onChange: (text: string) => void;
+	mode: StdinMode;
+	onModeChange: (mode: StdinMode) => void;
 }
 
 /** "3 lines", counting a last line without its newline. */
@@ -26,12 +29,39 @@ function sizeLabel(bytes: number): string {
 export function InputPanel(props: InputPanelProps): React.JSX.Element {
 	const bytes = inputBytes(props.value);
 	const tooLarge = bytes > MAX_INPUT_BYTES;
+	const typed = props.mode === "terminal";
 	return (
 		<div className="input-panel">
+			<div aria-label="Run reads stdin from" className="input-mode" role="radiogroup">
+				<button
+					aria-checked={!typed}
+					onClick={() => props.onModeChange("text")}
+					role="radio"
+				>
+					This text
+				</button>
+				<button
+					aria-checked={typed}
+					onClick={() => props.onModeChange("terminal")}
+					role="radio"
+				>
+					Typed in the terminal
+				</button>
+			</div>
 			<p className="input-hint">
-				Every run reads this on standard input — <code>input()</code>,{" "}
-				<code>scanf</code>, <code>read_line</code>, <code>bufio.Scanner</code>…
-				— then end of file.
+				{typed ? (
+					<>
+						Run waits for what you type under the output, Enter by Enter;
+						Ctrl+D ends it. Auto Run still reads this text — it restarts
+						the program at every edit.
+					</>
+				) : (
+					<>
+						Every run reads this on standard input — <code>input()</code>,{" "}
+						<code>scanf</code>, <code>read_line</code>,{" "}
+						<code>bufio.Scanner</code>… — then end of file.
+					</>
+				)}
 			</p>
 			<textarea
 				aria-label="Program input"

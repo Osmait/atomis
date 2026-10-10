@@ -8,7 +8,8 @@ export interface TerminalSourceLocation {
 
 export interface TerminalEntry {
 	stream: "stdout" | "stderr";
-	category: "program" | "error";
+	/** "input" is typed input echoed by the client, never from the server. */
+	category: "program" | "error" | "input";
 	chunk: string;
 	receivedAt: number;
 	/**

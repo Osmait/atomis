@@ -282,6 +282,22 @@ impl<'a> MarkerParser<'a> {
         }
     }
 
+    /// Emits what is held back for a marker that may still arrive — except
+    /// a marker already half-arrived, which would show as garbage. For when
+    /// the program has gone quiet: a prompt with no newline (`input("Name?
+    /// ")`) is held until the next line otherwise, which is after it was
+    /// answered. A marker arriving later then annotates nothing.
+    pub fn release(&mut self) {
+        let hold = match self.buffer.rfind(MARKER_START) {
+            Some(index) if !self.buffer[index..].contains(MARKER_END) => index,
+            _ => self.buffer.len(),
+        };
+        if hold > 0 {
+            let ready: String = self.buffer.drain(..hold).collect();
+            self.emit_text(&ready, None);
+        }
+    }
+
     pub fn flush(&mut self) {
         let rest = std::mem::take(&mut self.buffer);
         self.emit_text(&rest, None);
@@ -316,6 +332,27 @@ mod tests {
         parser.flush();
         drop(parser);
         Arc::try_unwrap(sink).expect("sink").into_inner().expect("sink")
+    }
+
+    #[test]
+    fn release_shows_a_waiting_prompt_but_keeps_a_half_arrived_marker() {
+        let sink: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let out = Arc::clone(&sink);
+        let mut parser = MarkerParser::new(
+            Stream::Stdout,
+            false,
+            HashMap::new(),
+            Box::new(move |_, chunk, _, _| out.lock().expect("sink").push(chunk.to_string())),
+        );
+        // A prompt with no newline is held: a marker could still follow it.
+        parser.push("Name? ");
+        assert!(sink.lock().unwrap().is_empty());
+        parser.release();
+        assert_eq!(sink.lock().unwrap().concat(), "Name? ");
+        // A marker cut in half stays held: released, it would print garbage.
+        parser.push("ok\n\u{1e}ATOMIS_LOG:1:4");
+        parser.release();
+        assert_eq!(sink.lock().unwrap().concat(), "Name? ok\n");
     }
 
     #[test]

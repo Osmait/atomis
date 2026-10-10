@@ -117,6 +117,8 @@ interface TerminalProps {
 	inputPanel: React.ReactNode;
 	/** "3 lines", or empty when the program reads nothing on stdin. */
 	inputLines: string;
+	/** Where an interactive run's program reads typed input, while it runs. */
+	stdinLine?: React.ReactNode;
 	children?: React.ReactNode;
 }
 
@@ -478,6 +480,7 @@ export function Terminal(props: TerminalProps): React.JSX.Element {
 					</div>
 				)}
 			</div>
+			{tab === "output" && props.stdinLine}
 
 			{tab === "output" && !props.drawer && (
 				<button

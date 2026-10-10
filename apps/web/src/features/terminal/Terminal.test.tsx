@@ -139,6 +139,14 @@ describe("Terminal", () => {
 		expect(handlers.onTab).toHaveBeenCalledWith("input");
 	});
 
+	it("shows the stdin line under Output only when given one", () => {
+		renderTerminal({ stdinLine: <div data-testid="stdin-stub" /> });
+		expect(screen.getByTestId("stdin-stub")).toBeTruthy();
+		cleanup();
+		renderTerminal({ tab: "problems", stdinLine: <div data-testid="stdin-stub" /> });
+		expect(screen.queryByTestId("stdin-stub")).toBeNull();
+	});
+
 	it("lists problems with their location and jumps on click", () => {
 		const handlers = renderTerminal({
 			tab: "problems",

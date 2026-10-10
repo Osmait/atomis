@@ -64,17 +64,25 @@ type Runner = Arc<
 /// only bounds a runner that ignores its token.
 const SUPERSEDED_GRACE: std::time::Duration = std::time::Duration::from_secs(3);
 
+/// An interactive run waits on a person, not a program, so the per-run
+/// timeout (at most 10 s) does not fit it; Stop ends one sooner.
+pub const INTERACTIVE_TIMEOUT_MS: u64 = 5 * 60 * 1000;
+
+type LiveSender = tokio::sync::mpsc::UnboundedSender<crate::exec::supervisor::LiveInput>;
+
 struct Inner {
     /// The pending auto run, tagged so its own task can tell it is still
     /// the pending one.
     debounce: Option<(u64, tokio::task::JoinHandle<()>)>,
     debounce_seq: u64,
-
     cancel: Option<CancellationToken>,
     active_run: Option<String>,
     last_language: Language,
     /// Fires once the latest run's task has ended, however it ended.
     finished: Option<CancellationToken>,
+    /// The interactive run's input, while it runs. Dropping it closes the
+    /// program's stdin.
+    live_input: Option<LiveSender>,
 }
 
 pub struct RunScheduler {
@@ -113,6 +121,7 @@ impl RunScheduler {
                 active_run: None,
                 last_language: language,
                 finished: None,
+                live_input: None,
             }),
             runner,
             start: Mutex::new(()),
@@ -174,6 +183,34 @@ impl RunScheduler {
     }
 
     pub async fn run(self: &Arc<Self>, version: u64, language: Option<Language>) {
+        self.start_run(version, language, false).await;
+    }
+
+    /// A run whose program reads what the user types (`write_stdin`)
+    /// instead of the Input text, with time to wait for it.
+    pub async fn run_interactive(self: &Arc<Self>, version: u64, language: Option<Language>) {
+        self.start_run(version, language, true).await;
+    }
+
+    /// Hands typed input to the interactive run's program.
+    pub async fn write_stdin(&self, input: crate::exec::supervisor::LiveInput) -> Result<(), String> {
+        let mut inner = self.inner.lock().await;
+        let eof = input == crate::exec::supervisor::LiveInput::Eof;
+        let sent = inner
+            .live_input
+            .as_ref()
+            .is_some_and(|sender| sender.send(input).is_ok());
+        if eof {
+            inner.live_input = None;
+        }
+        if sent {
+            Ok(())
+        } else {
+            Err("No program is waiting for input".to_string())
+        }
+    }
+
+    async fn start_run(self: &Arc<Self>, version: u64, language: Option<Language>, interactive: bool) {
         let _start = self.start.lock().await;
         let snapshot = self.session.current().await;
         if snapshot.version != version {
@@ -217,17 +254,34 @@ impl RunScheduler {
         let run_id = random_uuid();
         let token = CancellationToken::new();
         let finished = CancellationToken::new();
+        // Every run sets the slot, so a receiver left by an interactive run
+        // cancelled before its program started cannot reach a later one.
+        let (live_sender, live_receiver) = if interactive {
+            let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+            (Some(sender), Some(receiver))
+        } else {
+            (None, None)
+        };
+        *self.session.live_stdin.lock().await = live_receiver;
         {
             let mut inner = self.inner.lock().await;
             inner.last_language = target;
             inner.cancel = Some(token.clone());
             inner.active_run = Some(run_id.clone());
             inner.finished = Some(finished.clone());
+            inner.live_input = live_sender;
+        }
+        if interactive {
+            self.send(ServerEvent::StdinOpen {
+                document_version: version,
+                run_id: run_id.clone(),
+            });
         }
 
         let scheduler = Arc::clone(self);
         let session = Arc::clone(&self.session);
-        let settings = session.settings.lock().await.clone();
+        let mut settings = session.settings.lock().await.clone();
+        settings.interactive = interactive;
         let watchdog_run = run_id.clone();
         // The run's row in an ATOMIS_TRACE timeline; everything below lands
         // on it, the phases included.
@@ -342,6 +396,7 @@ impl RunScheduler {
             if inner.active_run.as_deref() == Some(run_id.as_str()) {
                 inner.active_run = None;
                 inner.cancel = None;
+                inner.live_input = None;
             }
         }.instrument(run_span));
 
@@ -385,6 +440,7 @@ impl RunScheduler {
             token.cancel();
         }
         inner.active_run = None;
+        inner.live_input = None;
     }
 
     pub async fn cancel(&self) {
@@ -532,6 +588,7 @@ mod tests {
             )),
             workspace_id: None,
             input: tokio::sync::Mutex::new(Arc::from("")),
+            live_stdin: tokio::sync::Mutex::new(None),
         })
     }
 
@@ -608,6 +665,84 @@ mod tests {
         scheduler.run(1, Some(Language::Zig)).await;
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         assert_eq!(*log.lock().unwrap(), ["first ended", "second started"]);
+    }
+
+    #[tokio::test]
+    async fn an_interactive_run_reads_what_is_typed_and_has_time_for_it() {
+        use crate::exec::supervisor::{LiveInput, Stdin};
+        let session = test_session(SessionSettings::default());
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (seen_tx, mut seen) = tokio::sync::mpsc::unbounded_channel::<(u64, Vec<u8>)>();
+        let runner: Runner = Arc::new(move |_, session: Arc<Session>, _, settings: SessionSettings, _, _| {
+            let seen_tx = seen_tx.clone();
+            Box::pin(async move {
+                if let Stdin::Live(mut input) = session.stdin().await {
+                    while let Some(LiveInput::Data(bytes)) = input.recv().await {
+                        let _ = seen_tx.send((settings.program_timeout_ms(), bytes));
+                    }
+                }
+                None
+            }) as RunnerFuture
+        });
+        let scheduler = RunScheduler::with_runner(session, tx, runner);
+        assert!(
+            scheduler.write_stdin(LiveInput::Data(b"early".to_vec())).await.is_err(),
+            "nothing is waiting before the run"
+        );
+        scheduler.run_interactive(1, Some(Language::Zig)).await;
+        scheduler.write_stdin(LiveInput::Data(b"42\n".to_vec())).await.unwrap();
+        let (timeout, bytes) = tokio::time::timeout(std::time::Duration::from_secs(2), seen.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(bytes, b"42\n");
+        assert_eq!(timeout, INTERACTIVE_TIMEOUT_MS);
+        scheduler.write_stdin(LiveInput::Eof).await.unwrap();
+        assert!(
+            scheduler.write_stdin(LiveInput::Data(b"late".to_vec())).await.is_err(),
+            "after EOF there is nothing to write to"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_plain_run_never_inherits_an_interactive_runs_input() {
+        use crate::exec::supervisor::Stdin;
+        let session = test_session(SessionSettings::default());
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (kinds_tx, mut kinds) = tokio::sync::mpsc::unbounded_channel::<&'static str>();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let started = Arc::new(tokio::sync::Notify::new());
+        let first_started = Arc::clone(&started);
+        let runner: Runner = Arc::new(move |_, session: Arc<Session>, _, _, cancel: CancellationToken, _| {
+            let kinds_tx = kinds_tx.clone();
+            let first_started = Arc::clone(&first_started);
+            let first = calls.fetch_add(1, Ordering::SeqCst) == 0;
+            Box::pin(async move {
+                if first {
+                    first_started.notify_one();
+                    // Cancelled before its program started: the receiver
+                    // is still in the session.
+                    cancel.cancelled().await;
+                    return None;
+                }
+                let kind = match session.stdin().await {
+                    Stdin::Live(_) => "live",
+                    Stdin::Text(_) => "text",
+                    Stdin::Null => "null",
+                };
+                let _ = kinds_tx.send(kind);
+                None
+            }) as RunnerFuture
+        });
+        let scheduler = RunScheduler::with_runner(session, tx, runner);
+        scheduler.run_interactive(1, Some(Language::Zig)).await;
+        started.notified().await;
+        scheduler.run(1, Some(Language::Zig)).await;
+        let kind = tokio::time::timeout(std::time::Duration::from_secs(2), kinds.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(kind, "null");
     }
 
     #[tokio::test]

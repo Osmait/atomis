@@ -21,6 +21,8 @@ import type { useRuntimeEvents } from "../runtime/useRuntimeEvents.js";
 import type { OwnedDiagnostic } from "../../shared/lib/diagnostics.js";
 import type { TerminalTab } from "./Terminal.js";
 import { InputPanel, lineCountLabel } from "./InputPanel.js";
+import { StdinLine } from "./StdinLine.js";
+import type { StdinMode } from "../../shared/stores/settings.js";
 import type { WebLanguagePack } from "../editor/languagePacks.js";
 
 interface TerminalPaneProps {
@@ -64,6 +66,12 @@ interface TerminalPaneProps {
 	/** What the program reads on stdin, and how to change it. */
 	input: string;
 	onInputChange: (text: string) => void;
+	stdinMode: StdinMode;
+	onStdinModeChange: (mode: StdinMode) => void;
+	/** An interactive run's program is running and reading typed input. */
+	stdinOpen: boolean;
+	onStdinSend: (text: string) => void;
+	onStdinEof: (text: string) => void;
 }
 
 /**
@@ -112,6 +120,11 @@ export function TerminalPane(props: TerminalPaneProps): React.JSX.Element {
 		sandboxed,
 		input,
 		onInputChange,
+		stdinMode,
+		onStdinModeChange,
+		stdinOpen,
+		onStdinSend,
+		onStdinEof,
 	} = props;
 	const {
 		runState,
@@ -217,7 +230,21 @@ export function TerminalPane(props: TerminalPaneProps): React.JSX.Element {
 						/>
 					}
 					inputLines={input ? lineCountLabel(input) : ""}
-					inputPanel={<InputPanel onChange={onInputChange} value={input} />}
+					inputPanel={
+						<InputPanel
+							mode={stdinMode}
+							onChange={onInputChange}
+							onModeChange={onStdinModeChange}
+							value={input}
+						/>
+					}
+					{...(stdinOpen
+						? {
+								stdinLine: (
+									<StdinLine onEof={onStdinEof} onSend={onStdinSend} />
+								),
+							}
+						: {})}
 					onTab={setTab}
 					onToggleDrawer={() => setDrawer((previous) => !previous)}
 					onToggleFold={onToggleFold}

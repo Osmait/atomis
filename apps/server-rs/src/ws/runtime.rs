@@ -484,6 +484,7 @@ async fn run_deps_command(
                     });
                 })),
                 probe: None,
+                quiet: None,
             },
         },
     )
@@ -659,7 +660,7 @@ async fn handle_message_inner(
             Ok(())
         }
         RuntimeClientMessage::RunRequest {
-            version, language, ..
+            version, language, interactive, ..
         } => {
             let target = language.unwrap_or(session.language);
             if !session.support.get(&target).is_some_and(|s| s.run) {
@@ -668,7 +669,21 @@ async fn handle_message_inner(
             if version != session.current().await.version {
                 return Err("Run version is not current".to_string());
             }
-            scheduler.run(version, Some(target)).await;
+            if interactive.unwrap_or(false) {
+                scheduler.run_interactive(version, Some(target)).await;
+            } else {
+                scheduler.run(version, Some(target)).await;
+            }
+            Ok(())
+        }
+        RuntimeClientMessage::StdinWrite { data, eof, .. } => {
+            use crate::exec::supervisor::LiveInput;
+            if !data.is_empty() {
+                scheduler.write_stdin(LiveInput::Data(data.into_bytes())).await?;
+            }
+            if eof.unwrap_or(false) {
+                scheduler.write_stdin(LiveInput::Eof).await?;
+            }
             Ok(())
         }
         RuntimeClientMessage::InputUpdate { text, .. } => {
@@ -710,6 +725,7 @@ async fn handle_message_inner(
                     crate::exec::sandbox::detect_support().available()
                 }),
                 network: network.unwrap_or(false),
+                interactive: false,
             };
             Ok(())
         }

@@ -253,6 +253,7 @@ pub async fn run_doctor() -> Vec<DoctorCheck> {
                     probe: Some(Box::new(move |chunk: &[u8]| {
                         sink.lock().expect("probe sink").extend_from_slice(chunk);
                     })),
+                    quiet: None,
                 },
             },
         )

@@ -503,6 +503,36 @@
 	padding: 10px 12px;
 	flex: 1;
 	min-height: 0;
+	/* Docked below on a tablet the panel is short: it scrolls rather than
+	 * squeezing the controls until the hint lies on top of them. */
+	overflow: auto;
+}
+
+.input-panel > :not(.input-text) {
+	flex-shrink: 0;
+}
+
+.input-mode {
+	display: inline-flex;
+	align-self: flex-start;
+	border: 1px solid var(--surface1);
+	border-radius: 6px;
+	overflow: hidden;
+}
+
+.input-mode button {
+	padding: 4px 10px;
+	font-size: 11.5px;
+	color: var(--subtext);
+}
+
+.input-mode button[aria-checked="true"] {
+	background: var(--surface0);
+	color: var(--text);
+}
+
+.input-mode button:hover {
+	color: var(--text);
 }
 
 .input-hint {
@@ -518,7 +548,7 @@
 
 .input-text {
 	flex: 1;
-	min-height: 120px;
+	min-height: 96px;
 	resize: none;
 	background: var(--panel-side);
 	border: 1px solid var(--panel-border);
@@ -573,3 +603,57 @@
 		padding: 0 14px;
 	}
 }
+
+/* ── Interactive stdin ──────────────────────────────────── */
+
+.stdin-line {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 12px;
+	border-top: 1px solid var(--surface0);
+	background: var(--panel-side);
+}
+
+.stdin-prompt {
+	color: var(--mauve);
+	font-size: 12px;
+	white-space: nowrap;
+}
+
+.stdin-line input {
+	flex: 1;
+	min-width: 0;
+	background: transparent;
+	border: 0;
+	color: var(--text);
+	font: inherit;
+	outline: none;
+}
+
+.stdin-line button {
+	font-size: 11.5px;
+	color: var(--subtext);
+	padding: 2px 8px;
+	border: 1px solid var(--surface1);
+	border-radius: 4px;
+}
+
+.stdin-line button:hover {
+	color: var(--text);
+	border-color: var(--mauve);
+}
+
+/* What was typed, echoed where the program's reply follows. */
+.output-entry pre.input {
+	color: var(--mauve);
+}
+
+@media (pointer: coarse) {
+	.stdin-line button,
+	.input-mode button {
+		min-height: 40px;
+		padding: 0 12px;
+	}
+}
+

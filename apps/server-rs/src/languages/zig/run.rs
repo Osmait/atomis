@@ -356,6 +356,7 @@ async fn classic_compile(
                     }
                 })),
                 probe: None,
+                quiet: None,
             },
         },
     )
@@ -421,7 +422,9 @@ async fn run_executable(
     emit(RunnerEvent::State(RunState::Running));
     let mut forwarder = ProbeForwarder::new(&probes, events.clone());
     let marker_events = events.clone();
-    let mut stderr_parser = MarkerParser::new(
+    // Shared with the quiet callback, which releases the prompt an
+    // interactive program printed before it started waiting.
+    let stderr_parser = std::sync::Mutex::new(MarkerParser::new(
         Stream::Stderr,
         true,
         file_ids.clone(),
@@ -433,20 +436,22 @@ async fn run_executable(
                 source_location: location,
             });
         }),
-    );
+    ));
+    let lock = crate::languages::common::lock_parser;
     let run_events = events.clone();
     let execution = {
         let forwarder = &mut forwarder;
         let mut probe_reader = ProbeReader::new(Box::new(move |event| forwarder.forward(event)));
-        let parser = &mut stderr_parser;
+        let parser = &stderr_parser;
         let reader = &mut probe_reader;
         let stdin = session.stdin().await;
+        let interactive = matches!(stdin, supervisor::Stdin::Live(_));
         let execution = supervisor::run_with_stdin(
             &executables.program.to_string_lossy(),
             &[],
             RunOptions {
                 cwd: session.root.join("src"),
-                limits: ProcessLimits::new(settings.timeout_ms, 512 * 1024, 512 * 1024),
+                limits: ProcessLimits::new(settings.program_timeout_ms(), 512 * 1024, 512 * 1024),
                 cancel: cancel.clone(),
                 probe_fd: true,
                 env: Vec::new(),
@@ -463,8 +468,11 @@ async fn run_executable(
                             });
                         }
                     })),
-                    stderr: Some(Box::new(move |chunk: &str| parser.push(chunk))),
+                    stderr: Some(Box::new(move |chunk: &str| lock(parser).push(chunk))),
                     probe: Some(Box::new(move |chunk: &[u8]| reader.push(chunk))),
+                    quiet: interactive.then(|| -> supervisor::QuietSink<'_> {
+                        Box::new(move || lock(parser).release())
+                    }),
                 },
             },
             stdin,
@@ -474,7 +482,7 @@ async fn run_executable(
         (execution, probe_reader.error.clone())
     };
     let (execution, mut probe_error) = execution;
-    stderr_parser.flush();
+    lock(&stderr_parser).flush();
     metrics.execution_ms = execution.duration_ms;
     metrics.exit_code = execution.exit_code;
     metrics.signal = execution.signal.clone();
@@ -672,6 +680,7 @@ async fn run_tests(
                         }
                     }
                 })),
+                quiet: None,
             },
         },
     )
