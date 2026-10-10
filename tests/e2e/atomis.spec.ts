@@ -1100,16 +1100,19 @@ test("programs that open TCP/HTTP servers are killed at the timeout", async ({
 
 	// A Node HTTP server blocks forever: the run must end as timed_out and
 	// the process-group kill must leave nothing listening on the port.
+	// Ports below Linux's ephemeral range (32768–60999): one inside it can be
+	// the local end of any outgoing connection on the machine at that moment,
+	// and the server's bind() then fails with "Address already in use".
 	await page.getByRole("button", { name: "main.ts", exact: true }).click();
 	await replaceEditor(
 		page,
-		'import { createServer } from "node:http";\n\nconst server = createServer((_req, res) => {\n\tres.end("hola");\n});\nserver.listen(39123, "127.0.0.1", () => {\n\tconsole.log("escuchando en 39123");\n});\n',
+		'import { createServer } from "node:http";\n\nconst server = createServer((_req, res) => {\n\tres.end("hola");\n});\nserver.listen(28123, "127.0.0.1", () => {\n\tconsole.log("escuchando en 28123");\n});\n',
 	);
 	await expect(page.locator(".state-timed_out")).toBeVisible({
 		timeout: 30_000,
 	});
 	await expect(page.locator(".panel-content")).toContainText(
-		"escuchando en 39123",
+		"escuchando en 28123",
 	);
 	// The condition the old fixed sleep stood in for: the process-group kill
 	// finishing, observable as the port refusing connections. Poll for it.
@@ -1118,7 +1121,7 @@ test("programs that open TCP/HTTP servers are killed at the timeout", async ({
 			() =>
 				page.evaluate(async () => {
 					try {
-						await fetch("http://127.0.0.1:39123/", {
+						await fetch("http://127.0.0.1:28123/", {
 							mode: "no-cors",
 							signal: AbortSignal.timeout(1000),
 						});
@@ -1135,7 +1138,7 @@ test("programs that open TCP/HTTP servers are killed at the timeout", async ({
 	await page.getByRole("button", { name: "main.py", exact: true }).click();
 	await replaceEditor(
 		page,
-		'import socketserver\n\n\nclass Handler(socketserver.BaseRequestHandler):\n    def handle(self):\n        self.request.sendall(b"hola")\n\n\nwith socketserver.TCPServer(("127.0.0.1", 39124), Handler) as server:\n    print("escuchando en 39124")\n    server.serve_forever()\n',
+		'import socketserver\n\n\nclass Handler(socketserver.BaseRequestHandler):\n    def handle(self):\n        self.request.sendall(b"hola")\n\n\nwith socketserver.TCPServer(("127.0.0.1", 28124), Handler) as server:\n    print("escuchando en 28124")\n    server.serve_forever()\n',
 	);
 	await expect(page.locator(".state-timed_out")).toBeVisible({
 		timeout: 30_000,
@@ -1146,7 +1149,7 @@ test("programs that open TCP/HTTP servers are killed at the timeout", async ({
 			() =>
 				page.evaluate(async () => {
 					try {
-						await fetch("http://127.0.0.1:39124/", {
+						await fetch("http://127.0.0.1:28124/", {
 							mode: "no-cors",
 							signal: AbortSignal.timeout(1000),
 						});
@@ -1774,6 +1777,9 @@ test("vim gets quick-scope targets and editor-integrated commands", async ({
 	await setToggle(page, "Vim Mode", true);
 	await page.locator(".monaco-editor").click();
 	await page.keyboard.press("Escape");
+	// Vim attaches asynchronously: keys typed before it is in NORMAL mode go
+	// into the buffer as text, and no quick-scope target ever appears.
+	await expect(page.locator(".mode-chip")).toContainText(/NORMAL/i);
 	await page.keyboard.type("gg");
 	// clever-f: pressing f alone must not draw anything…
 	await page.keyboard.press("f");
