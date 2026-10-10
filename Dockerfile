@@ -74,6 +74,11 @@ RUN curl -fsSL "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/
 RUN rustup component add rust-analyzer \
     && npm install -g typescript-language-server@6.0.0 pyright@1.1.413
 
+# gopls for Go's editor features: the last release that builds with this
+# Go (0.17 needs 1.23).
+ARG GOPLS_VERSION=v0.16.2
+RUN GOBIN=/usr/local/bin GOTOOLCHAIN=local go install "golang.org/x/tools/gopls@${GOPLS_VERSION}"
+
 WORKDIR /src
 COPY . .
 RUN corepack prepare --activate && pnpm install --frozen-lockfile && pnpm build
@@ -105,6 +110,7 @@ COPY --from=build /usr/local/rustup /usr/local/rustup
 COPY --from=build /usr/local/cargo /usr/local/cargo
 COPY --from=build /usr/local/bin/node /usr/local/bin/node
 COPY --from=build /usr/local/bin/zls /usr/local/bin/zls
+COPY --from=build /usr/local/bin/gopls /usr/local/bin/gopls
 COPY --from=build /usr/local/bin/uv /usr/local/bin/uvx /usr/local/bin/
 # npm/npx and the global language servers live inside this tree; the bin
 # entries below are relative symlinks into it and survive the copy as links.
@@ -144,17 +150,18 @@ COPY --from=build /src/rust/session-template /app/rust/session-template
 COPY --from=build /opt/typescript /app/node_modules/typescript
 COPY --from=build /src/build.zig /src/build.zig.zon /app/
 
-# Not root: this process runs other people's code.
+# Not root: this process runs other people's code. The image starts as root
+# only so the entrypoint can take ownership of a volume mounted as root
+# (Railway's are), then runs the server as atomis — see the script.
 RUN useradd --create-home --uid 10001 atomis \
     && mkdir -p /data && chown -R atomis /data /app
-USER atomis
+COPY deploy/atomis-entrypoint.sh /usr/local/bin/atomis-entrypoint
 
 # RUSTUP_HOME/CARGO_HOME point cargo's rustup proxies at the copied
 # toolchain; sessions override CARGO_HOME per workspace for their own
 # registries, which only ever needs these directories read-only.
 ENV NODE_ENV=production \
     ATOMIS_ROOT=/app \
-    ATOMIS_PORT=4317 \
     ATOMIS_HOST=0.0.0.0 \
     RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/usr/local/cargo \
@@ -162,14 +169,16 @@ ENV NODE_ENV=production \
     XDG_DATA_HOME=/data \
     XDG_CACHE_HOME=/data/cache
 
-# Workspaces, preferences and the compiler cache. Mount it to keep them.
-VOLUME ["/data"]
+# Workspaces, preferences and the compiler cache live in /data: mount a
+# volume there to keep them (`docker run -v atomis-data:/data`, a Railway
+# volume). Not declared with VOLUME, which Railway refuses.
 EXPOSE 4317
 
 # ATOMIS_TOKEN has no default on purpose: the server refuses to listen on
 # 0.0.0.0 without one, so a container cannot come up open by accident.
-# Shell form so the check follows ATOMIS_PORT when the operator moves it.
+# Shell form so the check follows the port the server picks: ATOMIS_PORT,
+# else the PORT a host injects, else 4317.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
-    CMD curl -fsS "http://127.0.0.1:${ATOMIS_PORT:-4317}/api/health" || exit 1
+    CMD curl -fsS "http://127.0.0.1:${ATOMIS_PORT:-${PORT:-4317}}/api/health" || exit 1
 
-ENTRYPOINT ["atomis-server"]
+ENTRYPOINT ["atomis-entrypoint"]
