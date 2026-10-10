@@ -263,6 +263,9 @@ pub struct CreateSessionRequest {
     pub workspace: Option<String>,
     /// Restore a local mirror into a NEW scratch session only.
     pub files: Option<Vec<SourceFile>>,
+    /// The new scratch session's Input text (a demo's). Never a workspace's:
+    /// that one keeps its own.
+    pub input: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

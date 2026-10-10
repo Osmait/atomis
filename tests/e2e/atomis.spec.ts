@@ -301,6 +301,56 @@ test("an interactive Run waits for typed input, line by line, and EOF ends it", 
 	await expect(field).toHaveCount(0);
 });
 
+test("a demo opens from the gallery in a scratch session, ready to answer", async ({
+	page,
+}) => {
+	await openClean(page);
+	await treeAction(page, "Open a demo…");
+	const gallery = page.getByRole("dialog", { name: "Demos" });
+	await gallery.getByLabel("Filter demos").fill("python");
+	await gallery.getByRole("button", { name: "Calculator REPL in Python" }).click();
+	await expect(gallery).toHaveCount(0);
+	await expect(page.locator(".branch-status")).toContainText("scratch");
+	await expect(page.locator(".tree-file")).toHaveCount(1);
+	await expect(page.locator(".global-status")).toContainText("main.py");
+
+	// Auto Run plays the demo's sample session from its Input text…
+	const terminal = page.locator(".panel-content");
+	await expect(terminal).toContainText("total of 2 results: 7.5");
+	await expect(page.getByRole("button", { name: /stdin · \d+ lines/ })).toBeVisible();
+	// …and Run reads what you type: the demo switched Run to it.
+	await page.locator(".run-button").click();
+	const field = page.getByLabel("Input for the running program");
+	await field.fill("6 * 7");
+	await field.press("Enter");
+	await expect(terminal).toContainText("42");
+	await field.fill("quit");
+	await field.press("Enter");
+	await expect(terminal).toContainText("bye");
+	await expect(field).toHaveCount(0);
+});
+
+test("the mini Redis demo keeps its data from one run to the next", async ({
+	page,
+}) => {
+	await openClean(page);
+	await treeAction(page, "Open a demo…");
+	await page
+		.getByRole("dialog", { name: "Demos" })
+		.getByRole("button", { name: "Mini Redis in Python" })
+		.click();
+	const terminal = page.locator(".panel-content");
+	// Auto Run plays the sample: a first visit, on a new database.
+	await expect(terminal).toContainText("loaded 0 keys");
+	await expect(terminal).toContainText("redis> (integer) 1");
+	// An edit is a new run, a new process: the count comes from the file.
+	await page.getByRole("textbox", { name: "Editor content" }).focus();
+	await page.keyboard.press("ControlOrMeta+End");
+	await page.keyboard.type("\n# rerun\n");
+	await expect(terminal).toContainText("loaded 2 keys");
+	await expect(terminal).toContainText("redis> (integer) 2");
+});
+
 test("a file is deleted from its own row, after a confirmation that Cancel backs out of", async ({
 	page,
 }) => {

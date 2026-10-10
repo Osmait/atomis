@@ -98,6 +98,16 @@ test("a workspace keeps its Input text across sessions; a scratch session starts
   expect((await session(request,baseURL!)).input).toBe("");
 });
 
+test("a new session's input seeds a scratch session only, never a workspace",async({request,baseURL})=>{
+  const seeded=await request.post("/api/sessions",{headers:{origin:baseURL!},data:{language:"py",input:"7\n"}});
+  expect(seeded.ok()).toBe(true);
+  expect(((await seeded.json()) as CreateSessionResponse).input).toBe("7\n");
+  const id=await workspace(request,baseURL!);
+  const refused=await request.post("/api/sessions",{headers:{origin:baseURL!},data:{language:"py",workspace:id,input:"7\n"}});
+  expect(refused.status()).toBe(400);
+  expect((await session(request,baseURL!,id)).input).toBe("");
+});
+
 test("an input over the limit is refused and the previous one kept",async({page,request,baseURL})=>{
   const id=await workspace(request,baseURL!);
   const created=await session(request,baseURL!,id);await connect(page,created);
