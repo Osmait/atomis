@@ -694,6 +694,7 @@ impl SessionManager {
 
     pub async fn destroy(&self, id: &str) {
         crate::languages::zig::compile_server::forget(id).await;
+        crate::languages::instrument_worker::forget(id).await;
         let session = self.sessions.lock().await.remove(id);
         if let Some(session) = session {
             if let Some(workspace_id) = &session.workspace_id {

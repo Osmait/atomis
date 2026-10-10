@@ -418,7 +418,7 @@ function linesInsideStringsOrComments(source) {
 	return unsafe;
 }
 
-function render(result, output, sourceMap, version) {
+export function render(result, output, sourceMap, version) {
 	return JSON.stringify({
 		protocolVersion: 1,
 		documentVersion: version,

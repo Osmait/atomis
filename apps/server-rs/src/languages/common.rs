@@ -27,10 +27,10 @@ pub struct InstrumentConfig<'a> {
     /// Extra per-file flags (e.g. `--entry` for main.rs, `--lang c`).
     pub extra_args: &'a (dyn Fn(&str) -> Vec<String> + Sync),
     pub timeout_ms: u64,
-    /// A long-lived worker for this instrumenter — the interpreter and the
-    /// worker script — tried before spawning `command` per file (see
-    /// `instrument_worker`). Only for instrumenters that take no `extra_args`.
-    pub worker: Option<(String, std::path::PathBuf)>,
+    /// A long-lived worker for this instrumenter, tried before spawning
+    /// `command` per file (see `instrument_worker`). Only for instrumenters
+    /// that take no `extra_args`.
+    pub worker: Option<crate::languages::instrument_worker::WorkerSpec>,
 }
 
 pub struct InstrumentOutcome {
@@ -89,11 +89,11 @@ pub async fn instrument_files(
             .root
             .join("generated")
             .join(format!(".atomis-{file_id}.json"));
-        if let Some((program, script)) = &config.worker {
+        if let Some(spec) = &config.worker {
             let started = std::time::Instant::now();
             if let Some(json) = instrument_with_worker(
-                program,
-                script,
+                spec,
+                session,
                 &source_path,
                 &output_path,
                 &source_map_path,
@@ -242,8 +242,8 @@ fn record_metadata(
 /// have written. `None`: the worker could not do it; use the CLI.
 #[allow(clippy::too_many_arguments)]
 async fn instrument_with_worker(
-    program: &str,
-    script: &std::path::Path,
+    spec: &crate::languages::instrument_worker::WorkerSpec,
+    session: &crate::domain::session::Session,
     source_path: &std::path::Path,
     output_path: &std::path::Path,
     source_map_path: &std::path::Path,
@@ -259,11 +259,16 @@ async fn instrument_with_worker(
     }
     let output = output_path.to_string_lossy();
     let source_map = source_map_path.to_string_lossy();
+    let input_path = source_path.to_string_lossy();
+    let sandbox = session.sandbox(settings);
     let answer = crate::languages::instrument_worker::instrument(
-        program,
-        script,
+        spec,
+        &session.id,
+        sandbox.as_ref(),
         &crate::languages::instrument_worker::Request {
             source: &source,
+            input_path: &input_path,
+            lang: spec.lang,
             uri: &file.uri,
             version,
             file_id,

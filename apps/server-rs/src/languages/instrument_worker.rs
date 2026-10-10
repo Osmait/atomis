@@ -1,44 +1,83 @@
-//! Long-lived instrumenter processes, one per interpreter and script,
-//! shared by sessions.
+//! Long-lived instrumenter processes.
 //!
-//! A Node instrumenter spends ~110 ms loading its parser and a few ms
-//! instrumenting; spawned per file, that load is most of a TS run's
-//! instrumentation time. The worker (`ts/instrumenter/worker.mjs`) loads it
-//! once and answers JSON-line requests. It is given source text and returns
-//! generated text, never opening a file, so it needs no per-session sandbox:
-//! the files are read and written here, as the session would have.
+//! A Node or Python instrumenter spends most of its time starting up and
+//! loading its parser, and a few ms instrumenting; spawned per file, that
+//! start-up was most of a run's instrumentation time. A worker starts once
+//! and answers JSON-line requests.
+//!
+//! Two kinds:
+//!
+//! * Shared (TypeScript, Python): one process per interpreter and script for
+//!   every session. It is given source text and returns generated text,
+//!   never opening a file, so it needs no sandbox: the files are read and
+//!   written here, as the session would have.
+//! * Per session (C/C++): its instrumenter runs clang on the session's file,
+//!   and clang follows #include lines, so the worker runs inside that
+//!   session's sandbox (inherited by clang), is stopped with the session,
+//!   and after `IDLE` without a request.
 //!
 //! Any failure — a crash, a malformed answer, a timeout — drops the worker
 //! and returns `None`, and the caller instruments the classic way; the next
-//! request starts a fresh worker.
+//! request starts a fresh worker. Each worker has its own lock, so sessions
+//! with workers of their own never wait on each other.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::LazyLock;
-use std::time::Duration;
+use std::sync::{Arc, LazyLock};
+use std::time::{Duration, Instant};
 
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout};
 use tokio::sync::Mutex;
 
-/// Far above a normal answer (single-digit ms); a stuck parse is dropped.
-const ANSWER_TIMEOUT: Duration = Duration::from_secs(5);
+use crate::exec::sandbox::SandboxPolicy;
+
+/// Far above a normal answer (single-digit ms, a clang AST dump for C); a
+/// stuck parse is dropped.
+const ANSWER_TIMEOUT: Duration = Duration::from_secs(10);
+/// How long a per-session worker may sit unused before it is stopped.
+pub const IDLE: Duration = Duration::from_secs(600);
+
+/// Which worker to use for an instrumenter.
+#[derive(Clone, Debug)]
+pub struct WorkerSpec {
+    /// The interpreter, e.g. `node`.
+    pub program: String,
+    pub script: PathBuf,
+    /// One per session inside its sandbox, rather than one shared.
+    pub per_session: bool,
+    /// Passed to the worker for instrumenters that take a language.
+    pub lang: Option<&'static str>,
+}
 
 struct Worker {
     _child: Child,
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
     next_id: u64,
+    last_used: Instant,
+    /// The sandbox it was confined with; a session that changes its own
+    /// sandbox settings gets a new worker.
+    confinement: String,
 }
 
-static WORKERS: LazyLock<Mutex<HashMap<(String, PathBuf), Worker>>> =
+type Slot = Arc<Mutex<Option<Worker>>>;
+
+/// Interpreter, script and — for per-session workers — session.
+type Key = (String, PathBuf, String);
+
+static WORKERS: LazyLock<Mutex<HashMap<Key, Slot>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Request<'a> {
     pub source: &'a str,
+    /// The file on disk, for workers that hand it to another program.
+    pub input_path: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lang: Option<&'a str>,
     pub uri: &'a str,
     pub version: u64,
     pub file_id: u32,
@@ -63,50 +102,105 @@ struct Wire {
     error: Option<String>,
 }
 
-/// Instruments one file through the worker `program script` (e.g. `node
-/// worker.mjs`); `None` means "use the CLI instead".
-pub async fn instrument(program: &str, script: &Path, request: &Request<'_>) -> Option<Answer> {
+/// Instruments one file through the worker `spec` names; `None` means "use
+/// the CLI instead". `session` and `sandbox` matter only to per-session
+/// workers.
+pub async fn instrument(
+    spec: &WorkerSpec,
+    session: &str,
+    sandbox: Option<&Arc<SandboxPolicy>>,
+    request: &Request<'_>,
+) -> Option<Answer> {
     use tracing::Instrument;
-    instrument_inner(program, script, request)
-        .instrument(tracing::info_span!("worker", label = %program))
+    instrument_inner(spec, session, sandbox, request)
+        .instrument(tracing::info_span!("worker", label = %spec.program))
         .await
 }
 
-async fn instrument_inner(program: &str, script: &Path, request: &Request<'_>) -> Option<Answer> {
+async fn instrument_inner(
+    spec: &WorkerSpec,
+    session: &str,
+    sandbox: Option<&Arc<SandboxPolicy>>,
+    request: &Request<'_>,
+) -> Option<Answer> {
     // An escape hatch, and the A side of any comparison with the CLI.
     if std::env::var("ATOMIS_INSTRUMENT_WORKERS").is_ok_and(|value| value.trim() == "0") {
         return None;
     }
-    let key = (program.to_string(), script.to_path_buf());
-    let mut workers = WORKERS.lock().await;
-    if !workers.contains_key(&key) {
-        match spawn(program, script) {
-            Ok(worker) => {
-                workers.insert(key.clone(), worker);
-            }
+    let scope = if spec.per_session { session.to_string() } else { String::new() };
+    let confinement = if spec.per_session {
+        sandbox.map_or_else(|| "none".to_string(), |policy| format!("{:?}", policy.as_ref()))
+    } else {
+        String::new()
+    };
+    let slot = {
+        let mut workers = WORKERS.lock().await;
+        Arc::clone(workers.entry((spec.program.clone(), spec.script.clone(), scope)).or_default())
+    };
+    let mut slot = slot.lock().await;
+    if slot.as_ref().is_some_and(|worker| worker.confinement != confinement) {
+        *slot = None;
+    }
+    if slot.is_none() {
+        let confine = if spec.per_session { sandbox } else { None };
+        match spawn(&spec.program, &spec.script, confine, confinement) {
+            Ok(worker) => *slot = Some(worker),
             Err(error) => {
                 tracing::warn!(%error, "instrumenter worker failed to start");
                 return None;
             }
         }
     }
-    let worker = workers.get_mut(&key)?;
+    let worker = slot.as_mut()?;
+    worker.last_used = Instant::now();
     match tokio::time::timeout(ANSWER_TIMEOUT, exchange(worker, request)).await {
         Ok(Ok(answer)) => Some(answer),
         Ok(Err(error)) => {
             tracing::warn!(%error, "instrumenter worker failed; using the CLI");
-            workers.remove(&key);
+            *slot = None;
             None
         }
         Err(_) => {
             tracing::warn!("instrumenter worker timed out; using the CLI");
-            workers.remove(&key);
+            *slot = None;
             None
         }
     }
 }
 
-fn spawn(program: &str, script: &Path) -> Result<Worker, String> {
+/// Stops a session's own workers, when the session goes.
+pub async fn forget(session: &str) {
+    let mut workers = WORKERS.lock().await;
+    workers.retain(|(_, _, scope), _| scope != session);
+}
+
+/// Stops per-session workers unused for `idle`; shared ones stay. One busy
+/// with a request is not idle and is skipped.
+pub async fn reap_idle(idle: Duration) -> usize {
+    let slots: Vec<Slot> = WORKERS
+        .lock()
+        .await
+        .iter()
+        .filter(|((_, _, scope), _)| !scope.is_empty())
+        .map(|(_, slot)| Arc::clone(slot))
+        .collect();
+    let mut stopped = 0;
+    for slot in slots {
+        let Ok(mut slot) = slot.try_lock() else { continue };
+        if slot.as_ref().is_some_and(|worker| worker.last_used.elapsed() >= idle) {
+            *slot = None;
+            stopped += 1;
+        }
+    }
+    stopped
+}
+
+fn spawn(
+    program: &str,
+    script: &Path,
+    sandbox: Option<&Arc<SandboxPolicy>>,
+    confinement: String,
+) -> Result<Worker, String> {
     let mut command = tokio::process::Command::new(program);
     crate::exec::supervisor::scrub_bundle_env(&mut command);
     command
@@ -116,6 +210,21 @@ fn spawn(program: &str, script: &Path) -> Result<Worker, String> {
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .kill_on_drop(true);
+    if let Some(policy) = sandbox {
+        // The confinement the per-file CLI ran under, for the worker and
+        // everything it starts.
+        for (name, value) in crate::exec::sandbox::child_env(policy) {
+            command.env(name, value);
+        }
+        let policy = crate::exec::sandbox::with_program(policy, program);
+        match crate::exec::sandbox::prepare(&policy, crate::exec::sandbox::detect_support()) {
+            Ok(Some(ruleset)) => unsafe {
+                command.pre_exec(move || crate::exec::sandbox::restrict(&ruleset));
+            },
+            Ok(None) => {}
+            Err(error) => return Err(format!("sandbox setup failed: {error}")),
+        }
+    }
     #[cfg(target_os = "linux")]
     unsafe {
         command.pre_exec(|| {
@@ -126,7 +235,14 @@ fn spawn(program: &str, script: &Path) -> Result<Worker, String> {
     let mut child = command.spawn().map_err(|error| error.to_string())?;
     let stdin = child.stdin.take().ok_or("no stdin")?;
     let stdout = BufReader::new(child.stdout.take().ok_or("no stdout")?);
-    Ok(Worker { _child: child, stdin, stdout, next_id: 0 })
+    Ok(Worker {
+        _child: child,
+        stdin,
+        stdout,
+        next_id: 0,
+        last_used: Instant::now(),
+        confinement,
+    })
 }
 
 async fn exchange(worker: &mut Worker, request: &Request<'_>) -> Result<Answer, String> {

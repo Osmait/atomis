@@ -389,7 +389,14 @@ pub async fn run(
             ],
             extra_args: &|_| Vec::new(),
             timeout_ms: 15_000,
-            worker: None,
+            // Its own worker per session, inside the session's sandbox:
+            // the instrumenter runs clang on the user's file.
+            worker: Some(crate::languages::instrument_worker::WorkerSpec {
+                program: "node".to_string(),
+                script: packs::project_root().join("cfamily/instrumenter/worker.mjs"),
+                per_session: true,
+                lang: Some(lang_flag),
+            }),
         },
     )
     .await;

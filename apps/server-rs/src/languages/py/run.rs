@@ -193,10 +193,12 @@ pub async fn run(
             // The shared worker runs the system interpreter, whose `ast`
             // may not match a session venv's Python; those use the CLI.
             worker: (python_command(&session.root) == "python3").then(|| {
-                (
-                    "python3".to_string(),
-                    packs::project_root().join("python/instrumenter/pylive_worker.py"),
-                )
+                crate::languages::instrument_worker::WorkerSpec {
+                    program: "python3".to_string(),
+                    script: packs::project_root().join("python/instrumenter/pylive_worker.py"),
+                    per_session: false,
+                    lang: None,
+                }
             }),
         },
     )

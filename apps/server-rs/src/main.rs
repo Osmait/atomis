@@ -180,6 +180,13 @@ async fn main() {
                 if stopped > 0 {
                     tracing::info!(stopped, "stopped idle zig compile servers");
                 }
+                let stopped = languages::instrument_worker::reap_idle(
+                    languages::instrument_worker::IDLE,
+                )
+                .await;
+                if stopped > 0 {
+                    tracing::info!(stopped, "stopped idle instrumenter workers");
+                }
             }
         });
     }
