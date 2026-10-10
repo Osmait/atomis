@@ -24,8 +24,10 @@ ARG ZIG_SHA256=70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00
 # Same tarball + hash .github/workflows/ci.yml pins for the e2e job.
 ARG ZLS_VERSION=0.16.0
 ARG ZLS_SHA256=ded6d562a0b86ee878b1ddf70ffab2797ce3cdca3b02d6077548f9d56dff96b6
-ARG NODE_VERSION=22.14.0
-ARG NODE_SHA256=69b09dba5c8dcb05c4e4273a4340db1005abeafe3927efda2bc5b249e80437ec
+# 22.18+: TS sessions run on Node's own type stripping, which earlier 22s
+# lack — with 22.14 the server judged Node too old and switched TS off.
+ARG NODE_VERSION=22.23.3
+ARG NODE_SHA256=df450af89261115ef9f9e3830c3eeb2cc9213b63c720b1af623cb5dcbe2e02de
 # The official tarball, not bookworm's golang-go: the distro ships 1.19 and
 # the go.mod files declare `go 1.22`, which 1.19 refuses to build.
 ARG GO_VERSION=1.22.12
@@ -85,10 +87,16 @@ RUN corepack prepare --activate && pnpm install --frozen-lockfile && pnpm build
 
 # pnpm links packages into a content store, and COPY --from copies a symlink
 # as a symlink — which would arrive in the runtime image pointing at nothing.
-RUN cp -rL /src/node_modules/typescript /opt/typescript
+RUN cp -rL /src/node_modules/typescript /opt/typescript \
+    && cp -rL /src/node_modules/typescript-ast /opt/typescript-ast
 
 # ── run ──────────────────────────────────────────────────────────────────
-FROM debian:bookworm-slim
+# Trixie, not bookworm: C and C++ sessions need clang 15+, and bookworm's
+# is 14 — the server found it, judged it too old and switched both
+# languages off. Trixie ships clang 19 from Debian itself, so no extra apt
+# repository joins the image. The build stage stays on bookworm: it only
+# compiles, and a binary linked against bookworm's glibc runs on trixie's.
+FROM debian:trixie-slim
 
 ARG ZIG_VERSION=0.16.0
 
@@ -148,6 +156,10 @@ COPY --from=build /src/rust/runtime /app/rust/runtime
 COPY --from=build /src/rust/session-template /app/rust/session-template
 # TypeScript sessions type-check with this exact tsc, found by path.
 COPY --from=build /opt/typescript /app/node_modules/typescript
+# The TS instrumenter parses with the `typescript-ast` alias (TypeScript 5's
+# compiler API; 7's tsc above has none). Without it every TS run failed with
+# "Instrumentation failed" — unseen while the old Node kept TS switched off.
+COPY --from=build /opt/typescript-ast /app/node_modules/typescript-ast
 COPY --from=build /src/build.zig /src/build.zig.zon /app/
 
 # Not root: this process runs other people's code. The image starts as root

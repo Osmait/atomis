@@ -49,10 +49,15 @@ for (const event of ["push", "pull_request"]) {
 		assert.equal(runs(["apps/web/src/old.ts", "docs/archived.md"]), true);
 	});
 
-	test(`${event}: Docker validates its configuration and its own workflow`, () => {
+	test(`${event}: Docker validates its configuration, its own workflow and its smoke test`, () => {
 		const block = eventConfig(docker, event);
 		const paths = [...block.matchAll(/^      - (.+)$/gm)].map((match) => match[1]);
-		assert.deepEqual(paths, ["Dockerfile", ".dockerignore", ".github/workflows/docker.yml"]);
+		assert.deepEqual(paths, [
+			"Dockerfile",
+			".dockerignore",
+			".github/workflows/docker.yml",
+			"scripts/image-smoke.mjs",
+		]);
 	});
 }
 
