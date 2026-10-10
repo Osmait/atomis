@@ -130,9 +130,11 @@ async fn main() {
             .init();
     }
 
-    let port: u16 = std::env::var("ATOMIS_PORT")
-        .ok()
-        .and_then(|value| value.parse().ok())
+    // ATOMIS_PORT, else PORT — what Railway, Render, Fly and Heroku-style
+    // hosts inject and route their public domain to — else 4317.
+    let port: u16 = ["ATOMIS_PORT", "PORT"]
+        .iter()
+        .find_map(|name| std::env::var(name).ok().and_then(|value| value.trim().parse().ok()))
         .unwrap_or(4317);
 
     let state = Arc::new(AppState::new());

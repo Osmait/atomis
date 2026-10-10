@@ -326,14 +326,22 @@ pub fn child_env(policy: &SandboxPolicy) -> Vec<(String, String)> {
         ("GOMODCACHE".to_string(), at(".gomodcache")),
         ("PYTHONPYCACHEPREFIX".to_string(), at(".pycache")),
     ];
-    // HOME moved, so rustup can no longer find its toolchains by default.
-    if let Some(home) = &policy.home {
-        env.push((
-            "RUSTUP_HOME".to_string(),
-            home.join(".rustup").to_string_lossy().into_owned(),
-        ));
+    if let Some(rustup) = rustup_home(policy.home.as_deref(), std::env::var_os("RUSTUP_HOME").as_deref()) {
+        env.push(("RUSTUP_HOME".to_string(), rustup));
     }
     env
+}
+
+/// HOME moved, so rustup can no longer find its toolchains by default: point
+/// it at the real home's — unless RUSTUP_HOME already says where they are,
+/// which the child inherits as it is. The Docker image keeps them in
+/// /usr/local/rustup; overriding that sent every Rust build in the container
+/// looking for a /home/atomis/.rustup it could not create.
+fn rustup_home(home: Option<&Path>, configured: Option<&std::ffi::OsStr>) -> Option<String> {
+    if configured.is_some_and(|value| !value.is_empty()) {
+        return None;
+    }
+    home.map(|home| home.join(".rustup").to_string_lossy().into_owned())
 }
 
 #[cfg(target_os = "linux")]
@@ -741,8 +749,21 @@ mod tests {
             );
         }
         // …except the rustup root, which must keep pointing at the real
-        // home now that HOME moved (it is read-only anyway).
-        assert_eq!(env["RUSTUP_HOME"], "/home/dev/.rustup");
+        // home now that HOME moved (it is read-only anyway) — when the
+        // server was not told where it is.
+        if std::env::var_os("RUSTUP_HOME").is_none() {
+            assert_eq!(env["RUSTUP_HOME"], "/home/dev/.rustup");
+        }
+    }
+
+    #[test]
+    fn a_configured_rustup_home_is_left_to_the_child() {
+        let home = Path::new("/home/dev");
+        assert_eq!(rustup_home(Some(home), None).as_deref(), Some("/home/dev/.rustup"));
+        // The Docker image's /usr/local/rustup reaches the child unchanged.
+        assert_eq!(rustup_home(Some(home), Some(std::ffi::OsStr::new("/usr/local/rustup"))), None);
+        assert_eq!(rustup_home(Some(home), Some(std::ffi::OsStr::new(""))).as_deref(), Some("/home/dev/.rustup"));
+        assert_eq!(rustup_home(None, None), None);
     }
 
     /// Pins the exact network boundary Landlock gives us, including its

@@ -6,16 +6,18 @@ README first: the token is the only thing between the URL and a shell.
 
 ## Deploying
 
-The repository's `Dockerfile` builds as-is. On the service:
+The repository's `Dockerfile` builds as-is, and `railway.json` sets the
+Dockerfile builder, the `/api/health` healthcheck, restarts on failure and
+Serverless (sleep when idle). On the service:
 
 | Setting | Value | Why |
 |---|---|---|
 | `ATOMIS_TOKEN` | `openssl rand -hex 24` | required: the server refuses `0.0.0.0` without it |
 | `ATOMIS_ALLOWED_ORIGINS` | `https://<service>.up.railway.app` | the address people type, or every write gets a 403 |
-| `ATOMIS_PORT` | `${{PORT}}` | or leave 4317 and set it as the public networking port |
 | Volume | mounted at `/data` | workspaces, preferences and compiler caches survive deploys |
-| Healthcheck path | `/api/health` | unauthenticated on purpose, says only that the process is up |
-| Serverless | on, for personal use | sleeps after 5-10 minutes without outbound traffic |
+
+The port needs nothing: the server listens on `ATOMIS_PORT`, else the
+`PORT` Railway injects, else 4317.
 
 Resource knobs, all optional:
 
@@ -26,8 +28,11 @@ Resource knobs, all optional:
 | `ATOMIS_GOPLS_MEMLIMIT` | `128MiB` | gopls's soft memory limit (`GOMEMLIMIT`); `off` leaves Go's default |
 | `ATOMIS_ZIG_INCREMENTAL` | on | `0` builds Zig with `zig build` every run instead of keeping incremental compile servers (~120 MB each, two per Zig session, stopped after 10 idle minutes) |
 
-The image runs as uid 10001, and Railway mounts volumes owned by root. If the
-first deploy logs a permission error under `/data`, set `RAILWAY_RUN_UID=0`.
+Railway mounts volumes owned by root. The image starts as root only for
+`deploy/atomis-entrypoint.sh`, which takes ownership of `/data` for the
+`atomis` user (uid 10001) and then runs the server as that user, so
+`RAILWAY_RUN_UID=0` — which would run users' programs as root — is not
+needed.
 
 Railway's kernel and seccomp profile decide whether the Landlock sandbox
 works there; `atomis-server --doctor` in the service shell says which. Without
