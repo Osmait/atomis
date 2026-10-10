@@ -123,3 +123,59 @@
 	background: var(--surface0);
 	color: var(--text);
 }
+
+/* ── Demos ─────────────────────────────────────────────── */
+
+.demo-picker {
+	width: min(600px, calc(100vw - 32px));
+}
+
+.demo-kind {
+	padding: 12px 15px;
+	border-bottom: 1px solid var(--surface0);
+}
+
+.demo-kind h3 {
+	margin: 0;
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--text);
+}
+
+.demo-kind p {
+	margin: 4px 0 10px;
+	font-size: 12px;
+	line-height: 1.5;
+	color: var(--subtext);
+}
+
+.demo-languages {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.demo-language {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 5px 10px;
+	font-size: 12px;
+	color: var(--subtext);
+	border: 1px solid var(--surface1);
+	border-radius: 6px;
+}
+
+.demo-language:hover:not(:disabled),
+.demo-language:focus-visible {
+	color: var(--text);
+	border-color: var(--mauve);
+	background: var(--surface0-dim);
+}
+
+@media (pointer: coarse) {
+	.demo-language {
+		min-height: 44px;
+		padding: 0 14px;
+	}
+}

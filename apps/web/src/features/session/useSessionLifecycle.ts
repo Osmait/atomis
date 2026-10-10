@@ -15,6 +15,13 @@ import type { LspClient } from "../editor/lsp/LspClient.js";
 import type { ProjectFile, ProjectFilesReader } from "../../shared/types.js";
 import type { Settings } from "../../shared/stores/settings.js";
 
+/** What a new scratch session starts with instead of a scaffold: a demo. */
+export interface SessionSeed {
+	language: Language;
+	files: { path: string; source: string }[];
+	input?: string;
+}
+
 interface SessionLifecycleOptions {
 	/** The session everything else hangs off; the shell owns it. */
 	sessionRef: React.RefObject<CreateSessionResponse | undefined>;
@@ -105,26 +112,34 @@ export function useSessionLifecycle(options: SessionLifecycleOptions) {
 	}, [activeLanguageRef, entryRef, resetToEntry, sessionRef, setProjectFiles, setSession, setSettings, settingsRef, versionRef]);
 
 	const requestSession = useCallback(
-		(workspace: string | undefined): Promise<Response> =>
+		(workspace: string | undefined, demo?: SessionSeed): Promise<Response> =>
 			apiFetch("/api/sessions", {
 				method: "POST",
 				headers: { "content-type": "application/json" },
-				body: JSON.stringify({
-					language: loadDefaultTemplate(),
-					scaffold: loadScaffold(),
-					...(workspace ? { workspace } : {}),
-				}),
+				body: JSON.stringify(
+					demo
+						? {
+								language: demo.language,
+								files: demo.files,
+								...(demo.input ? { input: demo.input } : {}),
+							}
+						: {
+								language: loadDefaultTemplate(),
+								scaffold: loadScaffold(),
+								...(workspace ? { workspace } : {}),
+							},
+				),
 			}),
 		[],
 	);
 
 	const openSession = useCallback(
-		async (workspace: string | undefined): Promise<void> => {
+		async (workspace: string | undefined, demo?: SessionSeed): Promise<void> => {
 			const operation = ++operationRef.current;
 			// A previous session means this is a switch, not the boot.
 			const isSwitch = sessionRef.current !== undefined;
 			try {
-				let response = await requestSession(workspace);
+				let response = await requestSession(workspace, demo);
 				// A stored workspace that no longer exists falls back to a
 				// scratch session rather than failing the boot.
 				if (!response.ok && workspace) {
@@ -202,6 +217,32 @@ export function useSessionLifecycle(options: SessionLifecycleOptions) {
 		return recoveryRef.current;
 	}, [adoptSession, closeRuntime, filesRef, lspClientsRef, resetRuntime, sessionRef, setCapabilities, setPeek, setStatus, setSwitching]);
 
+	/** Tears down what is bound to the current session before the next. */
+	const leaveSession = useCallback(
+		(status: string): void => {
+			setSwitching(true);
+			for (const client of Object.values(lspClientsRef.current))
+				client?.dispose();
+			lspClientsRef.current = {};
+			closeRuntime();
+			resetRuntime();
+			setCapabilities({});
+			setPeek(null);
+			setStatus(status);
+			versionRef.current = 1;
+		},
+		[
+			closeRuntime,
+			lspClientsRef,
+			resetRuntime,
+			setCapabilities,
+			setPeek,
+			setStatus,
+			setSwitching,
+			versionRef,
+		],
+	);
+
 	const switchToWorkspace = useCallback(
 		(id: string | undefined): void => {
 			closePicker();
@@ -216,31 +257,24 @@ export function useSessionLifecycle(options: SessionLifecycleOptions) {
 			)
 				return;
 			saveActiveWorkspace(id);
-			setSwitching(true);
-			for (const client of Object.values(lspClientsRef.current))
-				client?.dispose();
-			lspClientsRef.current = {};
-			closeRuntime();
-			resetRuntime();
-			setCapabilities({});
-			setPeek(null);
-			setStatus("Opening workspace…");
-			versionRef.current = 1;
+			leaveSession("Opening workspace…");
 			void openSession(id);
 		},
-		[
-			closePicker,
-			closeRuntime,
-			lspClientsRef,
-			openSession,
-			resetRuntime,
-			sessionRef,
-			setCapabilities,
-			setPeek,
-			setStatus,
-			setSwitching,
-			versionRef,
-		],
+		[closePicker, leaveSession, openSession, sessionRef],
+	);
+
+	/**
+	 * Opens a demo in a fresh scratch session seeded with its files and
+	 * input — never in the open workspace, whose files it would replace.
+	 */
+	const openDemo = useCallback(
+		(demo: SessionSeed): void => {
+			closePicker();
+			saveActiveWorkspace(undefined);
+			leaveSession("Opening demo…");
+			void openSession(undefined, demo);
+		},
+		[closePicker, leaveSession, openSession],
 	);
 	/** Boots once, into whatever workspace was last open. */
 	const bootedRef = useRef(false);
@@ -261,5 +295,5 @@ export function useSessionLifecycle(options: SessionLifecycleOptions) {
 		void openSession(loadActiveWorkspace());
 	}, [openSession, setStartupError, setStatus]);
 
-	return { openSession, switchToWorkspace, boot, retryBoot, recoverSession };
+	return { openSession, switchToWorkspace, openDemo, boot, retryBoot, recoverSession };
 }

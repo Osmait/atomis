@@ -31,6 +31,8 @@ interface FileTreeProps {
 	onDeleteActive: () => void;
 	onHideTree: () => void;
 	onLoadDemo: () => void;
+	/** The demo gallery: examples that open in a new scratch session. */
+	onOpenDemos: () => void;
 	onSwitchWorkspace: () => void;
 	onClearWorkspace: () => void;
 	onDraftChange: (value: string) => void;
@@ -222,6 +224,16 @@ export function FileTree(props: FileTreeProps): React.JSX.Element {
 						>
 							<Lucide icon="flask-conical" size={13} />
 							<span>Load demo workspace</span>
+						</button>
+						<button
+							onClick={() => {
+								setMenuOpen(false);
+								props.onOpenDemos();
+							}}
+							role="menuitem"
+						>
+							<Lucide icon="play" size={13} />
+							<span>Open a demo…</span>
 						</button>
 						<button
 							onClick={() => {

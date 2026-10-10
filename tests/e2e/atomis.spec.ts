@@ -300,6 +300,35 @@ test("an interactive Run waits for typed input, line by line, and EOF ends it", 
 	await expect(field).toHaveCount(0);
 });
 
+test("a demo opens from the gallery in a scratch session, ready to answer", async ({
+	page,
+}) => {
+	await openClean(page);
+	await treeAction(page, "Open a demo…");
+	const gallery = page.getByRole("dialog", { name: "Demos" });
+	await gallery.getByLabel("Filter demos").fill("python");
+	await gallery.getByRole("button", { name: "Calculator REPL in Python" }).click();
+	await expect(gallery).toHaveCount(0);
+	await expect(page.locator(".branch-status")).toContainText("scratch");
+	await expect(page.locator(".tree-file")).toHaveCount(1);
+	await expect(page.locator(".global-status")).toContainText("main.py");
+
+	// Auto Run plays the demo's sample session from its Input text…
+	const terminal = page.locator(".panel-content");
+	await expect(terminal).toContainText("total of 2 results: 7.5");
+	await expect(page.getByRole("button", { name: /stdin · \d+ lines/ })).toBeVisible();
+	// …and Run reads what you type: the demo switched Run to it.
+	await page.locator(".run-button").click();
+	const field = page.getByLabel("Input for the running program");
+	await field.fill("6 * 7");
+	await field.press("Enter");
+	await expect(terminal).toContainText("42");
+	await field.fill("quit");
+	await field.press("Enter");
+	await expect(terminal).toContainText("bye");
+	await expect(field).toHaveCount(0);
+});
+
 test("Vim mode keeps native clipboard shortcuts", async ({
 	page,
 	context,

@@ -27,6 +27,7 @@ import { StatusBar, ZenPill } from "./StatusBar.js";
 import type { TerminalTab } from "../features/terminal/Terminal.js";
 import { TerminalPane } from "../features/terminal/TerminalPane.js";
 import { WorkspacePicker } from "../features/workspaces/WorkspacePicker.js";
+import { DemoPicker } from "../features/demos/DemoPicker.js";
 import { updateVimAppCommands } from "../features/editor/vimExtensions.js";
 import { useDismissable } from "../shared/ui/useDismissable.js";
 import { useEditorDecorations } from "../features/editor/useEditorDecorations.js";
@@ -137,6 +138,7 @@ export function App(): React.JSX.Element {
 	const [chrome, setChrome] = useState<ChromeSettings>(loadChrome);
 	const [paletteOpen, setPaletteOpen] = useState(false);
 	const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
+	const [demoPickerOpen, setDemoPickerOpen] = useState(false);
 	const [switching, setSwitching] = useState(false);
 
 
@@ -564,7 +566,7 @@ export function App(): React.JSX.Element {
 	// Opening a session is the same work on first load and on every
 	// workspace switch: tear the old one down, ask for a new one, and let
 	// the socket/LSP effects rebuild themselves around it.
-	const { switchToWorkspace, boot, retryBoot, recoverSession } = useSessionLifecycle({
+	const { switchToWorkspace, openDemo, boot, retryBoot, recoverSession } = useSessionLifecycle({
 		filesRef,
 		activeLanguageRef,
 		// Also the start of every switch attempt, which is why it clears the
@@ -1073,6 +1075,7 @@ export function App(): React.JSX.Element {
 						onClearWorkspace={clearWorkspace}
 						onHideTree={() => updateLayout({ treeOpen: false })}
 						onLoadDemo={loadDemoWorkspace}
+						onOpenDemos={() => setDemoPickerOpen(true)}
 						onSelect={selectFile}
 						onSwitchWorkspace={openWorkspacePicker}
 						onToggleFolder={toggleFolder}
@@ -1413,10 +1416,39 @@ export function App(): React.JSX.Element {
 						: {})}
 				/>
 			)}
+			{demoPickerOpen && session && (
+				<DemoPicker
+					onClose={() => setDemoPickerOpen(false)}
+					onOpen={(demo) => {
+						setDemoPickerOpen(false);
+						// A demo that reads typed input switches Run to it: that
+						// is what it is there to show.
+						if (demo.kind.stdinMode) setStdinMode(demo.kind.stdinMode);
+						openDemo({
+							language: demo.language,
+							files: demo.files,
+							...(demo.kind.input ? { input: demo.kind.input } : {}),
+						});
+					}}
+					runnable={(language) => {
+						const runner = session.toolchains[language]?.run;
+						return Boolean(runner) && runner !== "unavailable";
+					}}
+				/>
+			)}
 			{paletteOpen && (
 				<CommandPalette
 					activePath={activePath}
 					commands={[
+						{
+							id: "demos",
+							title: "Open a demo…",
+							hint: "examples",
+							act: () => {
+								setPaletteOpen(false);
+								setDemoPickerOpen(true);
+							},
+						},
 						{
 							id: "settings",
 							title: "Open settings",

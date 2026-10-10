@@ -21,6 +21,7 @@ interface SidebarProps {
 	onToggleFolder: (path: string) => void;
 	onHideTree: () => void;
 	onLoadDemo: () => void;
+	onOpenDemos: () => void;
 	onClearWorkspace: () => void;
 	onSwitchWorkspace: () => void;
 }
@@ -56,6 +57,7 @@ export function Sidebar(props: SidebarProps): React.JSX.Element {
 			onDraftCommit={project.commitTreeDraft}
 			onHideTree={props.onHideTree}
 			onLoadDemo={props.onLoadDemo}
+			onOpenDemos={props.onOpenDemos}
 			onOpenContextMenu={project.setTreeContextMenu}
 			onRenameActive={() => project.renameFile(activePath)}
 			onSelect={props.onSelect}
