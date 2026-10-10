@@ -42,6 +42,103 @@ fn cargo_env_in(root: &std::path::Path, target: &str) -> Vec<(String, String)> {
     ]
 }
 
+/// The rustc invocation `cargo build --bin atomis-session` amounts to, for
+/// a session cargo has nothing else to do for: no dependencies, no build
+/// script. `None` sends the build through cargo.
+///
+/// Cargo was ~25 of ~75 ms of every warm build: resolving, fingerprinting
+/// and then running this same rustc. One codegen unit, too: for a crate
+/// this small, splitting it cost more than the parallelism returned.
+fn direct_rustc_args(root: &std::path::Path, manifest: &str) -> Option<Vec<String>> {
+    direct_args(root, manifest, DirectBuild::Program)
+}
+
+/// What `direct_args` builds: the instrumented program, or the visible
+/// source's test harness (`cargo test --bin atomis-check --no-run`).
+#[derive(Clone, Copy)]
+enum DirectBuild {
+    Program,
+    Tests,
+}
+
+impl DirectBuild {
+    /// Crate name, source, target directory and output, as cargo has them.
+    fn layout(self) -> (&'static str, &'static str, &'static str, &'static str) {
+        match self {
+            DirectBuild::Program => ("atomis_session", "generated/main.rs", "target", "debug/atomis-session"),
+            DirectBuild::Tests => ("atomis_check", "src/main.rs", "target-tests", "debug/atomis-check-test"),
+        }
+    }
+}
+
+fn direct_args(root: &std::path::Path, manifest: &str, build: DirectBuild) -> Option<Vec<String>> {
+    if root.join("build.rs").exists() || declares_dependencies(manifest) {
+        return None;
+    }
+    let (crate_name, source, target_dir, output) = build.layout();
+    let edition = manifest
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("edition"))
+        .and_then(|rest| rest.split('"').nth(1))
+        .unwrap_or("2021");
+    let target = root.join(target_dir);
+    let mut args: Vec<String> = vec![
+        "--crate-name".into(),
+        crate_name.into(),
+        format!("--edition={edition}"),
+        source.into(),
+    ];
+    if matches!(build, DirectBuild::Tests) {
+        args.push("--test".into());
+    } else {
+        args.extend(["--crate-type".into(), "bin".into()]);
+    }
+    args.extend([
+        "--error-format=json".into(),
+        "--json=diagnostic-rendered-ansi".into(),
+        "-C".into(),
+        "embed-bitcode=no".into(),
+        "-C".into(),
+        "codegen-units=1".into(),
+        "-C".into(),
+        "strip=debuginfo".into(),
+        "-C".into(),
+        format!("incremental={}", target.join("direct-incremental").to_string_lossy()),
+        "-o".into(),
+        target.join(output).to_string_lossy().into_owned(),
+    ]);
+    Some(args)
+}
+
+/// Any dependency table with an entry in it.
+fn declares_dependencies(manifest: &str) -> bool {
+    let mut in_dependencies = false;
+    for line in manifest.lines().map(str::trim) {
+        if line.starts_with('[') {
+            in_dependencies = line.contains("dependencies");
+            // `[dependencies.serde]`: a table that is itself a dependency.
+            if in_dependencies && line.trim_matches(['[', ']']).contains("dependencies.") {
+                return true;
+            }
+            continue;
+        }
+        if in_dependencies && !line.is_empty() && !line.starts_with('#') {
+            return true;
+        }
+    }
+    false
+}
+
+/// rustc's JSON diagnostics in the envelope cargo puts them in, so the
+/// parser that reads cargo's output reads these unchanged.
+fn as_cargo_messages(rustc_stderr: &str) -> String {
+    rustc_stderr
+        .lines()
+        .filter(|line| line.trim_start().starts_with('{') && line.contains("\"$message_type\":\"diagnostic\""))
+        .map(|line| format!("{{\"reason\":\"compiler-message\",\"message\":{line}}}\n"))
+        .collect()
+}
+
 /// A background build that is killed with the run that started it: a run
 /// that ends early (a compile error, a superseding edit) does not leave a
 /// cargo building tests nobody will run.
@@ -66,6 +163,42 @@ fn start_test_build(
     let sandbox = session.sandbox(settings);
     let cancel = cancel.clone();
     TestBuild(tokio::spawn(async move {
+        // rustc --test directly when cargo has nothing else to do, like the
+        // program's build; its result dressed as cargo's for run_tests.
+        let manifest = tokio::fs::read_to_string(root.join("Cargo.toml")).await.unwrap_or_default();
+        if let Some(args) = direct_args(&root, &manifest, DirectBuild::Tests) {
+            let _ = tokio::fs::create_dir_all(root.join("target-tests/debug")).await;
+            let mut build = supervisor::run(
+                "rustc",
+                &args,
+                RunOptions {
+                    cwd: root.clone(),
+                    limits: ProcessLimits::new(COMPILE_TIMEOUT_MS, 512 * 1024, 8 * 1024 * 1024),
+                    cancel: cancel.clone(),
+                    probe_fd: false,
+                    env: cargo_env_in(&root, "target-tests"),
+                    sandbox: sandbox.clone(),
+                    callbacks: StreamCallbacks::default(),
+                },
+            )
+            .await;
+            if build.exit_code.is_some() || build.cancelled || build.timed_out {
+                build.stdout = as_cargo_messages(&build.stderr);
+                if build.exit_code == Some(0) {
+                    let executable = root.join("target-tests").join(DirectBuild::Tests.layout().3);
+                    build.stdout.push_str(&format!(
+                        "{}\n",
+                        serde_json::json!({
+                            "reason": "compiler-artifact",
+                            "profile": { "test": true },
+                            "target": { "name": "atomis-check" },
+                            "executable": executable.to_string_lossy(),
+                        })
+                    ));
+                }
+                return build;
+            }
+        }
         supervisor::run(
             "cargo",
             &[
@@ -429,27 +562,61 @@ pub async fn run(
     }
 
     emit(RunnerEvent::State(RunState::Compiling));
-    let compile = supervisor::run(
-        "cargo",
-        &[
-            "build".into(),
-            "--bin".into(),
-            "atomis-session".into(),
-            "--message-format=json".into(),
-            "--quiet".into(),
-            "--offline".into(),
-        ],
-        RunOptions {
-            cwd: session.root.clone(),
-            limits: ProcessLimits::new(COMPILE_TIMEOUT_MS, 8 * 1024 * 1024, 512 * 1024),
-            cancel: cancel.clone(),
-            probe_fd: false,
-            env: cargo_env(&session.root),
-            sandbox: session.sandbox(settings),
-            callbacks: StreamCallbacks::default(),
-        },
-    )
-    .await;
+    let manifest = tokio::fs::read_to_string(session.root.join("Cargo.toml"))
+        .await
+        .unwrap_or_default();
+    let direct = match direct_rustc_args(&session.root, &manifest) {
+        Some(args) => {
+            let _ = tokio::fs::create_dir_all(session.root.join("target/debug")).await;
+            let mut compile = supervisor::run(
+                "rustc",
+                &args,
+                RunOptions {
+                    cwd: session.root.clone(),
+                    limits: ProcessLimits::new(COMPILE_TIMEOUT_MS, 512 * 1024, 8 * 1024 * 1024),
+                    cancel: cancel.clone(),
+                    probe_fd: false,
+                    env: cargo_env(&session.root),
+                    sandbox: session.sandbox(settings),
+                    callbacks: StreamCallbacks::default(),
+                },
+            )
+            .await;
+            // A rustc that did not start at all is cargo's to try; one that
+            // ran and failed has the diagnostics.
+            if compile.exit_code.is_none() && !compile.cancelled && !compile.timed_out {
+                None
+            } else {
+                compile.stdout = as_cargo_messages(&compile.stderr);
+                Some(compile)
+            }
+        }
+        None => None,
+    };
+    let compile = match direct {
+        Some(compile) => compile,
+        None => supervisor::run(
+            "cargo",
+            &[
+                "build".into(),
+                "--bin".into(),
+                "atomis-session".into(),
+                "--message-format=json".into(),
+                "--quiet".into(),
+                "--offline".into(),
+            ],
+            RunOptions {
+                cwd: session.root.clone(),
+                limits: ProcessLimits::new(COMPILE_TIMEOUT_MS, 8 * 1024 * 1024, 512 * 1024),
+                cancel: cancel.clone(),
+                probe_fd: false,
+                env: cargo_env(&session.root),
+                sandbox: session.sandbox(settings),
+                callbacks: StreamCallbacks::default(),
+            },
+        )
+        .await,
+    };
     metrics.compilation_ms = compile.duration_ms;
     if compile.cancelled || cancel.is_cancelled() {
         return cancelled_outcome(metrics, "superseded");
@@ -728,4 +895,46 @@ async fn run_tests(
         leaked: 0,
         duration_ms: execution.duration_ms,
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TEMPLATE: &str = "[package]\nname = \"atomis_session\"\nedition = \"2021\"\n\n[[bin]]\nname = \"atomis-session\"\npath = \"generated/main.rs\"\n\n[profile.dev]\ndebug = 0\n";
+
+    #[test]
+    fn a_manifest_without_dependencies_builds_with_rustc_directly() {
+        let root = std::path::Path::new("/nonexistent/session");
+        let args = direct_rustc_args(root, TEMPLATE).expect("direct");
+        assert!(args.contains(&"--edition=2021".to_string()));
+        assert!(args.contains(&"codegen-units=1".to_string()));
+        assert!(args.ends_with(&[
+            "-o".to_string(),
+            "/nonexistent/session/target/debug/atomis-session".to_string()
+        ]));
+        // An empty table is still no dependency.
+        assert!(direct_rustc_args(root, &format!("{TEMPLATE}\n[dependencies]\n# none yet\n")).is_some());
+        // Any dependency, in any table form, is cargo's.
+        for deps in [
+            "[dependencies]\nrand = \"0.8\"\n",
+            "[dependencies.serde]\nversion = \"1\"\n",
+            "[dev-dependencies]\nquickcheck = \"1\"\n",
+        ] {
+            assert!(direct_rustc_args(root, &format!("{TEMPLATE}{deps}")).is_none(), "{deps}");
+        }
+        let newer = direct_rustc_args(root, &TEMPLATE.replace("2021", "2024")).expect("direct");
+        assert!(newer.contains(&"--edition=2024".to_string()));
+    }
+
+    #[test]
+    fn rustc_diagnostics_read_like_cargos() {
+        let rustc = r#"{"$message_type":"diagnostic","message":"mismatched types","code":null,"level":"error","spans":[{"file_name":"generated/main.rs","line_start":3,"line_end":3,"column_start":18,"column_end":22,"is_primary":true}],"children":[],"rendered":"error"}
+not json
+{"$message_type":"artifact","artifact":"x"}"#;
+        let diagnostics = parse_cargo_diagnostics(&as_cargo_messages(rustc));
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].message, "mismatched types");
+        assert_eq!(diagnostics[0].line, 3);
+    }
 }
