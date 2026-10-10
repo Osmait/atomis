@@ -1,0 +1,207 @@
+<title>Atomis Run Timelines</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: a stopwatch sheet — one lane per language, milliseconds ruled
+   across, each run's split times stacked in the order they happen. */
+:root {
+  --bg: #f5f6f5; --panel: #ffffff; --ink: #151817; --ink-2: #4d5551; --ink-3: #7d8681;
+  --rule: #dde2df; --grid: #edf0ee; --accent: #0f6b5c;
+  --net: #2a78d6; --proc: #eb6834; --srv: #1baf7a; --wait: #eda100; --phase: #4a3aa7; --client: #8a938f;
+  --bar-text: #141716;
+  --font-body: "IBM Plex Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101312; --panel: #181c1a; --ink: #edf1ef; --ink-2: #b3bbb7; --ink-3: #848f8a;
+    --rule: #2b322f; --grid: #222826; --accent: #4fc2a8;
+    --net: #3987e5; --proc: #d95926; --srv: #199e70; --wait: #c98500; --phase: #9085e9; --client: #646d69;
+    --bar-text: #f3f5f4; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101312; --panel: #181c1a; --ink: #edf1ef; --ink-2: #b3bbb7; --ink-3: #848f8a;
+  --rule: #2b322f; --grid: #222826; --accent: #4fc2a8;
+  --net: #3987e5; --proc: #d95926; --srv: #199e70; --wait: #c98500; --phase: #9085e9; --client: #646d69;
+  --bar-text: #f3f5f4; color-scheme: dark;
+}
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.5; }
+.page { max-width: 1120px; margin: 0 auto; padding-inline: 20px; padding-block: 28px 64px; display: grid; gap: 32px; }
+h1, h2, h3 { margin: 0; text-wrap: balance; font-weight: 600; }
+h1 { font-size: 28px; } h2 { font-size: 19px; }
+h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-2); font-weight: 500; }
+p { margin: 0; max-width: 72ch; color: var(--ink-2); }
+section { display: grid; gap: 14px; }
+.card { background: var(--panel); border: 1px solid var(--rule); border-radius: 10px; padding: 16px 18px; display: grid; gap: 12px; min-width: 0; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--ink-2); }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+.stack { display: grid; gap: 8px; }
+.srow { display: grid; grid-template-columns: 70px minmax(0, 1fr) 80px; gap: 10px; align-items: center; font-size: 13px; }
+.strack { display: flex; height: 18px; background: var(--grid); border-radius: 3px; overflow: hidden; }
+.strack span { height: 100%; border-right: 1px solid var(--panel); }
+.srow .num { font-family: var(--font-mono); font-size: 12px; text-align: right; }
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.tabs button { font: inherit; font-size: 13px; padding: 5px 12px; border-radius: 999px; border: 1px solid var(--rule); background: var(--panel); color: var(--ink); cursor: pointer; }
+.tabs button[aria-pressed="true"] { background: var(--accent); color: var(--panel); border-color: var(--accent); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wf { position: relative; overflow-x: auto; }
+.wf svg { display: block; width: 100%; min-width: 560px; }
+.wf text { font-family: var(--font-mono); font-size: 11px; }
+.tip { position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 6px 9px; font-size: 12px; box-shadow: 0 4px 14px rgb(0 0 0 / 0.14); white-space: nowrap; z-index: 2; }
+table.data { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.data th { text-align: right; font-weight: 500; color: var(--ink-3); font-size: 12px; padding: 6px 8px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+table.data th:first-child, table.data td:first-child { text-align: left; }
+table.data td { padding: 6px 8px; border-bottom: 1px solid var(--grid); text-align: right; font-family: var(--font-mono); white-space: nowrap; }
+.tablewrap { overflow-x: auto; }
+.findings { display: grid; gap: 10px; }
+.finding { padding: 12px 14px; background: var(--panel); border: 1px solid var(--rule); border-radius: 10px; display: grid; gap: 4px; }
+.finding h4 { margin: 0; font-size: 15px; font-weight: 600; }
+.finding p { font-size: 14px; }
+@media (max-width: 700px) { .srow { grid-template-columns: 54px minmax(0, 1fr) 64px; } }
+</style>
+
+<div class="page">
+  <header style="display:grid;gap:8px">
+    <h1>Where a run's time goes</h1>
+    <p>Wall-clock timelines from <code>ATOMIS_TRACE</code>: the server's spans for each run joined with the client's own timestamps, on one clock. Every millisecond between pressing Run and seeing the result is assigned to a segment, so waiting shows up as well as work.</p>
+  </header>
+
+  <section>
+    <h2>Median run, by segment</h2>
+    <div class="card">
+      <div class="legend" id="legend"></div>
+      <div class="stack" id="stack"></div>
+      <p style="font-size:13px">Processes: compilers, linkers, the program, instrumenter CLIs, workers and Zig's compile servers. Server: the server's own time inside a phase, between those. Network: client to server and back over the WebSocket.</p>
+    </div>
+    <div class="card tablewrap"><table class="data" id="table"></table></div>
+  </section>
+
+  <section>
+    <h2>One run, step by step</h2>
+    <div class="tabs" id="tabs" role="group" aria-label="Language"></div>
+    <div class="card"><div class="wf" id="wf"></div></div>
+  </section>
+
+  <section>
+    <h2>What the timelines say</h2>
+    <div class="findings" id="findings"></div>
+  </section>
+</div>
+
+<script>
+const DATA = /*__DATA__*/null;
+const NAMES = { zig: "Zig", ts: "TypeScript", py: "Python", go: "Go", rust: "Rust", cpp: "C/C++" };
+const $ = (id) => document.getElementById(id);
+const fmt = (ms) => ms >= 100 ? ms.toFixed(0) : ms.toFixed(1);
+const kind = (name) => name.startsWith("to ") || name === "send" ? "net" : name.endsWith(": processes") ? "proc" : name.endsWith(": server") || name === "drain" ? "srv" : name === "queued" ? "wait" : "srv";
+const CLASSES = [["net", "Network"], ["proc", "Processes"], ["srv", "Server"], ["wait", "Queued"]];
+const langs = Object.keys(DATA.summary).sort((a, b) => DATA.summary[b].total - DATA.summary[a].total);
+let current = langs[0];
+
+function legend() {
+  $("legend").replaceChildren(...CLASSES.map(([k, l]) => { const s = document.createElement("span"); const sw = document.createElement("span"); sw.className = "sw"; sw.style.background = `var(--${k})`; s.append(sw, document.createTextNode(l)); return s; }));
+}
+
+function stack() {
+  const max = Math.max(...langs.map((l) => DATA.summary[l].total));
+  $("stack").replaceChildren(...langs.map((l) => {
+    const info = DATA.summary[l];
+    const row = document.createElement("div"); row.className = "srow";
+    const name = document.createElement("span"); name.textContent = NAMES[l] ?? l;
+    const track = document.createElement("div"); track.className = "strack"; track.style.width = `${(100 * info.total / max).toFixed(1)}%`;
+    const sum = info.segments.reduce((t, [, ms]) => t + Math.max(0, ms), 0) || 1;
+    for (const [seg, ms] of info.segments) {
+      if (ms <= 0) continue;
+      const part = document.createElement("span");
+      part.style.width = `${(100 * ms / sum).toFixed(2)}%`; part.style.background = `var(--${kind(seg)})`;
+      part.title = `${seg}: ${fmt(ms)} ms`;
+      track.append(part);
+    }
+    const n = document.createElement("span"); n.className = "num"; n.textContent = `${fmt(info.total)} ms`;
+    row.append(name, track, n); return row;
+  }));
+  const t = $("table"); t.replaceChildren();
+  const segs = ["to server", "queued", "Instrumenting: processes", "Instrumenting: server", "Compiling: processes", "Compiling: server", "Running: processes", "Running: server", "Testing: processes", "Testing: server", "drain", "to send", "send", "to client"];
+  const used = segs.filter((s) => langs.some((l) => (Object.fromEntries(DATA.summary[l].segments)[s] ?? 0) >= 0.05));
+  const head = t.createTHead().insertRow();
+  for (const h of ["Language", "Total", ...used]) { const th = document.createElement("th"); th.textContent = h; head.append(th); }
+  const body = t.createTBody();
+  for (const l of langs) {
+    const m = Object.fromEntries(DATA.summary[l].segments); const tr = body.insertRow();
+    for (const c of [NAMES[l] ?? l, fmt(DATA.summary[l].total), ...used.map((s) => m[s] === undefined ? "–" : fmt(m[s]))]) tr.insertCell().textContent = c;
+  }
+}
+
+function tabs() {
+  $("tabs").replaceChildren(...langs.map((l) => {
+    const b = document.createElement("button"); b.type = "button"; b.textContent = NAMES[l] ?? l;
+    b.addEventListener("click", () => { current = l; waterfall(); });
+    return b;
+  }));
+}
+
+function color(name) {
+  if (name.startsWith("client")) return "client";
+  if (name === "run" || name === "runner") return "srv";
+  if (name.startsWith("phase ")) return "phase";
+  if (name === "queued") return "wait";
+  if (name === "send result" || name === "drain events") return "net";
+  return "proc";
+}
+
+function waterfall() {
+  for (const b of $("tabs").children) b.setAttribute("aria-pressed", String(b.textContent === (NAMES[current] ?? current)));
+  const bars = DATA.examples[current];
+  const host = $("wf"); host.querySelector("svg")?.remove();
+  const width = Math.max(560, host.clientWidth || 900), labelW = 200, rowH = 20;
+  const end = Math.max(...bars.map((b) => b.start + b.dur));
+  const x = (ms) => labelW + (ms / end) * (width - labelW - 60);
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  const rows = bars.filter((b) => b.dur >= 0.02);
+  const height = rows.length * rowH + 30;
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`); svg.setAttribute("height", height);
+  // ms grid
+  const step = end > 400 ? 100 : end > 100 ? 25 : end > 40 ? 10 : 5;
+  for (let ms = 0; ms <= end; ms += step) {
+    const line = document.createElementNS(ns, "line");
+    line.setAttribute("x1", x(ms)); line.setAttribute("x2", x(ms)); line.setAttribute("y1", 0); line.setAttribute("y2", height - 18);
+    line.style.stroke = "var(--grid)"; svg.append(line);
+    const t = document.createElementNS(ns, "text"); t.setAttribute("x", x(ms)); t.setAttribute("y", height - 4); t.setAttribute("text-anchor", "middle");
+    t.style.fill = "var(--ink-3)"; t.textContent = `${ms} ms`; svg.append(t);
+  }
+  rows.forEach((b, i) => {
+    const y = i * rowH + 2;
+    const label = document.createElementNS(ns, "text");
+    label.setAttribute("x", 8 + b.depth * 10); label.setAttribute("y", y + 13);
+    label.style.fill = "var(--ink-2)"; label.textContent = b.name.length > 26 - b.depth ? b.name.slice(0, 25 - b.depth) + "…" : b.name;
+    svg.append(label);
+    const r = document.createElementNS(ns, "rect");
+    r.setAttribute("x", x(b.start)); r.setAttribute("y", y); r.setAttribute("width", Math.max(1.5, x(b.start + b.dur) - x(b.start))); r.setAttribute("height", rowH - 5); r.setAttribute("rx", 2);
+    r.style.fill = `var(--${color(b.name)})`;
+    r.addEventListener("mousemove", (ev) => { let tip = $("tip"); if (!tip) { tip = document.createElement("div"); tip.id = "tip"; tip.className = "tip"; host.append(tip); } tip.textContent = `${b.name}: ${fmt(b.dur)} ms, from ${fmt(b.start)} ms`; const hr = host.getBoundingClientRect(); tip.style.left = `${Math.min(ev.clientX - hr.left + 12, hr.width - 240)}px`; tip.style.top = `${ev.clientY - hr.top - 36}px`; });
+    r.addEventListener("mouseleave", () => $("tip")?.remove());
+    svg.append(r);
+    const v = document.createElementNS(ns, "text"); v.setAttribute("x", x(b.start + b.dur) + 4); v.setAttribute("y", y + 12);
+    v.style.fill = "var(--ink-3)"; v.textContent = `${fmt(b.dur)}`; svg.append(v);
+  });
+  host.append(svg);
+}
+
+const FINDINGS = [
+  ["The server is out of the way", "Between pressing Run and seeing the result, the server's own time is under a millisecond per run, the WebSocket round trip about 0.3 ms, and each fork+exec of a child about 0.7 ms. Everything else is the toolchains."],
+  ["TypeScript checks types, then runs, one after the other", "Type errors in a TS session do not stop the program, yet tsc runs to completion before node starts: ~67 ms of checking, then ~49 ms of running. Started together, the run would take about as long as the longer of the two."],
+  ["C/C++ pays for instrumenting twice over", "~45 ms per run instrumenting, mostly starting node and clang's AST dump, before a ~146 ms clang compile."],
+  ["Zig instruments in more time than it compiles", "With the compile server, Zig's build is ~4 ms and its instrumentation ~9 ms: the instrumenter is now the largest part of a Zig run."],
+  ["Rust and Go are their build tools", "cargo build (~74 ms) and go build (~97 ms) are almost all of those runs. What is left to win is inside cargo and the go command themselves."],
+];
+
+function findings() {
+  $("findings").replaceChildren(...FINDINGS.map(([title, text]) => { const f = document.createElement("div"); f.className = "finding"; const h = document.createElement("h4"); h.textContent = title; const p = document.createElement("p"); p.textContent = text; f.append(h, p); return f; }));
+}
+
+legend(); stack(); tabs(); waterfall(); findings();
+let resizeTimer;
+window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(waterfall, 150); });
+</script>

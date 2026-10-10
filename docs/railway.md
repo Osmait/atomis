@@ -137,3 +137,22 @@ the CPU. Samples taken inside the kernel have no user stack; `fold-perf.py`
 keeps them as `[kernel]` under their process instead of dropping them. Pick
 `--from/--to` from the load test's timeseries phases to separate the cold
 start from steady load.
+
+## Timelines
+
+Where a run's wall-clock time goes, waiting included — what a CPU profile
+cannot show. `ATOMIS_TRACE=<file>` makes the server write every span it
+records (each run, its phases, every child process and its fork+exec, the
+instrumenter workers, Zig's compile servers, the result's send) in the
+Chrome Trace format; it costs nothing when unset.
+
+```bash
+node scripts/loadtest.mjs --trace /tmp/trace.json --stages 1 --stage-seconds 3 --runs 15
+python3 scripts/trace-report.py /tmp/trace.json /tmp/timelines.html
+```
+
+The load test adds the client's side of each run on the same clock, and
+the report splits every run end to end into segments (to server, queued,
+each phase's processes and server time, drain, send, to client), prints the
+medians per language and writes a waterfall page. `/tmp/trace.json.perfetto.json`
+opens in https://ui.perfetto.dev with one row per run.

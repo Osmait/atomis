@@ -17,6 +17,7 @@ mod languages;
 mod metrics;
 mod protocol;
 mod state;
+mod trace_export;
 mod util;
 mod ws;
 
@@ -114,12 +115,19 @@ async fn main() {
         std::process::exit(i32::from(failed));
     }
 
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info".into()),
-        )
-        .init();
+    {
+        use tracing_subscriber::layer::SubscriberExt;
+        use tracing_subscriber::util::SubscriberInitExt;
+        use tracing_subscriber::Layer;
+        // The level filter is the log's alone: RUST_LOG=warn must not stop
+        // the spans an ATOMIS_TRACE timeline is made of.
+        let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| "info".into());
+        tracing_subscriber::registry()
+            .with(tracing_subscriber::fmt::layer().with_filter(filter))
+            .with(trace_export::ChromeTrace::from_env())
+            .init();
+    }
 
     let port: u16 = std::env::var("ATOMIS_PORT")
         .ok()

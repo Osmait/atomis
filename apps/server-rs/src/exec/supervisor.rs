@@ -149,7 +149,20 @@ fn scrub_value(value: &str, bundle: &str) -> Scrubbed {
 }
 
 
+/// One child process, start to finish (see `run_inner`), as a `process`
+/// span named after the program in an ATOMIS_TRACE timeline.
 pub async fn run(command: &str, args: &[String], options: RunOptions<'_>) -> ProcessResult {
+    use tracing::Instrument;
+    let program = std::path::Path::new(command)
+        .file_name()
+        .map_or_else(|| command.to_string(), |name| name.to_string_lossy().into_owned());
+    let first_arg = args.first().map(String::as_str).unwrap_or("");
+    run_inner(command, args, options)
+        .instrument(tracing::info_span!("process", label = %program, arg = %first_arg))
+        .await
+}
+
+async fn run_inner(command: &str, args: &[String], options: RunOptions<'_>) -> ProcessResult {
     let started = Instant::now();
     let mut result = ProcessResult::default();
 
@@ -233,7 +246,7 @@ pub async fn run(command: &str, args: &[String], options: RunOptions<'_>) -> Pro
         }
     }
 
-    let mut child = match cmd.spawn() {
+    let mut child = match tracing::info_span!("fork+exec").in_scope(|| cmd.spawn()) {
         Ok(child) => child,
         Err(error) => {
             result.stderr = error.to_string();

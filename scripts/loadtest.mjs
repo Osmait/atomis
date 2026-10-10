@@ -14,6 +14,11 @@
 //       [--stage-seconds 45] [--think-ms 3000] [--runs 8] [--lsp]
 //       [--cpus 2] [--memory 2G] [--out bench/load-latest.json]
 //       [--server <binary>] [--perf <perf.data>] [--perf-period-us 5000]
+//       [--trace <trace.json>]
+//
+// --trace has the server write a span timeline (ATOMIS_TRACE) and adds the
+// client's side of every run — request sent, result received, on the same
+// clock — as <trace>.client.json; scripts/trace-report.py joins the two.
 //
 // --perf records the whole process tree with `perf record` (DWARF call
 // graphs, user space only) for flame graphs: the server and every compiler,
@@ -63,6 +68,11 @@ const WITH_LSP = has("--lsp");
 const SERVER = flag("--server", join(root, "apps/server-rs/target/release/atomis-server"));
 const PERF = flag("--perf", "");
 const PERF_PERIOD_NS = String(Number(flag("--perf-period-us", "5000")) * 1000);
+const TRACE = flag("--trace", "");
+/** What the client saw of each run, for the trace: {run, language, sent, received} in Unix µs. */
+const clientRuns = [];
+/** Unix microseconds: the clock the server stamps its spans with. */
+const nowUs = () => Math.round((performance.timeOrigin + performance.now()) * 1000);
 const HEADERS = { origin: BASE };
 
 const ENTRY = { zig: "zig", ts: "ts", py: "py", go: "go", rust: "rs", c: "c", cpp: "cpp" };
@@ -184,6 +194,7 @@ async function startServer() {
 				TMPDIR: join(dataDir, "tmp"),
 				XDG_CACHE_HOME: join(dataDir, "cache"),
 				RUST_LOG: "warn",
+				...(TRACE ? { ATOMIS_TRACE: TRACE } : {}),
 			},
 			stdio: ["ignore", "pipe", "pipe"],
 		},
@@ -251,7 +262,7 @@ class Client {
 			if (message.type === "run.finished") {
 				const resolve = this.waiting.get(message.documentVersion);
 				this.waiting.delete(message.documentVersion);
-				resolve?.(message.result);
+				resolve?.({ result: message.result, runId: message.runId, at: nowUs() });
 			}
 		});
 		// Manual runs only: with Auto Run on, the edit below would start a
@@ -294,10 +305,13 @@ class Client {
 		const finished = new Promise((resolve) => {
 			this.waiting.set(version, resolve);
 		});
+		const sent = nowUs();
 		this.send({ type: "run.request", sessionId: this.session.sessionId, version, reason: "manual" });
 		const timeout = sleep(60_000).then(() => null);
-		const result = await Promise.race([finished, timeout]);
-		return { ms: performance.now() - started, result };
+		const answer = await Promise.race([finished, timeout]);
+		if (TRACE && answer)
+			clientRuns.push({ run: answer.runId.slice(0, 8), language: this.language, sent, received: answer.at });
+		return { ms: performance.now() - started, result: answer?.result ?? null };
 	}
 
 	close() {
@@ -605,6 +619,7 @@ try {
 const outPath = isAbsolute(OUT) ? OUT : join(root, OUT);
 mkdirSync(dirname(outPath), { recursive: true });
 writeFileSync(outPath, `${JSON.stringify(report, null, 2)}\n`);
+if (TRACE) writeFileSync(`${TRACE}.client.json`, `${JSON.stringify(clientRuns)}\n`);
 const { timeseries, ...summary } = report;
 console.log(JSON.stringify(summary, null, 2));
 console.log(`\nwrote ${OUT} (${timeseries.length} samples)`);

@@ -9,6 +9,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
+use tracing::Instrument;
 
 use crate::protocol::{Language, RunState, ServerEvent};
 use crate::languages::runtime::{self, RunnerEvent};
@@ -175,14 +176,29 @@ impl RunScheduler {
         let session = Arc::clone(&self.session);
         let settings = session.settings.lock().await.clone();
         let watchdog_run = run_id.clone();
+        // The run's row in an ATOMIS_TRACE timeline; everything below lands
+        // on it, the phases included.
+        let run_span = tracing::info_span!(
+            "run",
+            run = %run_id.get(..8).unwrap_or(&run_id),
+            language = target.as_str(),
+            version,
+        );
         let run_task = tokio::spawn(async move {
+            let phase_parent = tracing::Span::current();
             let (events_tx, mut events_rx) = tokio::sync::mpsc::unbounded_channel::<RunnerEvent>();
             let forward_scheduler = Arc::clone(&scheduler);
             let forward_session = Arc::clone(&session);
             let forward_run = run_id.clone();
             let forward_token = token.clone();
             let forwarder = tokio::spawn(async move {
+                // One span per state the runner reports, each closed by the
+                // next: the phases, as the runner itself sees them.
+                let mut phase: Option<tracing::Span> = None;
                 while let Some(event) = events_rx.recv().await {
+                    if let RunnerEvent::State(state) = &event {
+                        phase = Some(tracing::info_span!(parent: &phase_parent, "phase", label = ?state));
+                    }
                     let current = {
                         let inner = forward_scheduler.inner.lock().await;
                         !forward_token.is_cancelled()
@@ -198,6 +214,7 @@ impl RunScheduler {
                         &forward_session.id,
                     ));
                 }
+                drop(phase);
             });
 
             let started = std::time::Instant::now();
@@ -205,10 +222,14 @@ impl RunScheduler {
             // stays inside the measured run; a run superseded while queued
             // leaves the queue without ever starting.
             let queued = crate::metrics::METRICS.run_queued();
-            let slot = tokio::select! {
-                slot = RUN_SLOTS.acquire() => slot.ok(),
-                () = token.cancelled() => None,
-            };
+            let slot = async {
+                tokio::select! {
+                    slot = RUN_SLOTS.acquire() => slot.ok(),
+                    () = token.cancelled() => None,
+                }
+            }
+            .instrument(tracing::info_span!("queued"))
+            .await;
             drop(queued);
             let in_flight = slot.as_ref().map(|_| crate::metrics::METRICS.run_started());
             let outcome = match slot {
@@ -221,12 +242,13 @@ impl RunScheduler {
                         token.clone(),
                         events_tx.clone(),
                     )
+                    .instrument(tracing::info_span!("runner"))
                     .await
                 }
                 None => None,
             };
             drop(events_tx);
-            let _ = forwarder.await;
+            let _ = forwarder.instrument(tracing::info_span!("drain events")).await;
             drop(in_flight);
             // Counted whether or not anyone is still waiting for it: a
             // superseded run cost the same CPU as one that was shown.
@@ -268,7 +290,7 @@ impl RunScheduler {
                 inner.active_run = None;
                 inner.cancel = None;
             }
-        });
+        }.instrument(run_span));
 
         // A panic anywhere in the runner unwinds past every cleanup above:
         // the slot stays taken and the UI stays on Compiling forever. The

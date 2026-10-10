@@ -66,6 +66,13 @@ struct Wire {
 /// Instruments one file through the worker `program script` (e.g. `node
 /// worker.mjs`); `None` means "use the CLI instead".
 pub async fn instrument(program: &str, script: &Path, request: &Request<'_>) -> Option<Answer> {
+    use tracing::Instrument;
+    instrument_inner(program, script, request)
+        .instrument(tracing::info_span!("worker", label = %program))
+        .await
+}
+
+async fn instrument_inner(program: &str, script: &Path, request: &Request<'_>) -> Option<Answer> {
     // An escape hatch, and the A side of any comparison with the CLI.
     if std::env::var("ATOMIS_INSTRUMENT_WORKERS").is_ok_and(|value| value.trim() == "0") {
         return None;

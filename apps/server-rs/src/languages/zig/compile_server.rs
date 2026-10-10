@@ -160,6 +160,19 @@ pub async fn update(
     sandbox: Option<&Arc<SandboxPolicy>>,
     cancel: &CancellationToken,
 ) -> Option<Update> {
+    use tracing::Instrument;
+    update_inner(session_id, kind, root, sandbox, cancel)
+        .instrument(tracing::info_span!("zig compile server", label = ?kind))
+        .await
+}
+
+async fn update_inner(
+    session_id: &str,
+    kind: Kind,
+    root: &Path,
+    sandbox: Option<&Arc<SandboxPolicy>>,
+    cancel: &CancellationToken,
+) -> Option<Update> {
     let key = sandbox.map_or_else(|| "none".to_string(), |policy| format!("{:?}", policy.as_ref()));
     let slot = {
         let mut servers = SERVERS.lock().await;
@@ -172,7 +185,11 @@ pub async fn update(
         }
     }
     if slot.is_none() {
-        match spawn(kind, root, sandbox, key).await {
+        let started = {
+            use tracing::Instrument;
+            spawn(kind, root, sandbox, key).instrument(tracing::info_span!("start compile server")).await
+        };
+        match started {
             Ok(server) => *slot = Some(server),
             Err(error) => {
                 tracing::warn!(%error, "zig compile server failed to start");
