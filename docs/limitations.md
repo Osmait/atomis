@@ -85,3 +85,4 @@
   kill in both Node and Python.
 - What IS blocked are dependency downloads during builds:
   `CARGO_NET_OFFLINE=true` and `GOPROXY=off` for cargo/go.
+- A program run as a server listens on one port, its session's, reached only through the Atomis proxy (HTTP/1.1; no WebSockets or streaming responses through it yet). Python and TypeScript tests do not run in server mode, because they import `main` and would start the server twice.

@@ -712,21 +712,34 @@ async fn handle_message_inner(
             manual_probe_ids,
             sandbox,
             network,
+            serve,
             ..
         } => {
-            *session.settings.lock().await = SessionSettings {
-                auto_run,
-                auto_inspect,
-                debounce_ms,
-                timeout_ms,
-                manual_probe_ids,
-                // A client that predates the toggle keeps the default.
-                sandbox: sandbox.unwrap_or_else(|| {
-                    crate::exec::sandbox::detect_support().available()
-                }),
-                network: network.unwrap_or(false),
-                interactive: false,
+            let serve = serve.unwrap_or(false);
+            let switched = {
+                let mut settings = session.settings.lock().await;
+                let switched = settings.serve != serve;
+                *settings = SessionSettings {
+                    auto_run,
+                    auto_inspect,
+                    debounce_ms,
+                    timeout_ms,
+                    manual_probe_ids,
+                    // A client that predates the toggle keeps the default.
+                    sandbox: sandbox.unwrap_or_else(|| {
+                        crate::exec::sandbox::detect_support().available()
+                    }),
+                    network: network.unwrap_or(false),
+                    interactive: false,
+                    serve,
+                };
+                switched
             };
+            // Into server mode, the program restarts as one; out of it, the
+            // running server stops — the same path an edit takes.
+            if switched {
+                scheduler.document_updated(None).await;
+            }
             Ok(())
         }
     }

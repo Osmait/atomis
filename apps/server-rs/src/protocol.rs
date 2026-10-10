@@ -238,6 +238,8 @@ pub struct CreateSessionResponse {
     /// The text piped to the program's stdin on every run; the workspace's
     /// saved one, or empty.
     pub input: String,
+    /// The port the program listens on when run as a server (its PORT).
+    pub http_port: u16,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
@@ -483,6 +485,10 @@ pub enum RuntimeClientMessage {
         sandbox: Option<bool>,
         #[serde(default)]
         network: Option<bool>,
+        /// Run the program as a server, reached through the HTTP proxy.
+        #[serde(default)]
+        #[cfg_attr(test, ts(optional))]
+        serve: Option<bool>,
     },
     #[serde(rename = "deps.list")]
     DepsList {

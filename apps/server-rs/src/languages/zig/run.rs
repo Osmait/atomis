@@ -454,7 +454,7 @@ async fn run_executable(
                 limits: ProcessLimits::new(settings.program_timeout_ms(), 512 * 1024, 512 * 1024),
                 cancel: cancel.clone(),
                 probe_fd: true,
-                env: Vec::new(),
+                env: session.program_env(settings),
                 sandbox: session.sandbox(settings),
                 callbacks: StreamCallbacks {
                     stdout: Some(Box::new({

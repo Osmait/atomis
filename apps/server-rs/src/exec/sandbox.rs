@@ -90,9 +90,12 @@ pub struct SandboxPolicy {
     pub devices: Vec<PathBuf>,
     /// The real user home, kept so toolchain roots can still be pointed at.
     pub home: Option<PathBuf>,
-    /// What the process may do with the network. Binding is never allowed
-    /// in any mode: a confined process may call out, never serve.
+    /// What the process may do with the network. Binding is denied in
+    /// every mode, except on `listen`.
     pub network: NetworkAccess,
+    /// The one TCP port a program run as a server may listen on — the
+    /// session's own. Any other bind, port 0 included, stays denied.
+    pub listen: Option<u16>,
 }
 
 /// Outbound network a sandboxed process is granted.
@@ -170,6 +173,7 @@ pub fn policy_for(workspace: &Path, project_root: &Path, home: Option<&Path>) ->
         devices: DEVICES.iter().map(PathBuf::from).collect(),
         home: home.map(Path::to_path_buf),
         network: NetworkAccess::None,
+        listen: None,
     }
 }
 
@@ -279,6 +283,16 @@ pub fn with_outbound_network(policy: &SandboxPolicy) -> SandboxPolicy {
         network: NetworkAccess::Outbound,
         ..policy.clone()
     })
+}
+
+/// The same policy, letting the program listen on `port` and on no other:
+/// what running it as a server grants. Connections reach it through the
+/// Atomis proxy; what it may call out to is still `network`'s business.
+pub fn with_listen_port(policy: &SandboxPolicy, port: u16) -> SandboxPolicy {
+    SandboxPolicy {
+        listen: Some(port),
+        ..policy.clone()
+    }
 }
 
 /// Environment that keeps toolchains from needing anything outside the
@@ -415,11 +429,21 @@ mod imp {
             ))
             .map_err(|error| error.to_string())?
             // Only the listed ports, and only outbound: AccessNet::BindTcp
-            // stays handled with no rule, so nothing can listen.
+            // stays handled with no rule, so nothing can listen…
             .add_rules(
                 connect_ports
                     .iter()
                     .map(|port| Ok(NetPort::new(*port, AccessNet::ConnectTcp))),
+            )
+            .map_err(|error: RulesetError| error.to_string())?
+            // …except a server, on its one port. BindTcp is handled in every
+            // network mode above, so this rule is the only bind there is.
+            .add_rules(
+                policy
+                    .listen
+                    .iter()
+                    .filter(|_| support == SandboxSupport::FilesAndNetwork)
+                    .map(|port| Ok(NetPort::new(*port, AccessNet::BindTcp))),
             )
             .map_err(|error: RulesetError| error.to_string())?;
         // No network rules are added, so with AccessNet handled every TCP
@@ -715,6 +739,46 @@ mod tests {
         assert!(
             !run_sandboxed(&policy, &["python3", "-c", listen]),
             "binding a socket must be denied"
+        );
+        std::fs::remove_dir_all(&workspace).ok();
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn a_server_listens_on_its_own_port_and_no_other() {
+        if detect_support() != SandboxSupport::FilesAndNetwork {
+            eprintln!("landlock ABI < 4: skipping network test");
+            return;
+        }
+        let workspace = std::env::temp_dir().join(format!(
+            "atomis-sandbox-listen-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&workspace).expect("workspace");
+        let base = policy_for(&workspace, Path::new("/usr"), None);
+        let port = {
+            let probe = std::net::TcpListener::bind("127.0.0.1:0").expect("free port");
+            probe.local_addr().expect("addr").port()
+        };
+        let bind = |port: u16| {
+            format!("import socket;s=socket.socket();s.bind(('127.0.0.1',{port}));s.listen()")
+        };
+        let server = with_listen_port(&base, port);
+        assert!(
+            run_sandboxed(&server, &["python3", "-c", &bind(port)]),
+            "a server must be able to listen on its own port"
+        );
+        assert!(
+            !run_sandboxed(&server, &["python3", "-c", &bind(0)]),
+            "nor on any other, an ephemeral one included"
+        );
+        assert!(
+            !run_sandboxed(&server, &["python3", "-c", "import socket;socket.create_connection(('1.1.1.1',443),2)"]),
+            "listening grants nothing outbound"
+        );
+        assert!(
+            !run_sandboxed(&base, &["python3", "-c", &bind(port)]),
+            "a plain run still listens nowhere"
         );
         std::fs::remove_dir_all(&workspace).ok();
     }

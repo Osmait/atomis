@@ -154,6 +154,8 @@ export interface CreateSessionResponse {
 	workspace?: WorkspaceMeta;
 	/** The text piped to the program's stdin on every run. */
 	input: string;
+	/** The port the program listens on when run as a server (its PORT). */
+	httpPort: number;
 }
 
 export const sandboxSupports = [
@@ -272,6 +274,8 @@ const settings = z
 		sandbox: z.boolean().optional(),
 		/** Let the program open outbound connections while confined. */
 		network: z.boolean().optional(),
+		/** Run the program as a server, reached through the session's HTTP proxy. */
+		serve: z.boolean().optional(),
 	})
 	.strict();
 

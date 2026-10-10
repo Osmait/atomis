@@ -28,6 +28,8 @@ import type { TerminalTab } from "../features/terminal/Terminal.js";
 import { TerminalPane } from "../features/terminal/TerminalPane.js";
 import { WorkspacePicker } from "../features/workspaces/WorkspacePicker.js";
 import { DemoPicker } from "../features/demos/DemoPicker.js";
+import { HttpPanel } from "../features/http/HttpPanel.js";
+import { useHttpPanel } from "../features/http/useHttpPanel.js";
 import { updateVimAppCommands } from "../features/editor/vimExtensions.js";
 import { useDismissable } from "../shared/ui/useDismissable.js";
 import { confirmAction, ConfirmHost } from "../shared/ui/confirm.js";
@@ -240,6 +242,10 @@ export function App(): React.JSX.Element {
 	);
 	const lastRunLanguageRef = useRef<Language | null>(null);
 	const settingsRef = useRef(settings);
+	// Server mode is the session's, never a saved setting: left on, every
+	// later program would get a server's hour instead of its run timeout.
+	const serveRef = useRef(false);
+	const [serve, setServeState] = useState(false);
 	const treeNavRef = useRef<TreeNavRow[]>([]);
 	const layoutRef = useRef(layout);
 	layoutRef.current = layout;
@@ -296,6 +302,7 @@ export function App(): React.JSX.Element {
 		session,
 		handleRuntimeEvent,
 		settingsRef,
+		serveRef,
 		filesRef,
 		entryRef,
 		versionRef,
@@ -614,10 +621,31 @@ export function App(): React.JSX.Element {
 					type: "settings.update",
 					sessionId: session.sessionId,
 					...next,
+					serve: serveRef.current,
 				});
 		},
 		[sendRuntime, session],
 	);
+
+	useEffect(() => {
+		serveRef.current = false;
+		setServeState(false);
+	}, [session]);
+	const setServe = useCallback(
+		(on: boolean): void => {
+			serveRef.current = on;
+			setServeState(on);
+			if (session)
+				sendRuntime({
+					type: "settings.update",
+					sessionId: session.sessionId,
+					...settingsRef.current,
+					serve: on,
+				});
+		},
+		[sendRuntime, session],
+	);
+	const http = useHttpPanel(session);
 
 	const run = useCallback((): void => {
 		if (!session) return;
@@ -1173,6 +1201,24 @@ export function App(): React.JSX.Element {
 							onStdinSend={(text) => sendStdin(text, false)}
 							stdinMode={stdinMode}
 							stdinOpen={stdinOpen}
+							servingPort={
+								serve && runtime.runState === "running" ? session.httpPort : undefined
+							}
+							httpPanel={
+								<HttpPanel
+									draft={http.draft}
+									history={http.history}
+									onDraftChange={http.setDraft}
+									onPick={(past) => http.setDraft(past.request)}
+									onSend={() => void http.send()}
+									onServeChange={setServe}
+									port={session.httpPort}
+									sending={http.sending}
+									serve={serve}
+									serving={serve && runtime.runState === "running"}
+									{...(http.exchange ? { exchange: http.exchange } : {})}
+								/>
+							}
 							onAddDependency={(name) =>
 								sendRuntime({
 									type: "deps.add",

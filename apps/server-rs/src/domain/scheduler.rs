@@ -68,7 +68,20 @@ const SUPERSEDED_GRACE: std::time::Duration = std::time::Duration::from_secs(3);
 /// timeout (at most 10 s) does not fit it; Stop ends one sooner.
 pub const INTERACTIVE_TIMEOUT_MS: u64 = 5 * 60 * 1000;
 
+/// A server's hard ceiling. It normally ends sooner: at the next edit, at
+/// Stop, or after SERVER_IDLE_MS without a request.
+pub const SERVER_TIMEOUT_MS: u64 = 60 * 60 * 1000;
+
+/// A server nobody has called for this long is stopped: on a host billed
+/// by the minute, a forgotten tab must not keep one running all day.
+pub const SERVER_IDLE_MS: u64 = 15 * 60 * 1000;
+
 type LiveSender = tokio::sync::mpsc::UnboundedSender<crate::exec::supervisor::LiveInput>;
+
+/// Whether a server last called at `last` (ms) has idled out by `now`.
+fn server_idle(last: u64, now: u64) -> bool {
+    now.saturating_sub(last) >= SERVER_IDLE_MS
+}
 
 struct Inner {
     /// The pending auto run, tagged so its own task can tell it is still
@@ -192,6 +205,51 @@ impl RunScheduler {
         self.start_run(version, language, true).await;
     }
 
+    /// Stops a server nobody calls: once SERVER_IDLE_MS pass without a
+    /// request through the proxy (counted from its start), the run is
+    /// cancelled as if Stop were pressed, and the client is told why.
+    fn watch_idle_server(
+        self: &Arc<Self>,
+        run_id: String,
+        version: u64,
+        cancelled: CancellationToken,
+        finished: CancellationToken,
+    ) {
+        let scheduler = Arc::clone(self);
+        let started = crate::util::now_ms();
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = cancelled.cancelled() => return,
+                    _ = finished.cancelled() => return,
+                    _ = tokio::time::sleep(std::time::Duration::from_secs(60)) => {}
+                }
+                let last = scheduler.session.last_http_ms.load(std::sync::atomic::Ordering::Relaxed).max(started);
+                if !server_idle(last, crate::util::now_ms()) {
+                    continue;
+                }
+                let ours = scheduler.inner.lock().await.active_run.as_deref() == Some(run_id.as_str());
+                if ours {
+                    scheduler.cancel_internal().await;
+                    scheduler.send(ServerEvent::RunStateEvent {
+                        document_version: version,
+                        run_id: None,
+                        state: RunState::Cancelled,
+                    });
+                    scheduler.send(ServerEvent::ServerError {
+                        recoverable: true,
+                        message: format!(
+                            "The server stopped after {} minutes without a request — Run starts it again",
+                            SERVER_IDLE_MS / 60_000
+                        ),
+                        details: None,
+                    });
+                }
+                return;
+            }
+        });
+    }
+
     /// Hands typed input to the interactive run's program.
     pub async fn write_stdin(&self, input: crate::exec::supervisor::LiveInput) -> Result<(), String> {
         let mut inner = self.inner.lock().await;
@@ -282,6 +340,9 @@ impl RunScheduler {
         let session = Arc::clone(&self.session);
         let mut settings = session.settings.lock().await.clone();
         settings.interactive = interactive;
+        if settings.serve {
+            self.watch_idle_server(run_id.clone(), version, token.clone(), finished.clone());
+        }
         let watchdog_run = run_id.clone();
         // The run's row in an ATOMIS_TRACE timeline; everything below lands
         // on it, the phases included.
@@ -589,6 +650,8 @@ mod tests {
             workspace_id: None,
             input: tokio::sync::Mutex::new(Arc::from("")),
             live_stdin: tokio::sync::Mutex::new(None),
+            http_port: 20_000,
+            last_http_ms: std::sync::atomic::AtomicU64::new(0),
         })
     }
 
@@ -743,6 +806,15 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(kind, "null");
+    }
+
+    #[test]
+    fn a_server_idles_out_only_after_the_full_window() {
+        let start = 1_000_000;
+        assert!(!server_idle(start, start + SERVER_IDLE_MS - 1));
+        assert!(server_idle(start, start + SERVER_IDLE_MS));
+        // A clock that steps back never reads as idle.
+        assert!(!server_idle(start, start - 5));
     }
 
     #[tokio::test]
