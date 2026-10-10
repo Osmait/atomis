@@ -1,5 +1,6 @@
 import type React from "react";
 import { HTTP_METHODS, type HttpDraft, type HttpExchange, type HttpMethod } from "./httpClient.js";
+import { samplePath, type Endpoint } from "./endpoints.js";
 
 interface HttpPanelProps {
 	/** Run the program as a server: PORT, a long life, the proxy. */
@@ -15,6 +16,20 @@ interface HttpPanelProps {
 	exchange?: HttpExchange;
 	history: HttpExchange[];
 	onPick: (exchange: HttpExchange) => void;
+	/** The routes the source declares. */
+	endpoints: Endpoint[];
+	/** Shows a route's declaration in the editor. */
+	onJump: (file: string, line: number) => void;
+}
+
+/** The last answer each route got, by "METHOD /path" as sent. */
+function lastAnswers(history: HttpExchange[]): Map<string, HttpExchange> {
+	const answers = new Map<string, HttpExchange>();
+	for (const exchange of history) {
+		const key = `${exchange.request.method} ${exchange.request.path.split("?")[0]}`;
+		if (!answers.has(key)) answers.set(key, exchange);
+	}
+	return answers;
 }
 
 function statusTone(status: number | undefined): string {
@@ -38,15 +53,27 @@ export function HttpPanel(props: HttpPanelProps): React.JSX.Element {
 	const { draft, exchange } = props;
 	const set = (patch: Partial<HttpDraft>): void => props.onDraftChange({ ...draft, ...patch });
 	const contentType = exchange?.headers.find(([name]) => name === "content-type")?.[1];
+	const answers = lastAnswers(props.history);
+	const pick = (endpoint: Endpoint): void =>
+		set({
+			// ANY: the code accepts whatever method; keep the one chosen.
+			method:
+				endpoint.method === "ANY" || !HTTP_METHODS.includes(endpoint.method as HttpMethod)
+					? draft.method
+					: (endpoint.method as HttpMethod),
+			path: samplePath(endpoint.path),
+		});
 	return (
 		<div className="http-panel">
-			<label className="http-serve">
-				<input
-					checked={props.serve}
-					onChange={(event) => props.onServeChange(event.target.checked)}
-					type="checkbox"
-				/>
-				<span>Run as a server</span>
+			<div className="http-serve">
+				<label>
+					<input
+						checked={props.serve}
+						onChange={(event) => props.onServeChange(event.target.checked)}
+						type="checkbox"
+					/>
+					<span>Run as a server</span>
+				</label>
 				<span className={`http-serve-state${props.serving ? " on" : ""}`}>
 					{props.serve
 						? props.serving
@@ -54,7 +81,7 @@ export function HttpPanel(props: HttpPanelProps): React.JSX.Element {
 							: "starting…"
 						: "off"}
 				</span>
-			</label>
+			</div>
 			<p className="http-hint">
 				{props.serve ? (
 					<>
@@ -68,6 +95,48 @@ export function HttpPanel(props: HttpPanelProps): React.JSX.Element {
 					</>
 				)}
 			</p>
+
+			<section aria-label="Endpoints" className="http-endpoints">
+				<h4>
+					Endpoints{props.endpoints.length ? ` (${props.endpoints.length})` : ""}
+				</h4>
+				{props.endpoints.length === 0 && (
+					<p className="http-hint">
+						None found in the code yet — routes like <code>{'app.get("/items")'}</code>,{" "}
+						<code>{'@app.route("/items")'}</code> or <code>{'http.HandleFunc("GET /items", …)'}</code>{" "}
+						show up here.
+					</p>
+				)}
+				{props.endpoints.map((endpoint) => {
+					const answer = answers.get(
+						`${endpoint.method === "ANY" ? draft.method : endpoint.method} ${samplePath(endpoint.path)}`,
+					);
+					return (
+						<div className="http-endpoint" key={`${endpoint.method} ${endpoint.path}`}>
+							<button
+								aria-label={`${endpoint.method} ${endpoint.path}`}
+								className="http-endpoint-pick"
+								onClick={() => pick(endpoint)}
+								type="button"
+							>
+								<b className={`http-method ${endpoint.method.toLowerCase()}`}>{endpoint.method}</b>
+								<span className="http-endpoint-path">{endpoint.path}</span>
+								{answer?.status !== undefined && (
+									<span className={`http-status ${statusTone(answer.status)}`}>{answer.status}</span>
+								)}
+							</button>
+							<button
+								className="http-endpoint-source"
+								onClick={() => props.onJump(endpoint.file, endpoint.line)}
+								title={`${endpoint.via} · go to ${endpoint.file}:${endpoint.line}`}
+								type="button"
+							>
+								{endpoint.file}:{endpoint.line}
+							</button>
+						</div>
+					);
+				})}
+			</section>
 
 			<form
 				className="http-request"

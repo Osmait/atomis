@@ -30,6 +30,7 @@ import { WorkspacePicker } from "../features/workspaces/WorkspacePicker.js";
 import { DemoPicker } from "../features/demos/DemoPicker.js";
 import { HttpPanel } from "../features/http/HttpPanel.js";
 import { useHttpPanel } from "../features/http/useHttpPanel.js";
+import { detectEndpoints } from "../features/http/endpoints.js";
 import { updateVimAppCommands } from "../features/editor/vimExtensions.js";
 import { useDismissable } from "../shared/ui/useDismissable.js";
 import { confirmAction, ConfirmHost } from "../shared/ui/confirm.js";
@@ -646,6 +647,7 @@ export function App(): React.JSX.Element {
 		[sendRuntime, session],
 	);
 	const http = useHttpPanel(session);
+	const endpoints = useMemo(() => detectEndpoints(files), [files]);
 
 	const run = useCallback((): void => {
 		if (!session) return;
@@ -1207,8 +1209,10 @@ export function App(): React.JSX.Element {
 							httpPanel={
 								<HttpPanel
 									draft={http.draft}
+									endpoints={endpoints}
 									history={http.history}
 									onDraftChange={http.setDraft}
+									onJump={(file, line) => jumpToLine(`src/${file}`, line, 1)}
 									onPick={(past) => http.setDraft(past.request)}
 									onSend={() => void http.send()}
 									onServeChange={setServe}
