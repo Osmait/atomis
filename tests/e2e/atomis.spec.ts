@@ -268,6 +268,19 @@ test("a file is deleted from its own row, after a confirmation that Cancel backs
 		.getByRole("button", { name: "File actions" })
 		.click();
 	await expect(page.getByRole("menuitem", { name: "Delete", exact: true })).toBeDisabled();
+	await expect(page.getByText("The run starts here, so it stays put.")).toBeVisible();
+	await page.keyboard.press("Escape");
+	// Another language's entry name is just a file here: the demo's main.c
+	// in a Zig workspace goes like any other.
+	const mainC = page.getByRole("button", { name: "main.c", exact: true });
+	await page.locator(".tree-file-row", { has: mainC }).hover();
+	await page
+		.locator(".tree-file-row", { has: mainC })
+		.getByRole("button", { name: "File actions" })
+		.click();
+	await page.getByRole("menuitem", { name: "Delete", exact: true }).click();
+	await confirmDialog(page, "Delete file");
+	await expect(mainC).toHaveCount(0);
 });
 
 test("Vim mode keeps native clipboard shortcuts", async ({

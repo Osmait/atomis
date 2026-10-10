@@ -67,7 +67,11 @@ pub struct Session {
     pub id: String,
     pub token: String,
     pub language: Language,
-    pub entry_paths: Vec<String>,
+    /// The workspace language's entry file: the one file that cannot be
+    /// renamed or deleted, since every commit requires it. Other languages'
+    /// `main.*` are ordinary files — a main.c added to a Zig workspace is
+    /// the user's to remove.
+    pub entry_path: String,
     pub root: PathBuf,
     pub source_root: PathBuf,
     pub document_uri: String,
@@ -199,10 +203,10 @@ impl Session {
 
     fn commit(&self, snapshot: &mut Snapshot, version: u64, mut files: Vec<ProjectFile>) -> Result<Snapshot, String> {
         files.sort_by(|l, r| crate::util::locale_compare(&l.path, &r.path));
-        let primary = self.entry_paths.first().cloned().unwrap_or_else(|| "main.zig".into());
+        let primary = &self.entry_path;
         let main = files
             .iter()
-            .find(|f| f.path == primary)
+            .find(|f| &f.path == primary)
             .ok_or_else(|| format!("Project entry point {primary} is missing"))?;
         snapshot.version = version;
         snapshot.uri = main.uri.clone();
@@ -284,7 +288,7 @@ impl Session {
     ) -> Result<Snapshot, String> {
         let mut snapshot = self.snapshot.lock().await;
         Self::assert_version(&snapshot, version)?;
-        if self.entry_paths.iter().any(|p| p == path) {
+        if self.entry_path == path {
             return Err(format!("{path} cannot be renamed"));
         }
         let Some(current) = snapshot.files.iter().find(|f| f.path == path).cloned() else {
@@ -319,7 +323,7 @@ impl Session {
     pub async fn delete_file(&self, version: u64, path: &str) -> Result<Snapshot, String> {
         let mut snapshot = self.snapshot.lock().await;
         Self::assert_version(&snapshot, version)?;
-        if self.entry_paths.iter().any(|p| p == path) {
+        if self.entry_path == path {
             return Err(format!("{path} cannot be deleted"));
         }
         if !snapshot.files.iter().any(|f| f.path == path) {
@@ -635,13 +639,7 @@ impl SessionManager {
                     .map_err(|e| e.to_string())?;
             }
         }
-        let primary_entry = packs::pack(language).entry_file.to_string();
-        let mut entry_paths = vec![primary_entry.clone()];
-        for pack in &included {
-            if pack.entry_file != primary_entry {
-                entry_paths.push(pack.entry_file.to_string());
-            }
-        }
+        let entry_path = packs::pack(language).entry_file.to_string();
         let mut initial_files: Vec<ProjectFile> = sources
             .iter()
             .map(|(path, source)| ProjectFile {
@@ -651,10 +649,10 @@ impl SessionManager {
             })
             .collect();
         initial_files.sort_by(|l, r| crate::util::locale_compare(&l.path, &r.path));
-        let document_uri = path_to_file_url(&source_root.join(&primary_entry));
+        let document_uri = path_to_file_url(&source_root.join(&entry_path));
         let initial_source = sources
             .iter()
-            .find(|(p, _)| *p == primary_entry)
+            .find(|(p, _)| *p == entry_path)
             .map(|(_, s)| s.clone())
             .unwrap_or_else(|| crate::protocol::DEFAULT_ZIG_SOURCE.to_string());
 
@@ -669,7 +667,7 @@ impl SessionManager {
             id: id.clone(),
             token: token.clone(),
             language,
-            entry_paths,
+            entry_path,
             root,
             source_root,
             document_uri: document_uri.clone(),

@@ -39,7 +39,6 @@ import { useQuickScope } from "../features/editor/useQuickScope.js";
 import { useProjectFiles } from "../features/files/useProjectFiles.js";
 import { useRuntimeEvents } from "../features/runtime/useRuntimeEvents.js";
 import {
-	ENTRY_FILES,
 	languageForPath,
 	monacoLanguageFor,
 	WEB_LANGUAGE_PACKS,
@@ -1021,6 +1020,9 @@ export function App(): React.JSX.Element {
 		: settings.sandbox
 			? "your code may call out; files stay confined"
 			: "sandbox off — the network is already open";
+	// The one file that cannot be renamed or deleted: the workspace
+	// language's entry. Other languages' main files are ordinary.
+	const entryFile = WEB_LANGUAGE_PACKS[session.language].entryFile;
 
 	return (
 		<main
@@ -1031,7 +1033,7 @@ export function App(): React.JSX.Element {
 			<div className="workspace">
 				{treeVisible && (
 					<Sidebar
-						activeIsEntry={ENTRY_FILES.has(activePath)}
+						activeIsEntry={activePath === entryFile}
 						activePath={activePath}
 						failsByFile={failsByFile}
 						focused={focusZone === "tree"}
@@ -1183,6 +1185,7 @@ export function App(): React.JSX.Element {
 
 			{project.treeContextMenu && (
 				<TreeContextMenu
+					entryFile={entryFile}
 					menu={project.treeContextMenu}
 					onClose={() => project.setTreeContextMenu(undefined)}
 					onCreateFile={project.createFile}

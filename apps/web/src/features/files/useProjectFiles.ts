@@ -6,7 +6,7 @@ import {
 	type Language,
 } from "@atomis/protocol";
 import type * as MonacoApi from "monaco-editor";
-import { ENTRY_FILES, languageForPath } from "../editor/languagePacks.js";
+import { languageForPath } from "../editor/languagePacks.js";
 import type { LspClient } from "../editor/lsp/LspClient.js";
 import {
 	isValidProjectPath,
@@ -232,7 +232,7 @@ export function useProjectFiles(options: ProjectFilesOptions) {
 
 	const renameFileTo = useCallback(
 		(path: string, newPath: string): boolean => {
-			if (!session || ENTRY_FILES.has(path)) return false;
+			if (!session || path === entryRef.current) return false;
 			if (!newPath || newPath === path) return true;
 			if (!isValidProjectPath(newPath)) {
 				setStatus("Invalid file path");
@@ -278,16 +278,16 @@ export function useProjectFiles(options: ProjectFilesOptions) {
 			});
 			return true;
 		},
-		[filesRef, lspClientsRef, pruneDiagnosticsFor, sendRuntime, session, setProjectFiles, setStatus, versionRef],
+		[entryRef, filesRef, lspClientsRef, pruneDiagnosticsFor, sendRuntime, session, setProjectFiles, setStatus, versionRef],
 	);
 
 	const renameFile = useCallback((path: string): void => {
-		if (ENTRY_FILES.has(path)) return;
+		if (path === entryRef.current) return;
 		setTreeDraftInvalid(false);
 		setTreeDraftValue(path);
 		setSrcCollapsed(false);
 		setTreeDraft({ kind: "rename", base: "", original: path });
-	}, []);
+	}, [entryRef]);
 
 	const commitTreeDraft = useCallback(
 		(value: string): void => {
@@ -350,7 +350,7 @@ export function useProjectFiles(options: ProjectFilesOptions) {
 	/** Asks, then deletes. Resolves once answered, for callers that wait. */
 	const deleteFile = useCallback(
 		async (path: string): Promise<void> => {
-			if (!session || ENTRY_FILES.has(path)) return;
+			if (!session || path === entryRef.current) return;
 			const confirmed = await confirmAction({
 				title: `Delete src/${path}?`,
 				message: "The file is removed from the workspace. This cannot be undone.",
@@ -358,7 +358,7 @@ export function useProjectFiles(options: ProjectFilesOptions) {
 			});
 			if (confirmed) removeFile(path);
 		},
-		[removeFile, session],
+		[entryRef, removeFile, session],
 	);
 
 	/** Session bootstrap: reset to the created session's entry file. */

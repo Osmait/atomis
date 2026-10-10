@@ -85,6 +85,22 @@ test("shared file create, rename and delete synchronize; stale edits cannot resu
   await peer.close();
 });
 
+test("only the workspace's own entry is protected; other languages' main files delete like any file",async({page,request,baseURL})=>{
+  const id=await workspace(request,baseURL!);
+  const created=await session(request,baseURL!,id);await connect(page,created);
+  // A Python workspace with a main.c added by hand: the C entry name, but
+  // the user's own file.
+  await send(page,created,[{type:"file.create",version:2,path:"main.c",source:"int main(void) { return 0; }\n",baseRevision:await revision(page)}]);
+  await saved(page,2);
+  await send(page,created,[{type:"file.rename",version:3,path:"main.c",newPath:"other.c",baseRevision:await revision(page)}]);
+  await saved(page,3);
+  await send(page,created,[{type:"file.delete",version:4,path:"other.c",baseRevision:await revision(page)}]);
+  await saved(page,4);
+  await send(page,created,[{type:"file.delete",version:5,path:"main.py",baseRevision:await revision(page)}]);
+  await expect.poll(async()=>(await events(page)).some(event=>event.type==="server.error"&&event.message.includes("main.py cannot be deleted"))).toBe(true);
+  expect((await session(request,baseURL!,id)).files.map(file=>file.path)).toEqual(["main.py"]);
+});
+
 test("persistent reset replaces sources and synchronizes the new catalog",async({page,context,request,baseURL})=>{
   const id=await workspace(request,baseURL!);
   const a=await session(request,baseURL!,id),b=await session(request,baseURL!,id);
