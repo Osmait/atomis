@@ -47,7 +47,7 @@ export function Sidebar(props: SidebarProps): React.JSX.Element {
 			onClearWorkspace={props.onClearWorkspace}
 			onCreateFile={project.createFile}
 			onCreateFolder={project.createFolder}
-			onDeleteActive={() => project.deleteFile(activePath)}
+			onDeleteActive={() => void project.deleteFile(activePath)}
 			onDraftCancel={() => project.setTreeDraft(undefined)}
 			onDraftChange={(value) => {
 				project.setTreeDraftInvalid(false);
@@ -56,6 +56,7 @@ export function Sidebar(props: SidebarProps): React.JSX.Element {
 			onDraftCommit={project.commitTreeDraft}
 			onHideTree={props.onHideTree}
 			onLoadDemo={props.onLoadDemo}
+			menuPath={project.treeContextMenu?.path}
 			onOpenContextMenu={project.setTreeContextMenu}
 			onRenameActive={() => project.renameFile(activePath)}
 			onSelect={props.onSelect}

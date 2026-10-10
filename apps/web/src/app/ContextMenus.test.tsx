@@ -14,7 +14,7 @@ function renderTreeMenu(menu: { x: number; y: number; path?: string; folder?: st
 		onCreateFile: vi.fn(),
 		onCreateFolder: vi.fn(),
 	};
-	render(<TreeContextMenu menu={menu} {...handlers} />);
+	render(<TreeContextMenu entryFile="main.zig" menu={menu} {...handlers} />);
 	return handlers;
 }
 
@@ -28,7 +28,7 @@ describe("TreeContextMenu", () => {
 		expect(handlers.onRename).toHaveBeenCalledWith("utils/helper.zig");
 	});
 
-	it("protects entry files from rename and delete", () => {
+	it("protects the workspace's entry from rename and delete, and says why", () => {
 		renderTreeMenu({ x: 0, y: 0, path: "main.zig" });
 		expect(
 			(screen.getByText("Rename").closest("button") as HTMLButtonElement)
@@ -38,6 +38,14 @@ describe("TreeContextMenu", () => {
 			(screen.getByText("Delete").closest("button") as HTMLButtonElement)
 				.disabled,
 		).toBe(true);
+		expect(screen.getByText("The run starts here, so it stays put.")).toBeTruthy();
+	});
+
+	it("treats another language's main file as an ordinary file", () => {
+		const handlers = renderTreeMenu({ x: 0, y: 0, path: "main.c" });
+		expect(screen.queryByText("The run starts here, so it stays put.")).toBeNull();
+		fireEvent.click(screen.getByText("Delete"));
+		expect(handlers.onDelete).toHaveBeenCalledWith("main.c");
 	});
 
 	it("creates inside the clicked folder, or the file's parent folder", () => {

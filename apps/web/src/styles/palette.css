@@ -123,3 +123,92 @@
 	background: var(--surface0);
 	color: var(--text);
 }
+
+/* ── Confirmation ──────────────────────────────────────── */
+
+/* Above the palette-style dialogs it can be asked from (the workspace
+ * switcher) and the context menus. */
+.confirm-overlay {
+	z-index: 70;
+}
+
+.confirm-dialog {
+	width: min(420px, calc(100vw - 32px));
+}
+
+.confirm-body {
+	display: flex;
+	gap: 12px;
+	padding: 18px 18px 14px;
+}
+
+.confirm-glyph {
+	display: inline-flex;
+	color: var(--red);
+	padding-top: 2px;
+	flex-shrink: 0;
+}
+
+.confirm-body h2 {
+	margin: 0;
+	font-size: 14px;
+	font-weight: 600;
+	color: var(--text);
+	overflow-wrap: anywhere;
+}
+
+.confirm-body p {
+	margin: 6px 0 0;
+	font-size: 12.5px;
+	line-height: 1.5;
+	color: var(--subtext);
+}
+
+.confirm-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+	padding: 12px 14px;
+	border-top: 1px solid var(--surface0);
+}
+
+.confirm-actions button {
+	padding: 6px 14px;
+	border-radius: 4px;
+	font-size: 12.5px;
+	color: var(--subtext);
+	border: 1px solid var(--surface1);
+}
+
+.confirm-actions button:hover {
+	color: var(--text);
+	background: var(--surface0-dim);
+}
+
+.confirm-actions .confirm-ok {
+	color: var(--base);
+	background: var(--mauve);
+	border-color: var(--mauve);
+}
+
+.confirm-actions .confirm-ok.danger {
+	background: var(--red);
+	border-color: var(--red);
+}
+
+.confirm-actions .confirm-ok:hover {
+	color: var(--base);
+	filter: brightness(1.08);
+}
+
+.confirm-actions button:focus-visible {
+	outline: 2px solid var(--mauve);
+	outline-offset: 2px;
+}
+
+@media (pointer: coarse) {
+	.confirm-actions button {
+		min-height: 44px;
+		padding: 0 18px;
+	}
+}

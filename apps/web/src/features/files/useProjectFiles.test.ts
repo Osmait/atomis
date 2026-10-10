@@ -9,6 +9,9 @@ import {
 	type Language,
 } from "@atomis/protocol";
 import { useProjectFiles } from "./useProjectFiles.js";
+import { confirmAction } from "../../shared/ui/confirm.js";
+
+vi.mock("../../shared/ui/confirm.js", () => ({ confirmAction: vi.fn() }));
 import type { ProjectFile } from "../../shared/types.js";
 
 function mount(initialFiles: ProjectFile[]) {
@@ -54,8 +57,8 @@ const file = (path: string): ProjectFile => ({
 afterEach(() => vi.unstubAllGlobals());
 
 describe("useProjectFiles", () => {
-	it("deleting the active file re-adds the entry's tab when it was closed", () => {
-		vi.stubGlobal("confirm", () => true);
+	it("deleting the active file re-adds the entry's tab when it was closed", async () => {
+		vi.mocked(confirmAction).mockResolvedValue(true);
 		const { rendered, pruned } = mount([file("main.zig"), file("extra.zig")]);
 		act(() => rendered.result.current.selectFile("extra.zig"));
 		// The entry's own tab goes away…
@@ -64,11 +67,22 @@ describe("useProjectFiles", () => {
 		// …then the active file is deleted: the fallback to the entry must
 		// bring its tab back, or the tab strip would be empty around an
 		// active file.
-		act(() => rendered.result.current.deleteFile("extra.zig"));
+		await act(() => rendered.result.current.deleteFile("extra.zig"));
 		expect(rendered.result.current.activePath).toBe("main.zig");
 		expect(rendered.result.current.openTabs).toEqual(["main.zig"]);
 		// And the deleted file's diagnostics were pruned at operation time.
 		expect(pruned).toEqual(["extra.zig"]);
+	});
+
+	it("deletes nothing when the confirmation is cancelled", async () => {
+		vi.mocked(confirmAction).mockResolvedValue(false);
+		const { rendered, filesRef, sent } = mount([file("main.zig"), file("extra.zig")]);
+		await act(() => rendered.result.current.deleteFile("extra.zig"));
+		expect(vi.mocked(confirmAction)).toHaveBeenCalledWith(
+			expect.objectContaining({ title: "Delete src/extra.zig?" }),
+		);
+		expect(filesRef.current.map((each) => each.path)).toEqual(["main.zig", "extra.zig"]);
+		expect(sent.some((message) => message.type === "file.delete")).toBe(false);
 	});
 
 	it("refuses to create past the server's file cap, before the optimistic apply", () => {

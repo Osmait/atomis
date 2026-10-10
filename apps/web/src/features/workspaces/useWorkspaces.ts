@@ -8,6 +8,7 @@ import {
 	renameWorkspace,
 } from "../../shared/stores/workspaces.js";
 import { loadScaffold } from "../../shared/stores/settings.js";
+import { confirmAction } from "../../shared/ui/confirm.js";
 
 interface WorkspacesOptions {
 	/** Opening a workspace rebuilds the session, which only the shell can do. */
@@ -70,10 +71,18 @@ export function useWorkspaces(options: WorkspacesOptions) {
 	);
 
 	const remove = useCallback(
-		(id: string, isActive: boolean): void => {
-			void run(async () => {
-				if (!window.confirm("Delete this workspace and every file in it?"))
-					return;
+		async (id: string, isActive: boolean): Promise<void> => {
+			// Asked before run(), which marks the picker busy: the question
+			// is not the action, and the list stays usable behind it.
+			const name = workspaces.find((workspace) => workspace.id === id)?.name;
+			const confirmed = await confirmAction({
+				title: name ? `Delete “${name}”?` : "Delete this workspace?",
+				message:
+					"The workspace and every file in it are deleted. This cannot be undone.",
+				confirmLabel: "Delete workspace",
+			});
+			if (!confirmed) return;
+			await run(async () => {
 				await deleteWorkspace(id);
 				// Deleting the one you are in leaves nowhere to be, so drop to a
 				// scratch session — which reloads the list anyway.
@@ -81,7 +90,7 @@ export function useWorkspaces(options: WorkspacesOptions) {
 				else await refresh();
 			});
 		},
-		[refresh, run, switchToWorkspace],
+		[refresh, run, switchToWorkspace, workspaces],
 	);
 
 	const rename = useCallback(

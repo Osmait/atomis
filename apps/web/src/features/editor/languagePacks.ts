@@ -100,10 +100,6 @@ export const WEB_LANGUAGE_PACKS: Record<Language, WebLanguagePack> = {
 	},
 };
 
-export const ENTRY_FILES = new Set(
-	Object.values(WEB_LANGUAGE_PACKS).map((pack) => pack.entryFile),
-);
-
 export function languageForPath(path: string): Language | undefined {
 	return Object.values(WEB_LANGUAGE_PACKS).find((pack) =>
 		pack.extensions.some((extension) => path.endsWith(extension)),

@@ -563,7 +563,7 @@ mod tests {
             id: "test-session".into(),
             token: "t".into(),
             language: Language::Zig,
-            entry_paths: vec!["main.zig".into()],
+            entry_path: "main.zig".into(),
             root: root.clone(),
             source_root: root.join("src"),
             document_uri: "file:///x/main.zig".into(),
