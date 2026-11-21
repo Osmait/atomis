@@ -40,13 +40,13 @@
     "protocol:generate": "cargo test --manifest-path apps/server-rs/Cargo.toml export_bindings && rm -rf apps/server-rs/bindings"
   },
   "devDependencies": {
-    "@playwright/test": "1.62.1",
-    "@types/node": "22.19.15",
-    "concurrently": "10.0.5",
-    "oxlint": "^1.42.0",
-    "tsx": "4.23.12",
+    "@playwright/test": "1.65.1",
+    "@types/node": "22.20.5",
+    "concurrently": "10.0.7",
+    "oxlint": "^1.94.0",
+    "tsx": "4.23.15",
     "typescript": "7.0.2",
     "typescript-ast": "npm:typescript@5.9.3",
-    "vitest": "4.1.11"
+    "vitest": "5.1.1"
   }
 }

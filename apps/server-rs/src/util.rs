@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use rand::RngCore;
+use rand::Rng;
 
 /// Origin guard: the server's own loopback origin, plus the Vite dev origin
 /// outside production, plus an optional extra dev origin for parallel
@@ -277,14 +277,14 @@ pub fn path_to_file_url(path: &Path) -> String {
 
 pub fn random_hex(bytes: usize) -> String {
     let mut buffer = vec![0u8; bytes];
-    rand::thread_rng().fill_bytes(&mut buffer);
+    rand::rng().fill_bytes(&mut buffer);
     buffer.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 pub fn random_base64url(bytes: usize) -> String {
     const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
     let mut buffer = vec![0u8; bytes];
-    rand::thread_rng().fill_bytes(&mut buffer);
+    rand::rng().fill_bytes(&mut buffer);
     let mut out = String::new();
     for chunk in buffer.chunks(3) {
         let b = [
@@ -308,7 +308,7 @@ pub fn random_base64url(bytes: usize) -> String {
 /// RFC 4122 v4 UUID string from random bytes (run ids).
 pub fn random_uuid() -> String {
     let mut b = [0u8; 16];
-    rand::thread_rng().fill_bytes(&mut b);
+    rand::rng().fill_bytes(&mut b);
     b[6] = (b[6] & 0x0f) | 0x40;
     b[8] = (b[8] & 0x3f) | 0x80;
     format!(
