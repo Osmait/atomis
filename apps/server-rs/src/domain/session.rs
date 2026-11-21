@@ -62,13 +62,13 @@ const HTTP_PORTS: std::ops::Range<u16> = 20_000..30_000;
 /// session's. Checked by binding it, so another process on the machine is
 /// not handed out either.
 fn allocate_http_port(taken: &std::collections::HashSet<u16>) -> u16 {
-    use rand::Rng;
+    use rand::RngExt;
     let free = |port: u16| {
         !taken.contains(&port) && std::net::TcpListener::bind(("127.0.0.1", port)).is_ok()
     };
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     for _ in 0..64 {
-        let port = rng.gen_range(HTTP_PORTS);
+        let port = rng.random_range(HTTP_PORTS);
         if free(port) {
             return port;
         }

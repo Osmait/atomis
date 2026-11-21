@@ -141,14 +141,14 @@ describe("preferences shared across devices", () => {
 	});
 });
 
-describe("changes arriving live from another device", () => {
-	async function hydrated(
-		preferences: Record<string, string> = {},
-	): Promise<void> {
-		stubFetch(() => json({ preferences }));
-		await hydratePreferences();
-	}
+async function hydrated(
+	preferences: Record<string, string> = {},
+): Promise<void> {
+	stubFetch(() => json({ preferences }));
+	await hydratePreferences();
+}
 
+describe("changes arriving live from another device", () => {
 	it("applies the new value and reports which keys moved", async () => {
 		await hydrated();
 		const seen: ReadonlySet<string>[] = [];

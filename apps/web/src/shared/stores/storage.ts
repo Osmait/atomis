@@ -123,6 +123,13 @@ async function flush(): Promise<void> {
 	}
 }
 
+function retryFlushLater(): void {
+	consecutiveFailures += 1;
+	scheduleFlush(
+		Math.min(FLUSH_DELAY_MS * 2 ** consecutiveFailures, MAX_RETRY_MS),
+	);
+}
+
 /**
  * Sends whatever is queued right now, in a request that outlives the page.
  *
@@ -142,12 +149,6 @@ export function flushPreferencesNow(): void {
 	const sending = new Map(pending);
 	if (flushTimer !== undefined) clearTimeout(flushTimer);
 	flushTimer = undefined;
-	const retryLater = (): void => {
-		consecutiveFailures += 1;
-		scheduleFlush(
-			Math.min(FLUSH_DELAY_MS * 2 ** consecutiveFailures, MAX_RETRY_MS),
-		);
-	};
 	try {
 		Promise.resolve(
 			apiFetch(ENDPOINT, {
@@ -160,7 +161,7 @@ export function flushPreferencesNow(): void {
 		).then(
 			(response) => {
 				if (!response.ok) {
-					retryLater();
+					retryFlushLater();
 					return;
 				}
 				consecutiveFailures = 0;
@@ -173,7 +174,7 @@ export function flushPreferencesNow(): void {
 			// shown again): everything is still queued, so retry on our own.
 			// Handling the rejection here is also what keeps a genuinely
 			// dying page from logging an unhandled rejection on the way out.
-			retryLater,
+			retryFlushLater,
 		);
 	} catch {
 		// Leaving anyway; the value stays in localStorage for this device.

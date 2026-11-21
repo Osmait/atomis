@@ -105,6 +105,12 @@ function cursorOf(
 		: undefined;
 }
 
+function editorAction(id: string): (cm: VimAdapter) => void {
+	return (cm: VimAdapter): void => {
+		cm.editor?.trigger("vim", id, null);
+	};
+}
+
 let installed = false;
 
 export function installVimExtensions(): void {
@@ -112,11 +118,6 @@ export function installVimExtensions(): void {
 	installed = true;
 	const vim = (VimMode as object as { Vim: VimApi }).Vim;
 
-	const editorAction =
-		(id: string) =>
-		(cm: VimAdapter): void => {
-			cm.editor?.trigger("vim", id, null);
-		};
 	const normal = (keys: string, name: string, actionId: string): void => {
 		vim.defineAction(name, editorAction(actionId));
 		vim.mapCommand(keys, "action", name, {}, { context: "normal" });
