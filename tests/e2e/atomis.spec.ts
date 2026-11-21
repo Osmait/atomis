@@ -267,13 +267,18 @@ test("an interactive Run waits for typed input, line by line, and EOF ends it", 
 		page,
 		'name = input("Name? ")\nprint(f"hi {name}")\nage = int(input("Age? "))\nprint(f"next year {age + 1}")\n',
 	);
+	const terminal = page.locator(".panel-content");
+	// Wait for the debounced Auto Run triggered by the edit to finish before
+	// pressing Run: while a run is active, `.run-button` acts as Stop and a
+	// click cancels it instead of starting an interactive run.
+	await expect(terminal).toContainText("EOFError");
 	await openTermView(page, "Input");
 	await page.getByRole("radio", { name: "Typed in the terminal" }).click();
 	await openTermView(page, "Output");
 
-	const terminal = page.locator(".panel-content");
 	const field = page.getByLabel("Input for the running program");
-	await page.locator(".run-button").click();
+	const runButton = page.getByRole("button", { name: "Run", exact: true });
+	await runButton.click();
 	await expect(field).toBeVisible();
 	await expect(field).toBeFocused();
 	// The prompt has no newline, and output waits for one to attach its
@@ -294,7 +299,7 @@ test("an interactive Run waits for typed input, line by line, and EOF ends it", 
 	await expect(page.locator(".output-entry pre.input")).toHaveText(["Ada", "41"]);
 
 	// EOF before an answer: the program reads end of file.
-	await page.locator(".run-button").click();
+	await runButton.click();
 	await expect(field).toBeVisible();
 	await page.getByRole("button", { name: "EOF" }).click();
 	await expect(terminal).toContainText("EOFError");
